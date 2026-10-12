@@ -16,6 +16,13 @@ build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
 
 
+def game_fixture(root):
+    for name in launcher.GAME_STARTUP_FILES:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'owned game fixture')
+
+
 def firmware(directory, value=b'firmware fixture'):
     for name in ('sys/external/liblv2.sprx', 'vsh/module/vsh.self'):
         path = directory / 'dev_flash' / name
@@ -36,6 +43,66 @@ def dlc_fixture(root, package):
     text += 'GUI: Successfully installed ' + str(package) + ' (title_id=NPUB31321, title=DisgaeaD2, version=01.00).\n'
     log.write_text(text)
     return log, text, files
+
+
+class GameFilesTests(unittest.TestCase):
+    def test_root_and_ps3_game_selection_accept_complete_startup_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game_fixture(root)
+            self.assertEqual(launcher.game_root(root), root.resolve())
+            self.assertEqual(launcher.game_root(root / 'PS3_GAME'), root.resolve())
+
+    def test_missing_or_empty_audio_file_is_reported_by_exact_relative_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game_fixture(root)
+            audio = root / 'PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak'
+            for empty in (False, True):
+                if empty:
+                    audio.touch()
+                else:
+                    audio.unlink()
+                with self.subTest(empty=empty), self.assertRaises(ValueError) as raised:
+                    launcher.game_root(root)
+                self.assertIn('PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak', str(raised.exception))
+                self.assertIn('ausentes ou vazios', str(raised.exception))
+
+    def test_incomplete_game_stops_prepare_before_download_or_cached_reuse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'game'
+            game_fixture(game)
+            (game / 'PS3_GAME/USRDIR/Data/START_2.dat').unlink()
+            backend = launcher.Backend(lambda message: None, root / 'home')
+            with patch.object(backend, 'helper') as helper, patch.object(backend, 'cached_build') as cached:
+                with self.assertRaisesRegex(ValueError, 'START_2.dat'):
+                    backend.prepare(game, [])
+                helper.assert_not_called()
+                cached.assert_not_called()
+            self.assertIn('START_2.dat', (backend.home / 'preparacao.log').read_text())
+            self.assertFalse((backend.home / 'build-atual.json').exists())
+
+    def test_incomplete_game_stops_play_and_preserves_config_and_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'game'
+            game_fixture(game)
+            (game / 'PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak').unlink()
+            backend = launcher.Backend(lambda message: None, root / 'home')
+            backend.home.mkdir()
+            config = backend.home / 'build-atual.json'
+            config.write_text(json.dumps(dict(game_root=str(game), workspace='existing-build')))
+            saved = backend.home / 'auxiliar-rpcs3/dev_hdd0/home/00000001/savedata/fixture/SAVEDATA.DAT'
+            saved.parent.mkdir(parents=True)
+            saved.write_bytes(b'preserved save fixture')
+            before = config.read_bytes()
+            with patch.object(backend, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'SndPakBgm_0.pak'):
+                    backend.play()
+                run.assert_not_called()
+            self.assertEqual(config.read_bytes(), before)
+            self.assertEqual(saved.read_bytes(), b'preserved save fixture')
 
 
 class ToolchainTests(unittest.TestCase):
@@ -207,6 +274,7 @@ class PreparationTests(unittest.TestCase):
             binary = game / 'PS3_GAME/USRDIR/EBOOT.BIN'
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b'owned game fixture')
+            game_fixture(game)
             update = helper.parent / 'dev_hdd0/game/BLUS31313/USRDIR'
             (update / 'Data').mkdir(parents=True)
             (update / 'EBOOT.BIN').write_bytes(b'update fixture')
@@ -287,6 +355,7 @@ class PreparationTests(unittest.TestCase):
             eboot = game / 'PS3_GAME/USRDIR/EBOOT.BIN'
             eboot.parent.mkdir(parents=True)
             eboot.write_bytes(b'owned fixture')
+            game_fixture(game)
             package = root / 'update.pkg'
             package.write_bytes(b'package fixture')
             for name in ('PARAM.SFO', 'USRDIR/EBOOT.BIN', 'USRDIR/Data/START_7.dat'):
@@ -353,6 +422,7 @@ class PreparationTests(unittest.TestCase):
             eboot = root / 'owned-game/PS3_GAME/USRDIR/EBOOT.BIN'
             eboot.parent.mkdir(parents=True)
             eboot.write_bytes(b'user fixture')
+            game_fixture(eboot.parents[2])
             previous = dict(workspace='existing-build', game_root='old-folder', hdd0_root='existing-hdd')
             backend = launcher.Backend(lambda message: None, root / 'home')
             with patch.object(backend, 'cached_build', return_value=previous), \

@@ -180,3 +180,22 @@ a selecao/falha no log. Os 17 testes locais incluem a combinacao observada,
 preferencia pela instancia recente completa, LLVM externo e falha de vcvarsall.
 A compilacao e execucao reais no segundo PC ainda estao pendentes. Nenhuma
 ferramenta foi removida nem o runtime do jogo alterado por essa correcao.
+
+## Segundo PC: compilacao e execucao confirmadas — 2026-10-12
+
+O launcher 0.1.6 selecionou o Visual Studio 2022 com clang-cl 19.1.5; SDK,
+geracao e compilacao completaram 199/199 etapas com codigo 0. O jogo abriu,
+mas permaneceu no loading. O log de execucao confirmou que faltava
+PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak; esse mesmo arquivo
+abria corretamente no PC principal. Apos repor a pasta de audio da copia
+funcional, o usuario informou que o jogo funcionou. Em resposta ao pedido de
+testar save/load, Alt+F4 e DLCs, confirmou "sim, tudo certo". E confirmacao manual
+geral nesse segundo PC; nao foi informado FPS nem validado cada conteudo de DLC.
+
+A 0.1.7 verifica 18 arquivos do inicio antes de preparar/reutilizar/jogar.
+Os testes locais incluem o caso de arquivo de audio ausente/vazio e o bloqueio
+de preparacao/execucao preservando config e save. Trata-se de preflight parcial,
+sem validar hashes ou todos os arquivos da campanha. A instalacao automatica
+de ferramentas num Windows inteiramente limpo nao foi observada do inicio ao
+fim por logs; o diagnostico confirmou ferramentas instaladas no segundo PC.
+Android permanece pendente.

@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.6-preview'
+VERSION = '0.1.7-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
@@ -101,12 +101,28 @@ def digest(path):
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+# Startup files observed in the supported US game. This is a presence/size
+# check, not an integrity check for every asset in the campaign.
+GAME_STARTUP_FILES = (
+    'PS3_GAME/PARAM.SFO', 'PS3_GAME/USRDIR/EBOOT.BIN',
+    *(f'PS3_GAME/USRDIR/Data/START{suffix}.dat' for suffix in ('', '_1', '_2', '_3', '_4', '_5', '_6')),
+    *(f'PS3_GAME/USRDIR/Data/ANM_HI{suffix}.dat' for suffix in ('', '_1', '_2', '_3', '_4', '_5', '_6')),
+    'PS3_GAME/USRDIR/Data/NisAnmShadow.txf',
+    'PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak',
+)
+
+
 def game_root(path):
     path = Path(path).resolve()
     if path.name.upper() == 'PS3_GAME':
         path = path.parent
     if not (path / 'PS3_GAME/USRDIR/EBOOT.BIN').is_file():
         raise ValueError('Selecione a pasta do jogo ou PS3_GAME contendo USRDIR/EBOOT.BIN.')
+    missing = [name for name in GAME_STARTUP_FILES
+               if not (path / name).is_file() or (path / name).stat().st_size == 0]
+    if missing:
+        raise ValueError('A pasta do jogo esta incompleta. Arquivos ausentes ou vazios:\n' +
+                         '\n'.join(missing) + '\nRestaure esses arquivos da sua copia extraida antes de continuar.')
     return path
 
 
@@ -342,7 +358,7 @@ class Backend:
         return exe
 
     def prepare(self, folder, packages, firmware=None):
-        game = game_root(folder)
+        game = self.check_game_files(folder)
         previous = self.cached_build()
         if previous and not packages and not firmware:
             previous['game_root'] = str(game)
@@ -420,6 +436,16 @@ class Backend:
         pending.unlink(missing_ok=True)
         self.notify('Preparacao concluida. Clique em Jogar.')
 
+    def check_game_files(self, folder):
+        try:
+            return game_root(folder)
+        except (ValueError, OSError) as error:
+            self.home.mkdir(parents=True, exist_ok=True)
+            with (self.home / 'preparacao.log').open('a', encoding='utf-8') as log:
+                log.write(datetime.now().isoformat(timespec='seconds') + ' launcher=' + VERSION + ' etapa=Verificar arquivos do jogo\n')
+                log.write('falha_arquivos=' + str(error) + '\n')
+            raise
+
     def compiler_environment(self):
         self.home.mkdir(parents=True, exist_ok=True)
         log_path = self.home / 'preparacao.log'
@@ -445,7 +471,7 @@ class Backend:
     def play(self):
         config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
         repo = Path(config['workspace'])
-        game_root(config['game_root'])
+        self.check_game_files(config['game_root'])
         sys.path.insert(0, str(ROOT / 'windows'))
         from iniciar_build import launch_environment
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())

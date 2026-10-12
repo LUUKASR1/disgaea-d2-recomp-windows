@@ -118,4 +118,22 @@ Nao e necessario remover outra versao do Visual Studio para usar a instalacao
 completa. Se a deteccao falhar, preparacao.log passa a conter a etapa e o erro
 exato. O diagnostico do segundo PC demonstrou Visual Studio 2022 com C++/LLVM
 e Visual Studio 2026 com C++ sem LLVM; a selecao anterior escolhia somente a
-mais recente. A compilacao nesse PC com a 0.1.6 ainda precisa ser confirmada.
+mais recente. A compilacao no segundo PC com a 0.1.6 foi confirmada: Clang 19.1.5,
+199/199 etapas e codigo 0. A execucao inicialmente bloqueou por falta de
+SndPakBgm_0.pak; apos restaurar a pasta SOUND, o usuario confirmou funcionamento,
+save/load, DLCs e fechamento. FPS nesse PC nao foi informado.
+
+## Conferencia da pasta do jogo no launcher 0.1.7
+
+Antes de preparar, reconhecer uma build existente ou jogar, o launcher confere
+18 arquivos usados no inicio: PARAM.SFO, EBOOT.BIN, START.dat e START_1 a
+START_6.dat, ANM_HI.dat e ANM_HI_1 a ANM_HI_6.dat, NisAnmShadow.txf e
+SOUND/SndPakBgm/SndPakBgm_0.pak. Arquivos ausentes ou vazios sao listados no
+aviso e em preparacao.log. Restaure-os da sua copia extraida e tente novamente;
+o launcher nao baixa, substitui nem modifica esses arquivos.
+
+A verificacao e rapida: confere presenca e tamanho maior que zero, sem ler ou
+hashear os grandes arquivos. Nao comprova integridade de todos os assets,
+conteudo completo da campanha ou autenticidade dos arquivos. Builds compativeis
+e saves continuam preservados. Essa versao nao exige recompilacao de uma build
+existente cujo runtime permaneceu igual.

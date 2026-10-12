@@ -1,3 +1,15 @@
+# Launcher 0.1.7-preview
+
+- Check presence and nonzero size of 18 startup files in the extracted US game
+  before preparation, cached build reuse and launching. Report missing/empty paths.
+- Include the missing SndPakBgm_0.pak that blocked loading on the second PC.
+- Log file validation failures without changing game files, cached build configuration or saves.
+- Twenty-one tests pass locally, including blocked preparation/launch and save preservation.
+- Record second-PC compilation with Clang 19.1.5 and the user's successful
+  run/save/load/DLC/close confirmation after restoring the audio folder.
+- This is a startup presence/size check, not whole-game integrity validation.
+  No runtime or graphical profile changes.
+
 # Launcher 0.1.6-preview
 
 - Find all complete C++ Visual Studio installations, ordered newest first,
