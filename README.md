@@ -44,8 +44,18 @@ Tested by the user on Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM. Audio and effects 
 - [Windows changes](docs/CHANGELOG-WINDOWS.md)
 - [Original project documentation](docs/UPSTREAM-README.md)
 
-## Português
+## Visão geral técnica
 
-Esta candidata organiza as fontes da build Windows 1.40 e consolida os ajustes do SDK num patch com revisão e checksum fixos. Os scripts de build geram o código localmente, usando o ELF do usuário. O fechamento por Alt+F4 foi confirmado no Windows. Salvar, reabrir e carregar foram confirmados pelo usuário. Ainda é necessário validar uma compilação limpa antes de anunciar uma release reproduzível.
+Adaptação experimental para Windows x64 do projeto [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), baseada no [ps3recomp](https://github.com/sp00nznet/ps3recomp). O alvo atual é a versão americana do jogo com a atualização 1.40, usando Direct3D 12 e clang-cl. Esta versão candidata ainda não oferece suporte a Android.
+
+**Esta versão candidata distribui apenas o código-fonte; não inclui o executável do jogo, código gerado a partir do jogo, dados do jogo, atualizações/DLCs, chaves ou saves.** Gere e compile localmente a partir da sua própria cópia. Consulte [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Testada pelo usuário em um Ryzen 7 5700X3D / RTX 5070 / 32 GB de RAM. O áudio e os efeitos funcionaram normalmente; as quedas de desempenho ainda observadas no ataque do Mothman impedem afirmar que o jogo mantém 60 FPS estáveis. A correção do fechamento no Windows foi verificada no PC do usuário: o processo terminou com código de saída 0, aproximadamente 0,1 segundo após fechar a janela. Nenhuma operação de salvamento estava ativa naquele fechamento. Salvar, fechar, reabrir e carregar foram confirmados manualmente por LUUKASR1. A validação de uma compilação limpa no Windows ainda está pendente; esta é uma versão candidata em desenvolvimento.
+
+- [Launcher com interface gráfica para Windows: selecione seu jogo extraído e os PKGs de atualização](docs/LAUNCHER-WINDOWS.md) (experimental; compilação local na primeira preparação)
+- [Compilar e executar no Windows](docs/WINDOWS.md)
+- [Estado observado e desempenho](docs/STATUS-WINDOWS.md)
+- [Alterações para Windows](docs/CHANGELOG-WINDOWS.md)
+- [Documentação do projeto original](docs/UPSTREAM-README.md)
 
 Créditos: Sean13128 e colaboradores pelo projeto original; Ned Heller / sp00nznet e colaboradores pelo ps3recomp; respectivos autores pelas bibliotecas de terceiros. Desenvolvimento assistido por IA, com direção e testes manuais do usuário. Mantenedor e testes Windows: [LUUKASR1](https://github.com/LUUKASR1). Projeto independente e não oficial, sem afiliação com os titulares do jogo.
