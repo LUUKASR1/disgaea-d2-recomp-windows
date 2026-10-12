@@ -34,6 +34,7 @@ jobs:
       - name: Test preparation safeguards without game files
         run: python -m unittest discover -s windows -p 'test_*.py' -v
       - name: Capture actual launcher UI with empty temporary profile
+        timeout-minutes: 2
         run: python windows/preview_launcher.py
       - uses: actions/upload-artifact@v4
         with:

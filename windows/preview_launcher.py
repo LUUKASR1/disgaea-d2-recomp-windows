@@ -2,40 +2,23 @@
 from pathlib import Path
 import subprocess
 import tempfile
-import concurrent.futures
-import time
 
 from launcher import Backend
 from launcher_gui import run_gui
 
 
 def capture(app, target):
-    script = r'''
+    # Screen copy avoids synchronous cross-process paint messages to Tk.
+    script = r"""
 Add-Type -AssemblyName System.Drawing
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public class CaptureD2 {
- [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
-}
-'@
 $bitmap = New-Object System.Drawing.Bitmap(WIDTH, HEIGHT)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$dc = $graphics.GetHdc()
-try { if (![CaptureD2]::PrintWindow([IntPtr]HWND, $dc, 2)) { throw 'PrintWindow failed' } }
-finally { $graphics.ReleaseHdc($dc) }
+$graphics.CopyFromScreen(X, Y, 0, 0, $bitmap.Size)
 $bitmap.Save('TARGET', [System.Drawing.Imaging.ImageFormat]::Png)
 $graphics.Dispose()
 $bitmap.Dispose()
-'''.replace('WIDTH', str(app.winfo_width())).replace('HEIGHT', str(app.winfo_height())).replace('HWND', str(app.winfo_id())).replace('TARGET', str(target.resolve()).replace("'", "''"))
-    # PrintWindow sends paint messages to Tk. Keep its owning thread pumping
-    # while the separate capture process waits for those messages.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(subprocess.run, ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], check=True, timeout=30)
-        while not future.done():
-            app.update()
-            time.sleep(0.01)
-        future.result()
+""".replace('WIDTH', str(app.winfo_width())).replace('HEIGHT', str(app.winfo_height())).replace('X', str(app.winfo_rootx())).replace('Y', str(app.winfo_rooty())).replace('TARGET', str(target.resolve()).replace("'", "''"))
+    subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], check=True, timeout=30)
 
 
 def main():
