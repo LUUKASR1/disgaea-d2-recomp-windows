@@ -6,6 +6,7 @@ Experimental Windows x64 port of [Sean13128/disgaea-d2-recomp](https://github.co
 
 Tested by the user on Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM. Audio and effects were normal; remaining Mothman attack drops prevent a stable 60 FPS claim. The Windows close correction was verified on the user's PC: process exit code 0, observed within approximately 0.1 seconds after window closure. No active savedata operation was observed during that close. Save, close, reopen and load were manually confirmed by LUUKASR1. A clean Windows build is still pending; this is a development candidate.
 
+- [Windows GUI launcher: select your extracted game and update PKGs](docs/LAUNCHER-WINDOWS.md) (experimental; first-run local compilation)
 - [Windows build and run](docs/WINDOWS.md)
 - [Observed status and performance](docs/STATUS-WINDOWS.md)
 - [Windows changes](docs/CHANGELOG-WINDOWS.md)

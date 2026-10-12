@@ -27,6 +27,8 @@ reescritos. Importar os PKGs altera somente o armazenamento local do aplicativo.
 
 O workflow **Windows launcher** gera um ZIP contendo o executavel e suas
 dependencias. Ele testa o interpretador embutido e a presenca das dependencias.
+Tambem verifica o checksum do patch empacotado e compila um programa C minimo
+com o CMake/Ninja incluidos, clang-cl local e descoberta do Python embutido.
 Esses testes nao validam uma recompilacao completa nem a execucao do jogo.
 O teste completo com a copia US 1.40 e necessario antes de chamar uma release
 de estavel. Somente Windows x64 esta implementado; ISO e Android ainda nao.
