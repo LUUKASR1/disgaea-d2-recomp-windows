@@ -1,5 +1,5 @@
 ; The installer owns only the launcher directory, never user game/build/save data.
-#define AppVersion "0.1.5"
+#define AppVersion "0.1.6"
 
 [Setup]
 AppId=DisgaeaD2RecompLauncherWindows

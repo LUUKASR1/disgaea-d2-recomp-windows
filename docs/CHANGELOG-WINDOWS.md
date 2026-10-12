@@ -1,3 +1,15 @@
+# Launcher 0.1.6-preview
+
+- Find all complete C++ Visual Studio installations, ordered newest first,
+  and select one with an available clang-cl instead of always using the latest.
+- Fix the observed 2026-without-LLVM / 2022-with-LLVM detection failure on the
+  second user's PC. Support standalone LLVM in its standard Program Files folder.
+- Fall back when an instance lacks vcvarsall/clang-cl or cannot initialize its environment.
+- Record the selected Visual Studio and resolved tool paths, or the exact detection
+  failure, in preparacao.log without logging the full environment.
+- Seventeen preparation/detection tests pass locally; real second-PC compilation
+  with this selection fix remains pending. No runtime or profile changes.
+
 # Launcher 0.1.5-preview
 
 - Recover helper exit 3221226505 after a fresh success log for the same

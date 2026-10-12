@@ -1,6 +1,8 @@
 """Regression tests for preparation failures and reuse, without game inputs."""
 import importlib.util
 import json
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -34,6 +36,128 @@ def dlc_fixture(root, package):
     text += 'GUI: Successfully installed ' + str(package) + ' (title_id=NPUB31321, title=DisgaeaD2, version=01.00).\n'
     log.write_text(text)
     return log, text, files
+
+
+class ToolchainTests(unittest.TestCase):
+    def fixture(self, root, clang_in):
+        vswhere = root / 'pf86/Microsoft Visual Studio/Installer/vswhere.exe'
+        vswhere.parent.mkdir(parents=True)
+        vswhere.touch()
+        older, newer = root / 'VS 2022 BuildTools', root / 'VS 2026 BuildTools'
+        for install in (older, newer):
+            vcvars = install / 'VC/Auxiliary/Build/vcvarsall.bat'
+            vcvars.parent.mkdir(parents=True)
+            vcvars.touch()
+        for install in clang_in:
+            target = (older if install == 'older' else newer) / 'VC/Tools/Llvm/x64/bin/clang-cl.exe'
+            target.parent.mkdir(parents=True)
+            target.touch()
+        for name in ('git.exe', 'cmake.exe', 'ninja.exe'):
+            target = root / 'payload/vendor/bin' / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+        return older, newer
+
+    def which(self, name, path=None):
+        for directory in (path or '').split(os.pathsep):
+            candidate = Path(directory) / (name + '.exe')
+            if candidate.is_file():
+                return str(candidate)
+        return None
+
+    def environment(self, root):
+        return {'ProgramFiles(x86)': str(root / 'pf86'), 'ProgramFiles': str(root / 'pf'), 'PATH': ''}
+
+    def test_uses_older_complete_installation_when_newest_lacks_llvm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            older, newer = self.fixture(root, ['older'])
+            def output(args, **kwargs):
+                if isinstance(args, list):
+                    self.assertIn('-sort', args)
+                    self.assertNotIn('-latest', args)
+                    self.assertNotIn('-all', args)
+                    return str(newer) + '\n' + str(older) + '\n'
+                self.assertIn(str(older), args)
+                return 'Path=\nLIB=older-library\nINCLUDE=older-include\n'
+            with patch.dict(os.environ, self.environment(root), clear=True), \
+                 patch.object(launcher, 'ROOT', root / 'payload'), \
+                 patch.object(launcher.subprocess, 'check_output', side_effect=output), \
+                 patch.object(launcher.shutil, 'which', side_effect=self.which):
+                env = launcher.build_environment()
+            self.assertEqual(env['D2_SELECTED_VS'], str(older))
+            self.assertEqual(env['LIB'], 'older-library')
+            self.assertNotIn('Path', env)
+            self.assertEqual(self.which('clang-cl', env['PATH']), str(older / 'VC/Tools/Llvm/x64/bin/clang-cl.exe'))
+
+    def test_prefers_newest_complete_installation_and_supports_standalone_llvm(self):
+        for standalone in (False, True):
+            with self.subTest(standalone=standalone), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                older, newer = self.fixture(root, [] if standalone else ['older', 'newer'])
+                if standalone:
+                    target = root / 'pf/LLVM/bin/clang-cl.exe'
+                    target.parent.mkdir(parents=True)
+                    target.touch()
+                def output(args, **kwargs):
+                    if isinstance(args, list):
+                        return str(newer) + '\n' + str(older)
+                    self.assertIn(str(newer), args)
+                    return 'Path=\nLIB=newer-library\n'
+                with patch.dict(os.environ, self.environment(root), clear=True), \
+                     patch.object(launcher, 'ROOT', root / 'payload'), \
+                     patch.object(launcher.subprocess, 'check_output', side_effect=output), \
+                     patch.object(launcher.shutil, 'which', side_effect=self.which):
+                    env = launcher.build_environment()
+                self.assertEqual(env['D2_SELECTED_VS'], str(newer))
+                self.assertEqual(env['LIB'], 'newer-library')
+
+    def test_reports_missing_llvm_and_no_cpp_installations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            older, newer = self.fixture(root, [])
+            with patch.dict(os.environ, self.environment(root), clear=True), \
+                 patch.object(launcher, 'ROOT', root / 'payload'), \
+                 patch.object(launcher.subprocess, 'check_output', return_value=str(newer) + '\n' + str(older)), \
+                 patch.object(launcher.shutil, 'which', side_effect=self.which):
+                with self.assertRaisesRegex(RuntimeError, 'clang-cl utilizavel'):
+                    launcher.build_environment()
+            with patch.dict(os.environ, self.environment(root), clear=True), \
+                 patch.object(launcher.subprocess, 'check_output', return_value=''):
+                with self.assertRaisesRegex(RuntimeError, r'C\+\+ do Visual Studio'):
+                    launcher.build_environment()
+
+    def test_bad_newer_environment_falls_back_without_leaking_variables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            older, newer = self.fixture(root, ['older', 'newer'])
+            def output(args, **kwargs):
+                if isinstance(args, list):
+                    return str(newer) + '\n' + str(older)
+                if str(newer) in args:
+                    raise subprocess.CalledProcessError(1, args)
+                return 'Path=\nLIB=older-library\n'
+            with patch.dict(os.environ, self.environment(root), clear=True), \
+                 patch.object(launcher, 'ROOT', root / 'payload'), \
+                 patch.object(launcher.subprocess, 'check_output', side_effect=output), \
+                 patch.object(launcher.shutil, 'which', side_effect=self.which):
+                env = launcher.build_environment()
+            self.assertEqual(env['D2_SELECTED_VS'], str(older))
+            self.assertEqual(env['LIB'], 'older-library')
+
+    def test_compiler_detection_failure_and_selection_are_logged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = launcher.Backend(lambda message: None, tmp)
+            with patch.object(launcher, 'build_environment', side_effect=RuntimeError('missing compiler fixture')):
+                with self.assertRaisesRegex(RuntimeError, 'missing compiler fixture'):
+                    backend.compiler_environment()
+            log = Path(tmp) / 'preparacao.log'
+            self.assertIn('falha_deteccao=RuntimeError: missing compiler fixture', log.read_text())
+            env = {'PATH': 'fixture', 'D2_SELECTED_VS': 'complete VS fixture'}
+            with patch.object(launcher, 'build_environment', return_value=env), \
+                 patch.object(launcher.shutil, 'which', return_value='fixture-tool'):
+                self.assertEqual(backend.compiler_environment(), env)
+            self.assertIn('visual_studio=complete VS fixture', log.read_text())
 
 
 class PreparationTests(unittest.TestCase):

@@ -163,3 +163,20 @@ observado. O reconhecimento de DLCs e save/load ja foram confirmados nos testes
 anteriores nessa mesma build. A sessao breve atual nao e novo benchmark nem
 validacao individual de todos os conteudos. Instalacao de ferramentas em PC
 sem compiladores, outros formatos de PKG e Android permanecem pendentes.
+
+## Segundo PC: selecao incorreta de Visual Studio — 2026-10-12
+
+O usuario informou Ryzen 5500X3D, RTX 5070 e 32 GB RAM. O launcher 0.1.5
+instalou firmware 4.91, update US 1.40 e DLC na pasta local do novo usuario,
+preparou o ELF e parou antes da etapa de SDK/compilacao. O diagnostico mostrou
+duas instalacoes completas de Build Tools: Visual Studio 2022 17.14 com
+ferramentas C++ e LLVM, e Visual Studio 2026 18.5 com C++ sem LLVM. clang-cl
+existia nas duas pastas LLVM do Visual Studio 2022, mas nao no Visual Studio
+2026 nem no PATH global. A selecao `vswhere -latest` considerava apenas C++
+e escolhia a instancia 2026, causando o erro de clang-cl ausente.
+
+A 0.1.6 considera outras instancias completas com C++ e clang-cl, e registra
+a selecao/falha no log. Os 17 testes locais incluem a combinacao observada,
+preferencia pela instancia recente completa, LLVM externo e falha de vcvarsall.
+A compilacao e execucao reais no segundo PC ainda estao pendentes. Nenhuma
+ferramenta foi removida nem o runtime do jogo alterado por essa correcao.

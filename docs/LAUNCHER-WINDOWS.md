@@ -104,3 +104,18 @@ O reteste da 0.1.5 em 2026-10-12 confirmou reimportacao automatica do pacote
 observado, verificacao do ELF, reuso da mesma build e inicio/encerramento do
 jogo com codigo 0. A instalacao inicial do pacote e seu reconhecimento no jogo
 foram confirmados anteriormente na mesma pasta.
+
+## Deteccao de ferramentas no launcher 0.1.6
+
+Quando ha mais de uma instalacao do Visual Studio, o launcher procura instancias
+com ferramentas C++, em ordem da mais recente para a mais antiga, e seleciona
+uma que tenha clang-cl disponivel. Uma instancia sem LLVM nao bloqueia o uso
+de outra completa. Tambem reconhece LLVM instalado em Program Files/LLVM/bin.
+Falha ao inicializar uma instancia permite tentar a proxima; os arquivos de
+vcvarsall e as ferramentas sao conferidos. A escolha e registrada no log.
+
+Nao e necessario remover outra versao do Visual Studio para usar a instalacao
+completa. Se a deteccao falhar, preparacao.log passa a conter a etapa e o erro
+exato. O diagnostico do segundo PC demonstrou Visual Studio 2022 com C++/LLVM
+e Visual Studio 2026 com C++ sem LLVM; a selecao anterior escolhia somente a
+mais recente. A compilacao nesse PC com a 0.1.6 ainda precisa ser confirmada.

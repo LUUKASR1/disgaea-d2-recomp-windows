@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.5-preview'
+VERSION = '0.1.6-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
@@ -173,31 +173,53 @@ def worker_mode():
 
 
 def build_environment():
-    env = dict(os.environ)
+    original = dict(os.environ)
     vswhere = Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Microsoft Visual Studio/Installer/vswhere.exe'
     if not vswhere.is_file():
         raise RuntimeError('Instale as ferramentas pelo botao "Instalar ferramentas" e reinicie o aplicativo.')
-    install = subprocess.check_output([str(vswhere), '-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'], text=True).strip()
-    if not install:
+    output = subprocess.check_output([str(vswhere), '-sort', '-products', '*', '-requires',
+        'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath', '-utf8'],
+        encoding='utf-8-sig', timeout=30, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    installs = [Path(line.strip()) for line in output.splitlines() if line.strip()]
+    if not installs:
         raise RuntimeError('As ferramentas C++ do Visual Studio ainda nao estao instaladas.')
-    vcvars = Path(install) / 'VC/Auxiliary/Build/vcvarsall.bat'
-    # Pass CMD's command line directly: list2cmdline uses C-runtime escaping,
-    # which CMD does not understand for the nested vcvarsall quotes.
-    command = 'cmd.exe /d /s /c ""' + str(vcvars) + '" x64 >nul && set"'
-    output = subprocess.check_output(command, text=True, errors='replace', timeout=90,
-                                     creationflags=subprocess.CREATE_NO_WINDOW)
-    for line in output.splitlines():
-        name, sep, value = line.partition('=')
-        if sep and name:
-            env[name] = value
-    extra = [ROOT / 'vendor/bin', ROOT / 'vendor/cmake/bin', Path(install) / 'VC/Tools/Llvm/x64/bin', Path(install) / 'VC/Tools/Llvm/bin', Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Git/cmd']
-    env['PATH'] = os.pathsep.join(map(str, extra)) + os.pathsep + env.get('Path', env.get('PATH', ''))
-    # Windows environment keys are case insensitive. Avoid duplicate Path/PATH.
-    env.pop('Path', None)
-    for tool in ('git', 'cmake', 'ninja', 'clang-cl'):
-        if not shutil.which(tool, path=env['PATH']):
-            raise RuntimeError('Ferramenta ausente: ' + tool + '. Use "Instalar ferramentas".')
-    return env
+    program_files = Path(os.environ.get('ProgramFiles', 'C:/Program Files'))
+    failures = []
+    for install in installs:
+        vcvars = install / 'VC/Auxiliary/Build/vcvarsall.bat'
+        if not vcvars.is_file():
+            failures.append(str(install) + ': vcvarsall.bat ausente')
+            continue
+        extra = [ROOT / 'vendor/bin', ROOT / 'vendor/cmake/bin',
+                 install / 'VC/Tools/Llvm/x64/bin', install / 'VC/Tools/Llvm/bin',
+                 program_files / 'LLVM/bin', program_files / 'Git/cmd']
+        initial_path = original.get('Path', original.get('PATH', ''))
+        probe_path = os.pathsep.join(map(str, extra)) + os.pathsep + initial_path
+        if not shutil.which('clang-cl', path=probe_path):
+            failures.append(str(install) + ': clang-cl ausente')
+            continue
+        # CMD requires its own nested quote syntax around vcvarsall.
+        command = 'cmd.exe /d /s /c ""' + str(vcvars) + '" x64 >nul && set"'
+        try:
+            output = subprocess.check_output(command, text=True, errors='replace', timeout=90,
+                                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
+            failures.append(str(install) + ': ambiente C++ falhou: ' + str(error))
+            continue
+        env = dict(original)
+        for line in output.splitlines():
+            name, sep, value = line.partition('=')
+            if sep and name:
+                env[name] = value
+        env['PATH'] = os.pathsep.join(map(str, extra)) + os.pathsep + env.get('Path', env.get('PATH', ''))
+        env.pop('Path', None)
+        for tool in ('git', 'cmake', 'ninja', 'clang-cl'):
+            if not shutil.which(tool, path=env['PATH']):
+                raise RuntimeError('Ferramenta ausente: ' + tool + '. Use "Instalar ferramentas".')
+        env['D2_SELECTED_VS'] = str(install)
+        return env
+    raise RuntimeError('Nenhuma instalacao C++ com clang-cl utilizavel foi encontrada. ' +
+                       'Confira o componente LLVM no Visual Studio Installer.\n' + '\n'.join(failures))
 
 
 class Backend:
@@ -369,7 +391,7 @@ class Backend:
             self.save(previous)
             self.notify('Conteudo importado. Build local existente pronta para jogar.')
             return
-        env = build_environment()
+        env = self.compiler_environment()
         pending = self.home / 'build-pendente.json'
         repo = None
         if pending.is_file():
@@ -397,6 +419,21 @@ class Backend:
         self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd)))
         pending.unlink(missing_ok=True)
         self.notify('Preparacao concluida. Clique em Jogar.')
+
+    def compiler_environment(self):
+        self.home.mkdir(parents=True, exist_ok=True)
+        log_path = self.home / 'preparacao.log'
+        with log_path.open('a', encoding='utf-8') as log:
+            log.write(datetime.now().isoformat(timespec='seconds') + ' launcher=' + VERSION + ' etapa=Detectar ferramentas C++\n')
+            try:
+                env = build_environment()
+            except Exception as error:
+                log.write('falha_deteccao=' + type(error).__name__ + ': ' + str(error) + '\n')
+                raise
+            log.write('visual_studio=' + env.get('D2_SELECTED_VS', '') + '\n')
+            for tool in ('git', 'cmake', 'ninja', 'clang-cl'):
+                log.write(tool + '=' + str(shutil.which(tool, path=env['PATH'])) + '\n')
+            return env
 
     def save(self, config):
         self.home.mkdir(parents=True, exist_ok=True)
