@@ -1,8 +1,9 @@
-"""Disgaea-themed desktop UI using bundled Tk; no third-party artwork."""
+"""Disgaea-themed desktop UI using bundled Tk and user-provided branding artwork."""
 import json
 import os
 from pathlib import Path
 import queue
+import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -10,8 +11,8 @@ import webbrowser
 
 from display_settings import DEFAULTS, RESOLUTIONS, load_settings, save_settings
 
-BG, PANEL, CARD = '#101018', '#171722', '#20202c'
-TEXT, MUTED, RED, GOLD = '#f5eee3', '#aaa6b5', '#bb3449', '#d4b879'
+BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
+TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 
 
 def run_gui(Backend, home, version, firmware_present, preview=False):
@@ -20,11 +21,21 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     app.geometry('1040x680')
     app.minsize(920, 640)
     app.configure(bg=BG)
+    assets = (Path(sys._MEIPASS) / 'windows/assets' if getattr(sys, 'frozen', False)
+              else Path(__file__).resolve().parent / 'assets')
+    logo_image = tk.PhotoImage(file=str(assets / 'logo-winport.png'))
+    icon_image = tk.PhotoImage(file=str(assets / 'launcher-icon.png'))
+    sidebar_image = icon_image.subsample(2, 2)
+    app._branding_images = (logo_image, icon_image, sidebar_image)
+    app.iconphoto(True, icon_image)
+    if os.name == 'nt':
+        app.iconbitmap(default=str(assets / 'launcher.ico'))
     style = ttk.Style(app)
     style.theme_use('clam')
     style.configure('D2.TCombobox', fieldbackground=CARD, background=CARD, foreground=TEXT,
                     arrowcolor=GOLD, padding=8)
     style.map('D2.TCombobox', fieldbackground=[('readonly', CARD)], foreground=[('readonly', TEXT)])
+    style.configure('D2.Vertical.TScrollbar', background=CARD, troughcolor=BG, arrowcolor=GOLD, bordercolor=BG, lightcolor=CARD, darkcolor=PANEL)
     style.configure('D2.Horizontal.TProgressbar', background=RED, troughcolor=CARD, bordercolor=CARD)
     app.option_add('*TCombobox*Listbox.background', CARD)
     app.option_add('*TCombobox*Listbox.foreground', TEXT)
@@ -77,9 +88,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     sidebar = tk.Frame(app, bg=PANEL, width=220, padx=22, pady=26)
     sidebar.pack(side='left', fill='y')
     sidebar.pack_propagate(False)
-    label(sidebar, 'DISGAEA', 23, GOLD, True)
-    label(sidebar, 'D2', 42, TEXT, True)
-    label(sidebar, 'A BRIGHTER DARKNESS', 9, MUTED)
+    tk.Label(sidebar, image=sidebar_image, bg=PANEL, bd=0).pack(anchor='center', pady=(0, 12))
+    label(sidebar, 'DISGAEA D2', 17, TEXT, True)
+    label(sidebar, 'WIN PORT', 12, GOLD, True)
     tk.Frame(sidebar, bg=RED, height=3).pack(fill='x', pady=(8, 25))
     main = tk.Frame(app, bg=BG, padx=28, pady=24)
     main.pack(side='right', fill='both', expand=True)
@@ -106,7 +117,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         page = tk.Frame(content, bg=BG)
         pages[name] = page
         canvas = tk.Canvas(page, bg=BG, highlightthickness=0)
-        scrollbar = tk.Scrollbar(page, command=canvas.yview, width=12, bg=PANEL, troughcolor=BG)
+        scrollbar = ttk.Scrollbar(page, command=canvas.yview, orient='vertical', style='D2.Vertical.TScrollbar')
         scrollbar.pack(side='right', fill='y')
         canvas.pack(side='left', fill='both', expand=True)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -160,20 +171,15 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         task(backend.play)
 
     page = bodies['Início']
-    label(page, 'SEU MUNDO. SUA BUILD.', 10, GOLD, True)
-    label(page, 'Disgaea D2', 30, bold=True)
-    label(page, 'A Brighter Darkness', 16, MUTED)
-    hero = tk.Canvas(page, height=90, bg=CARD, highlightthickness=0)
-    hero.pack(fill='x', pady=(4, 12))
-    hero.create_polygon(0, 90, 175, 0, 290, 0, 115, 90, fill='#542330', outline='')
-    hero.create_polygon(125, 90, 300, 0, 322, 0, 147, 90, fill=RED, outline='')
-    hero.create_text(310, 38, text='A próxima batalha começa aqui.', fill=TEXT, anchor='w', font=('Segoe UI', 12, 'bold'))
-    hero.create_text(310, 68, text='Configuração local • Saves preservados', fill=MUTED, anchor='w', font=('Segoe UI', 10))
+    label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
+    hero = tk.Canvas(page, height=278, bg=BG, highlightthickness=0)
+    hero.pack(fill='x', pady=(0, 6))
+    logo_item = hero.create_image(0, 0, image=logo_image, anchor='n')
+    hero.bind('<Configure>', lambda event: hero.coords(logo_item, event.width // 2, 0))
+    button(page, '▶  JOGAR DISGAEA D2', play, True)
     info = card(page)
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
-    label(info, 'As opções de vídeo são aplicadas ao abrir o jogo.', 10, MUTED)
-    button(page, '▶  JOGAR', play, True)
     button(page, 'Configurar vídeo', lambda: show('Vídeo'))
     button(page, 'Preparar ou importar meu jogo', lambda: show('Preparação'))
 

@@ -81,3 +81,10 @@ A clean build from the consolidated source-only candidate is still pending.
 - Ajuste de janela limitado ao PID iniciado e à classe ps3recomp_d3d12.
 - A imagem é ampliada; resolução interna e runtime permanecem iguais. Sem nova compilação para builds compatíveis.
 - Testes de persistência, geometria, ambiente, processo, GUI e Win32 sem dados do jogo. Validação real dos novos modos permanece pendente.
+
+## Launcher 0.1.9-preview
+
+- Logo WIN PORT fornecida pelo usuário na tela inicial, com transparência e proporção preservadas.
+- Imagem quadrada fornecida pelo usuário na barra lateral e como ícone da janela, executável, instalador e atalhos.
+- Paleta vermelha, violeta e laranja alinhada à arte; barra de rolagem escura.
+- Configurações de vídeo, runtime, builds e saves preservados. Sem necessidade de recompilar uma build compatível.

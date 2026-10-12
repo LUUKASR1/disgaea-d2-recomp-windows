@@ -1,5 +1,5 @@
 ; The installer owns only the launcher directory, never user game/build/save data.
-#define AppVersion "0.1.8"
+#define AppVersion "0.1.9"
 
 [Setup]
 AppId=DisgaeaD2RecompLauncherWindows
@@ -17,6 +17,7 @@ ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0
 DisableProgramGroupPage=yes
 WizardStyle=modern
+SetupIconFile=assets\launcher.ico
 CloseApplications=no
 RestartApplications=no
 InfoBeforeFile=installer-info.txt

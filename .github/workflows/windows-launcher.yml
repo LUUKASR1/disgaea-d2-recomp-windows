@@ -4,6 +4,8 @@ on:
     paths:
       - 'windows/launcher.py'
       - 'windows/launcher_gui.py'
+      - 'windows/assets/**'
+      - 'windows/test_branding.py'
       - 'windows/display_settings.py'
       - 'windows/test_display_settings.py'
       - 'windows/preview_launcher.py'
