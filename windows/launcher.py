@@ -307,6 +307,9 @@ if __name__ == '__main__':
         import capstone, construct, Crypto, tabulate, tqdm, py7zr
         if not (ROOT / 'payload/patches/SDK-WINDOWS.lock').is_file():
             raise RuntimeError('Payload ausente')
+        lock = json.loads((ROOT / 'payload/patches/SDK-WINDOWS.lock').read_text())
+        if digest(ROOT / 'payload/patches' / lock['patch']) != lock['patch_sha256']:
+            raise RuntimeError('SDK patch bytes changed during packaging')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
     else:
