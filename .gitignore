@@ -157,3 +157,6 @@
 /windows/config.local.json
 /windows/*.log
 /windows/*.zip
+!/.github/
+!/.github/workflows/
+!/.github/workflows/windows-launcher.yml

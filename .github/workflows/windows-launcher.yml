@@ -1,0 +1,37 @@
+name: Windows launcher
+on:
+  push:
+    paths:
+      - 'windows/launcher.py'
+      - 'tools/package_launcher.py'
+      - '.github/workflows/windows-launcher.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install packaging dependencies
+        run: python -m pip install -r tools/requirements-lifts.txt pyinstaller==6.22.0 py7zr==1.0.0 cmake==3.31.6 ninja==1.11.1.4
+      - name: Build source-only launcher
+        run: python tools/package_launcher.py
+      - name: Test bundled interpreter and dependencies
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path dist/DisgaeaD2Launcher/DisgaeaD2Launcher.exe
+          $process = Start-Process $exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Bundled self-test failed' }
+          if (!(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/self-test-ok.txt")) { throw 'Self-test marker missing' }
+          $probe = Join-Path $env:RUNNER_TEMP 'probe.txt'
+          $process = Start-Process $exe -ArgumentList '-c', '"import sys; print(sys.version_info[:3])"' -RedirectStandardOutput $probe -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Get-Content $probe)) { throw 'Python worker probe failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2Launcher-Windows-x64
+          path: dist/DisgaeaD2Launcher/
+          if-no-files-found: error
