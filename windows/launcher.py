@@ -305,6 +305,7 @@ if __name__ == '__main__':
         pass
     elif '--self-test' in sys.argv:
         import capstone, construct, Crypto, tabulate, tqdm, py7zr
+        import argparse, dataclasses, glob, struct, tempfile
         if not (ROOT / 'payload/patches/SDK-WINDOWS.lock').is_file():
             raise RuntimeError('Payload ausente')
         lock = json.loads((ROOT / 'payload/patches/SDK-WINDOWS.lock').read_text())
@@ -312,5 +313,16 @@ if __name__ == '__main__':
             raise RuntimeError('SDK patch bytes changed during packaging')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
+    elif '--toolchain-test' in sys.argv:
+        env = build_environment()
+        smoke = HOME / 'toolchain-test'
+        smoke.mkdir(parents=True, exist_ok=True)
+        (smoke / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(LauncherSmoke LANGUAGES C)\nfind_package(Python3 COMPONENTS Interpreter REQUIRED)\nadd_executable(smoke hello.c)\n')
+        (smoke / 'hello.c').write_text('int main(void) { return 0; }\n')
+        backend = Backend(lambda text: None)
+        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja', '-DCMAKE_C_COMPILER=clang-cl', '-DPython3_EXECUTABLE=' + sys.executable], env)
+        backend.run(['cmake', '--build', smoke / 'build'], env)
+        backend.run([smoke / 'build/smoke.exe'])
+        (HOME / 'toolchain-test-ok.txt').write_text('OK')
     else:
         gui()

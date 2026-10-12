@@ -30,6 +30,11 @@ jobs:
           $probe = Join-Path $env:RUNNER_TEMP 'probe.txt'
           $process = Start-Process $exe -ArgumentList '-c', '"import sys; print(sys.version_info[:3])"' -RedirectStandardOutput $probe -Wait -PassThru
           if ($process.ExitCode -ne 0 -or !(Get-Content $probe)) { throw 'Python worker probe failed' }
+          $process = Start-Process $exe -ArgumentList '--toolchain-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/toolchain-test-ok.txt")) {
+            Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log"
+            throw 'Bundled CMake, Ninja, compiler environment or Python discovery failed'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: DisgaeaD2Launcher-Windows-x64
