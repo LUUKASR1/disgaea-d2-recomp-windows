@@ -136,7 +136,12 @@ class Backend:
                 relative = Path(name.replace('\\', '/'))
                 if relative.is_absolute() or '..' in relative.parts or ':' in name:
                     raise RuntimeError('Caminho invalido no auxiliar baixado.')
-            z.extractall(staging)
+        # Official RPCS3 builds use BCJ2, which py7zr cannot decompress.
+        extractor = self.home / '7zr.exe'
+        if not extractor.is_file():
+            download('https://www.7-zip.org/a/7zr.exe', extractor,
+                     '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282')
+        self.run([extractor, 'x', archive, '-o' + str(staging), '-y'], timeout=180)
         if not (staging / 'rpcs3.exe').is_file():
             raise RuntimeError('Layout do auxiliar RPCS3 nao reconhecido.')
         staging.rename(directory)
@@ -298,6 +303,11 @@ def gui():
 
 
 def main():
+    if os.name == 'nt':
+        import ctypes
+        # External compilers/helpers must use their own DLLs, not frozen Python's.
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
+        ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
     import multiprocessing
     multiprocessing.freeze_support()
     if len(sys.argv) > 2 and sys.argv[1] == '-c':
@@ -328,6 +338,11 @@ def main():
         backend.run(['cmake', '--build', smoke / 'build'], env, timeout=60)
         backend.run([smoke / 'build/smoke.exe'], timeout=15)
         (HOME / 'toolchain-test-ok.txt').write_text('OK')
+    elif '--auxiliary-test' in sys.argv:
+        Backend(lambda text: None).helper()
+        (HOME / 'auxiliary-test-ok.txt').write_text('OK')
+    elif len(sys.argv) > 1:
+        raise ValueError('Argumentos internos nao reconhecidos: ' + repr(sys.argv[1:]))
     else:
         gui()
 

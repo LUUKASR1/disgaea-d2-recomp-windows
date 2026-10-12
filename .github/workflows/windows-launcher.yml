@@ -22,20 +22,37 @@ jobs:
       - name: Build source-only launcher
         run: python tools/package_launcher.py
       - name: Test bundled interpreter and dependencies
-        timeout-minutes: 4
+        timeout-minutes: 6
         shell: pwsh
         run: |
           $exe = Resolve-Path dist/DisgaeaD2Launcher/DisgaeaD2Launcher.exe
-          $process = Start-Process $exe -ArgumentList '--self-test' -Wait -PassThru
+          function Run-Launcher($arguments) {
+            $process = Start-Process $exe -ArgumentList $arguments -PassThru
+            if (!$process.WaitForExit(180000)) {
+              Stop-Process -Id $process.Id -Force
+              Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log" -ErrorAction SilentlyContinue
+              throw 'Launcher child timed out'
+            }
+            $process.Refresh()
+            return $process
+          }
+          $process = Run-Launcher '--self-test'
           if ($process.ExitCode -ne 0) { throw 'Bundled self-test failed' }
           if (!(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/self-test-ok.txt")) { throw 'Self-test marker missing' }
           $probe = Join-Path $env:RUNNER_TEMP 'probe.txt'
-          $process = Start-Process $exe -ArgumentList '-c', '"import sys; print(sys.version_info[:3])"' -RedirectStandardOutput $probe -Wait -PassThru
+          $process = Start-Process $exe -ArgumentList '-c', '"import sys; print(sys.version_info[:3])"' -RedirectStandardOutput $probe -PassThru
+          if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Worker timed out' }
+          $process.Refresh()
           if ($process.ExitCode -ne 0 -or !(Get-Content $probe)) { throw 'Python worker probe failed' }
-          $process = Start-Process $exe -ArgumentList '--toolchain-test' -Wait -PassThru
+          $process = Run-Launcher '--toolchain-test'
           if ($process.ExitCode -ne 0 -or !(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/toolchain-test-ok.txt")) {
             Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log"
             throw 'Bundled CMake, Ninja, compiler environment or Python discovery failed'
+          }
+          $process = Run-Launcher '--auxiliary-test'
+          if ($process.ExitCode -ne 0 -or !(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/auxiliary-test-ok.txt")) {
+            Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log"
+            throw 'Official helper download/extraction failed'
           }
       - uses: actions/upload-artifact@v4
         with:
