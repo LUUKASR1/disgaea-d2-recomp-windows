@@ -347,16 +347,15 @@ def main():
     elif '--auxiliary-test' in sys.argv:
         backend = Backend(lambda text: None)
         helper = backend.helper()
-        # Start headless RPCS3 without any game input: a missing path must fail
-        # normally, rather than fail while opening its log directory.
-        result = subprocess.run([str(helper), '--decrypt', str(HOME / 'missing-probe.bin')],
+        # --help exercises the real log setup without game/firmware inputs.
+        # An invalid --decrypt input triggers an upstream teardown assertion
+        # on a fresh firmware-free RPCS3 profile, unrelated to log creation.
+        result = subprocess.run([str(helper), '--help'],
                                 cwd=helper.parent, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
         output = result.stdout.decode('utf-8', errors='replace')
-        # RPCS3 reattaches its console for --decrypt, so its normal message
-        # may bypass our redirected stdout. Exit 1 is the missing-file result.
-        if 'Log file open failed' in output or result.returncode != 1:
+        if 'Log file open failed' in output or result.returncode != 0:
             raise RuntimeError('Headless auxiliary startup failed (exit ' + str(result.returncode) + '): ' + output[-2000:])
         if not (helper.parent / 'log/RPCS3.log').is_file():
             raise RuntimeError('Auxiliary did not create its log file')
