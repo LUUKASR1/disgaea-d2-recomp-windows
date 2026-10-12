@@ -72,3 +72,12 @@ Android/Odin 2 Portal support is future work.
 
 Save/reopen/load confirmed manually by LUUKASR1 after the close correction.
 A clean build from the consolidated source-only candidate is still pending.
+
+## Launcher 0.1.8-preview
+
+- Interface personalizada em Tk: abas Início, Vídeo, Preparação e Arquivos e suporte.
+- Resolução de exibição em janela, tela cheia sem bordas e VSync no launcher.
+- Preferências validadas e persistidas separadamente; opção de restaurar padrão.
+- Ajuste de janela limitado ao PID iniciado e à classe ps3recomp_d3d12.
+- A imagem é ampliada; resolução interna e runtime permanecem iguais. Sem nova compilação para builds compatíveis.
+- Testes de persistência, geometria, ambiente, processo, GUI e Win32 sem dados do jogo. Validação real dos novos modos permanece pendente.

@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.7-preview'
+VERSION = '0.1.8-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
@@ -243,7 +243,7 @@ class Backend:
         self.home = Path(home)
         self.notify = notify
 
-    def run(self, args, env=None, timeout=None, cwd=None, label=None, log_path=None):
+    def run(self, args, env=None, timeout=None, cwd=None, label=None, log_path=None, on_started=None):
         self.home.mkdir(parents=True, exist_ok=True)
         log = Path(log_path) if log_path else self.home / 'preparacao.log'
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -258,7 +258,12 @@ class Backend:
             record('comando=' + subprocess.list2cmdline(args))
             record('pasta=' + str(cwd or Path.cwd()))
             try:
-                result = subprocess.run(args, env=env, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                if on_started is None:
+                    result = subprocess.run(args, env=env, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                else:
+                    with subprocess.Popen(args, env=env, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)) as result:
+                        on_started(result)
+                        result.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 record('resultado=timeout limite=' + str(timeout) + ' segundos')
                 raise RuntimeError(label + ' excedeu o tempo limite. Consulte ' + str(log)) from None
@@ -475,11 +480,32 @@ class Backend:
         sys.path.insert(0, str(ROOT / 'windows'))
         from iniciar_build import launch_environment
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())
-        env = launch_environment(profile, config, os.environ)
-        self.notify('Jogo em execucao.')
+        from display_settings import load_settings, display_environment, configure_game_window
+        settings = load_settings(self.home)
+        env = display_environment(launch_environment(profile, config, os.environ), settings)
+        self.notify('Jogo em execução.')
+        stop = threading.Event()
+        workers = []
+        def on_started(process):
+            def configure():
+                try:
+                    configure_game_window(process, settings, self.notify, stop)
+                except Exception as error:
+                    message = 'Não foi possível ajustar a janela: ' + str(error)
+                    self.notify(message)
+                    with (self.home / 'preparacao.log').open('a', encoding='utf-8') as output:
+                        output.write(datetime.now().isoformat(timespec='seconds') + ' ' + message + '\n')
+            thread = threading.Thread(target=configure, daemon=True)
+            workers.append(thread)
+            thread.start()
         log = self.home / 'logs' / ('jogo-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
-        self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo,
-                 label='Executar jogo nativo', log_path=log)
+        try:
+            self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo,
+                     label='Executar jogo nativo', log_path=log, on_started=on_started)
+        finally:
+            stop.set()
+            for thread in workers:
+                thread.join(timeout=1)
         self.notify('Jogo encerrado.')
 
     def install_tools(self):
@@ -503,125 +529,8 @@ class Backend:
 
 
 def gui():
-    import tkinter as tk
-    from tkinter import ttk, filedialog, messagebox
-    app = tk.Tk()
-    app.title('Disgaea D2 — ' + VERSION + ' — Preparar e Jogar')
-    app.geometry('800x680')
-    initial_folder = ''
-    try:
-        initial_folder = json.loads((HOME / 'build-atual.json').read_text(encoding='utf-8')).get('game_root', '')
-    except (OSError, ValueError):
-        pass
-    folder = tk.StringVar(value=initial_folder)
-    firmware = tk.StringVar()
-    firmware_text = tk.StringVar(value='Firmware: instalado no auxiliar local.' if firmware_present(HOME / 'auxiliar-rpcs3') else 'Firmware: selecione um PUP ou importe do seu RPCS3.')
-    status = tk.StringVar(value='Selecione seu jogo extraido e a atualizacao US 1.40.')
-    packages = []
-    events = queue.Queue()
-    busy = False
-    backend = Backend(lambda msg: events.put(('status', msg)))
-    frame = ttk.Frame(app, padding=20)
-    frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text='Disgaea D2 para Windows', font=('Segoe UI', 20)).pack(anchor='w')
-    ttk.Label(frame, text='A primeira preparacao gera a build no seu PC. Depois, basta clicar em Jogar.', wraplength=690).pack(anchor='w', pady=12)
-    ttk.Entry(frame, textvariable=folder).pack(fill='x')
-    def choose_folder():
-        selected = filedialog.askdirectory(title='Pasta do jogo ou PS3_GAME')
-        if selected:
-            folder.set(selected)
-    def choose_pkgs():
-        selected = filedialog.askopenfilenames(title='Atualizacao 1.40 e DLCs da sua copia', filetypes=[('Pacotes PS3', '*.pkg')])
-        if selected:
-            packages[:] = selected
-            pkg_label.configure(text='Pacotes: ' + ', '.join(Path(p).name for p in selected))
-    buttons = []
-    button = ttk.Button(frame, text='Selecionar jogo extraido', command=choose_folder)
-    button.pack(anchor='w', pady=6)
-    buttons.append(button)
-    def choose_firmware():
-        selected = filedialog.askopenfilename(title='Firmware oficial PS3UPDAT.PUP', filetypes=[('Firmware PS3', '*.PUP *.pup')])
-        if selected:
-            firmware.set(selected)
-            firmware_text.set('Firmware selecionado: ' + selected)
-    def import_firmware():
-        selected = filedialog.askdirectory(title='Pasta do RPCS3 ou dev_flash com firmware instalado')
-        if selected:
-            firmware.set(selected)
-            firmware_text.set('Importar firmware de: ' + selected)
-    for title, action in [('Selecionar firmware PUP', choose_firmware), ('Importar firmware do meu RPCS3', import_firmware)]:
-        button = ttk.Button(frame, text=title, command=action)
-        button.pack(anchor='w', pady=3)
-        buttons.append(button)
-    ttk.Label(frame, textvariable=firmware_text, wraplength=750).pack(anchor='w', pady=5)
-    def firmware_site():
-        import webbrowser
-        webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/')
-    ttk.Button(frame, text='Pagina oficial do firmware PS3', command=firmware_site).pack(anchor='w', pady=3)
-    button = ttk.Button(frame, text='Selecionar atualizacao / DLCs (.pkg)', command=choose_pkgs)
-    button.pack(anchor='w', pady=6)
-    buttons.append(button)
-    pkg_label = ttk.Label(frame, text='Nenhum PKG selecionado.', wraplength=690)
-    pkg_label.pack(anchor='w', pady=6)
-    def task(operation):
-        nonlocal busy
-        if busy:
-            return
-        busy = True
-        for button in buttons:
-            button.configure(state='disabled')
-        def execute():
-            try:
-                operation()
-            except Exception as error:
-                events.put(('error', str(error)))
-            finally:
-                events.put(('done', ''))
-        threading.Thread(target=execute, daemon=False).start()
-    def install():
-        if messagebox.askokcancel('Ferramentas da primeira preparacao', 'Instalar Git e ferramentas C++ da Microsoft? O download pode ocupar varios GB. Podem aparecer termos e solicitacoes do instalador oficial.'):
-            task(backend.install_tools)
-    def prepare():
-        selected_game, selected_packages, selected_firmware = folder.get(), list(packages), firmware.get()
-        def operation():
-            backend.prepare(selected_game, selected_packages, selected_firmware)
-            events.put(('prepared', ''))
-        task(operation)
-    def open_logs():
-        logs = HOME / 'logs'
-        logs.mkdir(parents=True, exist_ok=True)
-        os.startfile(logs)
-    for title, action in [('Instalar ferramentas', install), ('Preparar meu jogo', prepare), ('Jogar', lambda: task(backend.play)), ('Abrir pasta local / saves', lambda: (HOME.mkdir(parents=True, exist_ok=True), os.startfile(HOME))), ('Abrir logs do jogo', open_logs)]:
-        button = ttk.Button(frame, text=title, command=action)
-        button.pack(anchor='w', pady=3)
-        buttons.append(button)
-    ttk.Label(frame, textvariable=status, wraplength=690).pack(anchor='w', pady=12)
-    def poll():
-        nonlocal busy
-        while not events.empty():
-            kind, message = events.get()
-            if kind == 'done':
-                busy = False
-                for button in buttons:
-                    button.configure(state='normal')
-            elif kind == 'prepared':
-                firmware.set('')
-                packages.clear()
-                pkg_label.configure(text='Pacotes importados. Nao precisam ser selecionados novamente.')
-                firmware_text.set('Firmware: instalado no auxiliar local.' if firmware_present(HOME / 'auxiliar-rpcs3') else 'Build existente pronta; firmware necessario somente para nova importacao.')
-            else:
-                status.set(message)
-                if kind == 'error':
-                    messagebox.showerror('Preparacao / jogo', message)
-        app.after(200, poll)
-    def close():
-        if busy:
-            messagebox.showinfo('Aguarde', 'Encerre o jogo ou aguarde a preparacao antes de fechar o aplicativo.')
-        else:
-            app.destroy()
-    app.protocol('WM_DELETE_WINDOW', close)
-    poll()
-    app.mainloop()
+    from launcher_gui import run_gui
+    run_gui(Backend, HOME, VERSION, firmware_present)
 
 
 def main():

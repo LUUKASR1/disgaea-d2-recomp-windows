@@ -140,3 +140,29 @@ hashear os grandes arquivos. Nao comprova integridade de todos os assets,
 conteudo completo da campanha ou autenticidade dos arquivos. Builds compativeis
 e saves continuam preservados. Essa versao nao exige recompilacao de uma build
 existente cujo runtime permaneceu igual.
+
+## Interface personalizada e vídeo — 0.1.8
+
+As abas Início, Vídeo, Preparação e Arquivos e suporte separam as tarefas do
+launcher. A aba Vídeo permite escolher Janela ou Tela cheia sem bordas,
+resolução de exibição de 1280x720 até 3840x2160 e VSync. As preferências são
+salvas separadamente em `launcher-settings.json` na pasta local do aplicativo.
+Use Salvar configurações ou clique em Jogar para guardar as opções. Elas são
+aplicadas na próxima abertura do jogo; não durante uma sessão ativa.
+
+Em janela, tamanhos maiores que a área disponível são reduzidos para caber,
+preservando a proporção 16:9. Em tela cheia sem bordas, usa o tamanho do monitor
+em que a janela do jogo apareceu. Não altera o modo de vídeo do Windows.
+**A resolução de exibição amplia a imagem; a resolução interna do runtime
+continua original. Não é renderização nativa em 1080p/1440p/4K.**
+
+VSync usa a opção existente D2_PRESENT_INTERVAL. O padrão permanece desligado,
+como no perfil anteriormente validado; ligar pode alterar o ritmo de quadros.
+Restaurar padrão retorna a 1280x720 em janela com VSync desligado. O ajuste da
+janela só alcança a classe D3D12 do processo iniciado pelo launcher. Se não
+conseguir encontrá-la ou ajustar sua geometria, avisa e deixa o jogo executar.
+
+Essa versão mantém runtime, patch, arquivos do jogo e saves. Não exige
+recompilação de uma build compatível. Os novos modos precisam de confirmação
+no PC do usuário; testes de janela sintética não comprovam imagem/performance
+no jogo real.

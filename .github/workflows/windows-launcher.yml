@@ -3,6 +3,10 @@ on:
   push:
     paths:
       - 'windows/launcher.py'
+      - 'windows/launcher_gui.py'
+      - 'windows/display_settings.py'
+      - 'windows/test_display_settings.py'
+      - 'windows/preview_launcher.py'
       - 'windows/perfil.json'
       - 'windows/test_launcher.py'
       - 'windows/installer.iss'
@@ -28,7 +32,14 @@ jobs:
       - name: Install packaging dependencies
         run: python -m pip install -r tools/requirements-lifts.txt pyinstaller==6.22.0 py7zr==1.0.0 cmake==3.31.6 ninja==1.11.1.4
       - name: Test preparation safeguards without game files
-        run: python -m unittest discover -s windows -p test_launcher.py -v
+        run: python -m unittest discover -s windows -p 'test_*.py' -v
+      - name: Capture actual launcher UI with empty temporary profile
+        run: python windows/preview_launcher.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2Launcher-UI-Preview
+          path: launcher-previews/
+          if-no-files-found: error
       - name: Build source-only launcher
         run: python tools/package_launcher.py
       - name: Initialize installed C++ toolchain for CI
