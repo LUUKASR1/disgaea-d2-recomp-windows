@@ -139,7 +139,7 @@ class Backend:
         # Official RPCS3 builds use BCJ2, which py7zr cannot decompress.
         extractor = self.home / '7zr.exe'
         if not extractor.is_file():
-            download('https://www.7-zip.org/a/7zr.exe', extractor,
+            download('https://github.com/ip7z/7zip/releases/download/26.04/7zr.exe', extractor,
                      '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282')
         self.run([extractor, 'x', archive, '-o' + str(staging), '-y'], timeout=180)
         if not (staging / 'rpcs3.exe').is_file():
@@ -217,6 +217,9 @@ class Backend:
             [winget, 'install', '--id', 'Git.Git', '--exact', '--source', 'winget'],
             [winget, 'install', '--id', 'Microsoft.VisualStudio.2022.BuildTools', '--exact', '--source', 'winget', '--override', '--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --includeRecommended'],
         ]
+        installed_git = shutil.which('git') or (Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Git/cmd/git.exe').is_file()
+        if installed_git:
+            commands.pop(0)
         for command in commands:
             # Show the official installer console so terms/prompts are actionable.
             result = subprocess.run(command, creationflags=subprocess.CREATE_NEW_CONSOLE)
