@@ -293,7 +293,7 @@ def gui():
     app.mainloop()
 
 
-if __name__ == '__main__':
+def main():
     import multiprocessing
     multiprocessing.freeze_support()
     if len(sys.argv) > 2 and sys.argv[1] == '-c':
@@ -320,9 +320,21 @@ if __name__ == '__main__':
         (smoke / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(LauncherSmoke LANGUAGES C)\nfind_package(Python3 COMPONENTS Interpreter REQUIRED)\nadd_executable(smoke hello.c)\n')
         (smoke / 'hello.c').write_text('int main(void) { return 0; }\n')
         backend = Backend(lambda text: None)
-        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja', '-DCMAKE_C_COMPILER=clang-cl', '-DPython3_EXECUTABLE=' + sys.executable], env)
-        backend.run(['cmake', '--build', smoke / 'build'], env)
-        backend.run([smoke / 'build/smoke.exe'])
+        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja', '-DCMAKE_C_COMPILER=clang-cl', '-DPython3_EXECUTABLE=' + sys.executable], env, timeout=60)
+        backend.run(['cmake', '--build', smoke / 'build'], env, timeout=60)
+        backend.run([smoke / 'build/smoke.exe'], timeout=15)
         (HOME / 'toolchain-test-ok.txt').write_text('OK')
     else:
         gui()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        # Worker failures must exit, never open a hidden PyInstaller error dialog.
+        import traceback
+        HOME.mkdir(parents=True, exist_ok=True)
+        with (HOME / 'preparacao.log').open('a', encoding='utf-8') as log:
+            traceback.print_exc(file=log)
+        sys.exit(1)

@@ -11,6 +11,7 @@ permissions:
 jobs:
   package:
     runs-on: windows-2022
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +22,7 @@ jobs:
       - name: Build source-only launcher
         run: python tools/package_launcher.py
       - name: Test bundled interpreter and dependencies
+        timeout-minutes: 4
         shell: pwsh
         run: |
           $exe = Resolve-Path dist/DisgaeaD2Launcher/DisgaeaD2Launcher.exe
