@@ -16,6 +16,22 @@ Também quero explorar uma versão para portáteis Android, como o **AYN Odin 2 
 
 Este trabalho parte do projeto original de **Sean13128** e do **ps3recomp**, com os devidos créditos aos seus autores e colaboradores. Minha contribuição aqui está na adaptação para Windows, nos ajustes, no launcher e nos testes, com auxílio de IA.
 
+## About the project
+
+This project grew out of my love for Disgaea — especially **Disgaea D2: A Brighter Darkness**. This is my first adventure into game recompilation with the help of AI. Recomp-AI? Vibe coding? I'm still figuring out what to call it, but I'm learning a lot along the way.
+
+I spent pretty much the whole of Sunday working on this. I hadn't planned to spend the entire day on it, but the progress was so satisfying that I couldn't stop. At least I have something to show for it! 😅
+
+Along the way, I ran into several challenges: a white screen, FPS drops in Castle Hallway and during Mothman's basic attack, texture issues, and other graphical glitches. It took a lot of work from me and our dear AI to find the causes and test the fixes. We managed to resolve many of these issues, and I'm continuing to improve the stability and performance of the Windows version.
+
+Since I have a job and other responsibilities, I'll update the project regularly as my time allows. If you'd like to try it out, report issues, or contribute improvements, you're more than welcome. Any help moving the project forward is appreciated!
+
+I'd also like to explore a version for Android handhelds such as the **AYN Odin 2 Portal** and the **AYN Thor**. That's a future goal: first, I want to get the Windows version into a satisfactory state. After that, I plan to work on bringing it to handhelds as soon as I can.
+
+This work builds on the original project by **Sean13128** and on **ps3recomp**, with full credit to their authors and contributors. My contribution here focuses on the Windows adaptation, fixes, launcher, and testing, with assistance from AI.
+
+## Technical overview
+
 Experimental Windows x64 port of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). Current target: US game update 1.40, Direct3D 12, clang-cl. Android is not supported by this candidate yet.
 
 **Source-only candidate; no game executable, generated game code, game data, updates/DLC, keys or saves are distributed.** Generate and compile locally from your own copy. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
