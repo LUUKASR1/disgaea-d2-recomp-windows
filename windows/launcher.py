@@ -78,6 +78,11 @@ def completed_dlc_install(directory, package, previous_log_sha, returncode):
             re.escape(expected) + r' \(title_id=NPUB31321, title=[^\r\n]*, version=01\.00\)\.', text):
         return False
     entries = re.findall(r"PKG: Entry: type=(0x[0-9A-Fa-f]+), name='([^'\r\n]+)'", text)
+    directories = {'USRDIR', 'USRDIR/Data', 'USRDIR/Data/flag'}
+    if any((int(kind, 16) & 0xff) not in (3, 4) or
+           ((int(kind, 16) & 0xff) == 4 and name not in directories)
+           for kind, name in entries):
+        return False
     files = {name for kind, name in entries if int(kind, 16) & 0xff == 3}
     flags = {name for name in files if re.fullmatch(r'USRDIR/Data/flag/flag\d{8}\.edat', name)}
     metadata = {'PS3LOGO.DAT', 'PARAM.SFO', 'ICON0.PNG', 'PIC1.PNG'}

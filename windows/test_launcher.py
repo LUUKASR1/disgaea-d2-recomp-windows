@@ -50,6 +50,8 @@ class PreparationTests(unittest.TestCase):
             for text in [success.replace('NPUB31321', 'NPUB00000'), success.replace('01.00', '01.01'),
                          success.replace('Successfully installed', 'Failed to install'),
                          success + "PKG: Entry: type=0x80000003, name='../outside.edat'\n",
+                         success + "PKG: Entry: type=0x80000009, name='unknown.bin'\n",
+                         success + "PKG: Entry: type=0x80000004, name='../outside'\n",
                          success + "PKG: Entry: type=0x80000003, name='USRDIR/EBOOT.BIN'\n"]:
                 log.write_text(text)
                 self.assertFalse(check())
