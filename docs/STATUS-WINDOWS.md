@@ -1,5 +1,17 @@
 # Candidata Windows 0.1 — 2026-10-12
 
+## Estado atual — launcher 0.1.7, 2026-10-12
+
+- Launcher 0.1.7-preview publicado com instalador e ZIP portátil. O usuário confirmou que a atualização funcionou, após a orientação de reutilizar a build existente.
+- Preparação automática em pasta vazia confirmada com a 0.1.4 e compiladores já instalados; geração e compilação 199/199. Save/load e DLCs reconhecidos nessa build; reimportação automática do pacote observado confirmada com a 0.1.5.
+- Segundo PC: compilação 199/199 com Clang 19.1.5 e a 0.1.6. Jogo, save/load, DLCs e fechamento confirmados manualmente após restaurar a pasta SOUND da cópia do usuário. Nenhum FPS informado nesse PC.
+- CI Windows da 0.1.7: 21 testes aprovados, dependências empacotadas e testes de instalação/reinstalação/desinstalação preservando arquivos de save/configuração de teste. Esses testes automatizados não executam o jogo.
+- Desempenho mais recente relatado no PC principal: 55–60 FPS, sem captura de frametimes. Não comprova 60 FPS travados, todas as batalhas ou campanha inteira.
+- Pendências: instalação das ferramentas observada do início ao fim num Windows completamente limpo; validação individual de DLCs/campanha; benchmarks controlados; Android.
+
+As seções abaixo preservam o histórico de testes. Declarações de pendência e resultados antigos descrevem cada etapa na época; o resumo acima apresenta o estado atual.
+
+
 Base: Sean13128/disgaea-d2-recomp, commit
 `340cbed43cf8427005bcfcbf537e65190161ead8` na preparação original.
 A coleta deve confirmar os commits e os arquivos atuais do computador.
@@ -199,3 +211,12 @@ sem validar hashes ou todos os arquivos da campanha. A instalacao automatica
 de ferramentas num Windows inteiramente limpo nao foi observada do inicio ao
 fim por logs; o diagnostico confirmou ferramentas instaladas no segundo PC.
 Android permanece pendente.
+
+## Atualização do launcher 0.1.7 confirmada — 2026-10-12
+
+Após receber o instalador publicado e as instruções para atualizar e clicar em
+Jogar sem recompilar, o usuário respondeu "funcionou". Isso confirma manualmente
+o funcionamento da atualização na instalação existente. Não é um teste novo de
+primeira preparação, desempenho ou detecção de arquivos ausentes no PC real.
+O bloqueio por arquivos ausentes/vazios foi coberto por fixtures nos 21 testes
+aprovados localmente e na CI Windows.

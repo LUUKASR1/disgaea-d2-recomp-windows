@@ -38,10 +38,13 @@ o instalador e desinstalador nao removem. Git, compiladores e o auxiliar nao
 sao desinstalados com o launcher. O atalho de desktop e opcional.
 
 Para usar a versao portatil, extraia a nova versao para outra pasta. Preserve
-`%LOCALAPPDATA%\DisgaeaD2Recomp`: ela contem a build e os saves. Clique em
-**Preparar meu jogo**, sem selecionar PKGs/firmware novamente, para reconhecer
-a build existente. As fontes do runtime e o ELF local sao verificados antes do
-reuso; mudancas no runtime exigem uma nova build, em outra pasta.
+`%LOCALAPPDATA%\DisgaeaD2Recomp`: ela contem a build e os saves. Quando o
+launcher mostra uma build pronta, clique em **Jogar** diretamente. Se precisar
+reconhecer/verificar a build para preparacao, use **Preparar meu jogo** sem
+selecionar PKGs/firmware novamente. Essa etapa verifica as fontes do runtime e
+o ELF local antes do reuso; mudancas no runtime exigem nova build, em outra pasta.
+A atualizacao de uma build compativel para o launcher 0.1.7 foi confirmada pelo
+usuario, sem necessidade de repetir a preparacao.
 
 Uma compilacao interrompida apos a geracao completa pode ser retomada. O launcher
 verifica hashes dos arquivos gerados e o SDK antes de continuar. Geracao parcial

@@ -2,6 +2,38 @@
 
 # Disgaea D2 static recompilation — Windows candidate
 
+## Começar no Windows
+
+Baixe o instalador ou a versão portátil em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). O launcher atual é o **0.1.7-preview**. A primeira preparação gera e compila o jogo no seu computador; as sessões seguintes reutilizam essa build.
+
+Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313**, do PKG de atualização **US 1.40** e de firmware PS3 (`PS3UPDAT.PUP` ou uma instalação existente para importar). DLCs são opcionais e precisam dos seus próprios arquivos e licenças. A entrada direta de ISO ainda não está implementada.
+
+1. Instale `DisgaeaD2Launcher-Setup-Windows-x64.exe` e abra o launcher. Se usar o ZIP portátil, extraia tudo e mantenha a pasta `_internal` junto do executável.
+2. Use **Instalar ferramentas** se ainda precisar de Git, Visual Studio com C++, SDK Windows e LLVM. Reinicie o launcher após instalar.
+3. Selecione o firmware ou importe-o do seu RPCS3. Selecione a pasta do jogo (ou `PS3_GAME`) e a atualização 1.40; inclua seus PKGs de DLC, se desejar.
+4. Clique em **Preparar meu jogo** e aguarde. A primeira preparação requer internet para obter as dependências e pode demorar.
+5. Clique em **Jogar**. Nas próximas sessões, use esse botão diretamente.
+
+**Já tem uma build funcionando?** Feche o jogo e o launcher, instale a atualização do launcher e clique em **Jogar**. Na atualização para 0.1.7, a build compatível e os saves são preservados; não é necessário recompilar ou importar novamente os pacotes. Não apague `%LOCALAPPDATA%\DisgaeaD2Recomp`.
+
+Se o launcher apontar um arquivo ausente ou vazio, restaure-o da sua própria cópia extraída. A verificação cobre 18 arquivos de início e não substitui uma conferência completa dos dados. Consulte o [guia do launcher](docs/LAUNCHER-WINDOWS.md) para os detalhes.
+
+## Getting started on Windows
+
+Download the installer or portable package from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). The current launcher is **0.1.7-preview**. The first preparation generates and compiles the game on your computer; later sessions reuse that build.
+
+You need your own **extracted** US game copy (**BLUS31313**), the **US 1.40** update PKG, and PS3 firmware (`PS3UPDAT.PUP` or an existing installation to import). DLCs are optional and require your own files and licenses. Direct ISO input is not implemented yet.
+
+1. Install `DisgaeaD2Launcher-Setup-Windows-x64.exe` and open the launcher. For the portable ZIP, extract everything and keep `_internal` next to the executable.
+2. Use **Instalar ferramentas** if you still need Git, Visual Studio with C++, the Windows SDK, and LLVM. Restart the launcher after installation.
+3. Select firmware or import it from your RPCS3 installation. Select the game folder (or `PS3_GAME`) and the 1.40 update; add your DLC PKGs if desired.
+4. Click **Preparar meu jogo** and wait. The first preparation needs internet access to obtain dependencies and may take some time.
+5. Click **Jogar**. Use that button directly in subsequent sessions.
+
+**Already have a working build?** Close the game and launcher, install the launcher update, and click **Jogar**. Updating to 0.1.7 preserves your compatible build and saves; no recompilation or package reimport is needed. Do not delete `%LOCALAPPDATA%\DisgaeaD2Recomp`.
+
+If the launcher reports a missing or empty file, restore it from your own extracted copy. This check covers 18 startup files and does not validate all game data. See the [launcher guide](docs/LAUNCHER-WINDOWS.md) for details.
+
 ## Sobre o projeto
 
 Este projeto nasceu da minha paixão por Disgaea — especialmente por **Disgaea D2: A Brighter Darkness**. É a minha primeira aventura no mundo da recompilação de jogos com ajuda de IA. Recomp-IA? Vibe coding? Ainda estou descobrindo o nome, mas estou aprendendo bastante no caminho.
@@ -34,9 +66,11 @@ This work builds on the original project by **Sean13128** and on **ps3recomp**, 
 
 Experimental Windows x64 port of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). Current target: US game update 1.40, Direct3D 12, clang-cl. Android is not supported by this candidate yet.
 
-**Source-only candidate; no game executable, generated game code, game data, updates/DLC, keys or saves are distributed.** Generate and compile locally from your own copy. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+**The repository contains source code, and releases provide the launcher and its dependencies. No game executable, generated game code, game data, updates/DLC, keys or saves are distributed.** Generate and compile the game locally from your own copy. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Tested by the user on Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM. Audio and effects were normal; remaining Mothman attack drops prevent a stable 60 FPS claim. The Windows close correction was verified on the user's PC: process exit code 0, observed within approximately 0.1 seconds after window closure. No active savedata operation was observed during that close. Save, close, reopen and load were manually confirmed by LUUKASR1. A clean Windows build is still pending; this is a development candidate.
+Automatic preparation in an empty application folder was confirmed on the main PC using already installed compilers: firmware, US 1.40 update, code generation, and all 199 build steps completed. DLC import and save/load were also confirmed in that build. The second PC completed compilation with Clang 19.1.5; after restoring missing audio files, the user confirmed gameplay, save/load, DLCs, and closing. The user also confirmed that the 0.1.7 launcher update works. Windows CI passed 21 tests and installer/reinstall/uninstall checks with preservation of test saves and configuration.
+
+On the main PC (Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM), the user reported 55–60 FPS in a later test, without a controlled frametime capture. No FPS measurement was reported for the second PC. This remains experimental: locked 60 FPS, the entire campaign, every DLC, and the full tool installation process on a completely clean Windows system have not been validated. Android is a future goal. See the [dated test history](docs/STATUS-WINDOWS.md).
 
 - [Windows GUI launcher: select your extracted game and update PKGs](docs/LAUNCHER-WINDOWS.md) (experimental; first-run local compilation)
 - [Windows build and run](docs/WINDOWS.md)
@@ -48,9 +82,11 @@ Tested by the user on Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM. Audio and effects 
 
 Adaptação experimental para Windows x64 do projeto [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), baseada no [ps3recomp](https://github.com/sp00nznet/ps3recomp). O alvo atual é a versão americana do jogo com a atualização 1.40, usando Direct3D 12 e clang-cl. Esta versão candidata ainda não oferece suporte a Android.
 
-**Esta versão candidata distribui apenas o código-fonte; não inclui o executável do jogo, código gerado a partir do jogo, dados do jogo, atualizações/DLCs, chaves ou saves.** Gere e compile localmente a partir da sua própria cópia. Consulte [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+**O repositório contém o código-fonte, e as releases oferecem o launcher e suas dependências. Não são distribuídos o executável do jogo, código gerado a partir do jogo, dados do jogo, atualizações/DLCs, chaves ou saves.** Gere e compile o jogo localmente a partir da sua própria cópia. Consulte [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Testada pelo usuário em um Ryzen 7 5700X3D / RTX 5070 / 32 GB de RAM. O áudio e os efeitos funcionaram normalmente; as quedas de desempenho ainda observadas no ataque do Mothman impedem afirmar que o jogo mantém 60 FPS estáveis. A correção do fechamento no Windows foi verificada no PC do usuário: o processo terminou com código de saída 0, aproximadamente 0,1 segundo após fechar a janela. Nenhuma operação de salvamento estava ativa naquele fechamento. Salvar, fechar, reabrir e carregar foram confirmados manualmente por LUUKASR1. A validação de uma compilação limpa no Windows ainda está pendente; esta é uma versão candidata em desenvolvimento.
+A preparação automática numa pasta vazia do aplicativo foi confirmada no PC principal, usando compiladores já instalados: firmware, atualização US 1.40, geração de código e as 199 etapas de compilação foram concluídos. A importação de DLCs e o save/load também foram confirmados nessa build. O segundo PC concluiu a compilação com Clang 19.1.5; após restaurar arquivos de áudio ausentes, o usuário confirmou o jogo, save/load, DLCs e fechamento. O usuário também confirmou o funcionamento da atualização do launcher para 0.1.7. A validação automática no Windows passou nos 21 testes e nas verificações de instalação, reinstalação e desinstalação, preservando os saves e a configuração de teste.
+
+No PC principal (Ryzen 7 5700X3D / RTX 5070 / 32 GB de RAM), o usuário relatou 55–60 FPS num reteste posterior, sem captura controlada de frametimes. Não foi informado FPS no segundo PC. O projeto continua experimental: ainda não foram validados 60 FPS travados, a campanha inteira, cada DLC e todo o processo de instalação de ferramentas num Windows completamente limpo. Android é um objetivo futuro. Consulte o [histórico datado dos testes](docs/STATUS-WINDOWS.md).
 
 - [Launcher com interface gráfica para Windows: selecione seu jogo extraído e os PKGs de atualização](docs/LAUNCHER-WINDOWS.md) (experimental; compilação local na primeira preparação)
 - [Compilar e executar no Windows](docs/WINDOWS.md)
