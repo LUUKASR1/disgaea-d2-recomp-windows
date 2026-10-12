@@ -41,3 +41,7 @@ SOFTWARE.
 Reference material consulted during development (not included): RPCS3 source
 and issue tracker, community Cheat Engine / Apollo cheat documentation, and
 public GameFAQs save files used only for local import testing.
+
+## Windows port additions
+
+The Windows SDK patch keeps the ps3recomp/at3 licenses above. Windows SDK headers and libraries (Direct3D 12, DXGI, WASAPI, XInput, Winsock, BCrypt) are supplied by the user through the Microsoft development tools, under their terms; they are not shipped here. The nlohmann/json header is also supplied separately by the user.

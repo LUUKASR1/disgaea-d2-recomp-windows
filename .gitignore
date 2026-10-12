@@ -143,3 +143,17 @@
 
 # Costume packs contain game artwork: never tracked.
 /costume-packs/
+
+# Windows source-only port additions.
+!/docs/
+!/docs/*.md
+!/windows/
+/windows/*
+!/windows/*.py
+!/windows/*.bat
+!/windows/perfil.json
+!/windows/config.exemplo.json
+!/port/d2_*.h
+/windows/config.local.json
+/windows/*.log
+/windows/*.zip
