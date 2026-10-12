@@ -81,3 +81,16 @@ Esse teste precisou de intervencao manual: nao comprova a primeira preparacao
 automatizada sem intervencao. Carregamento de saves nessa nova build, DLCs
 individuais e desempenho repetivel ainda precisam ser reconfirmados. Os relatos
 de save/load anteriores pertencem a candidata anterior. Android permanece pendente.
+
+## Reteste com launcher 0.1.2 — 2026-10-12
+
+Apos atualizar o launcher, o usuario confirmou os testes solicitados e relatou
+60 FPS habituais, com quedas no maximo ate 55 FPS. O pedido do reteste citava
+Castle Hallway e tres repeticoes do ataque de polen do Mothman; a resposta
+informou uma faixa geral, sem separar os resultados por cenario.
+
+Esse e um relato manual no PC Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM, sem
+captura de frametimes, duracao medida ou benchmark controlado. A faixa relatada
+e 55-60 FPS; nao anunciar 60 FPS travados nem extrapolar para outros PCs,
+campanha inteira ou Android. Os resultados anteriores documentados acima
+pertencem a sessoes anteriores e nao devem ser misturados numa media.
