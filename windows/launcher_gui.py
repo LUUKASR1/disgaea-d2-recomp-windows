@@ -17,8 +17,8 @@ TEXT, MUTED, RED, GOLD = '#f5eee3', '#aaa6b5', '#bb3449', '#d4b879'
 def run_gui(Backend, home, version, firmware_present, preview=False):
     app = tk.Tk()
     app.title('Disgaea D2 • Windows Launcher • ' + version)
-    app.geometry('1040x740')
-    app.minsize(920, 700)
+    app.geometry('1040x680')
+    app.minsize(920, 640)
     app.configure(bg=BG)
     style = ttk.Style(app)
     style.theme_use('clam')
@@ -57,20 +57,20 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     def label(parent, text='', size=11, color=TEXT, bold=False, variable=None, wrap=640):
         widget = tk.Label(parent, text=text, textvariable=variable, bg=parent['bg'], fg=color,
                           font=('Segoe UI', size, 'bold' if bold else 'normal'), anchor='w', justify='left', wraplength=wrap)
-        widget.pack(anchor='w', pady=(0, 10))
+        widget.pack(anchor='w', pady=(0, 8))
         return widget
 
     def button(parent, text, command, primary=False):
         widget = tk.Button(parent, text=text, command=command, bg=RED if primary else CARD,
                            fg=TEXT, activebackground='#d34259' if primary else '#303042', activeforeground=TEXT,
                            disabledforeground='#747080', bd=0, relief='flat', cursor='hand2',
-                           font=('Segoe UI', 12, 'bold' if primary else 'normal'), padx=20, pady=12)
-        widget.pack(anchor='w', pady=5)
+                           font=('Segoe UI', 12, 'bold' if primary else 'normal'), padx=20, pady=9)
+        widget.pack(anchor='w', pady=4)
         buttons.append(widget)
         return widget
 
     def card(parent):
-        widget = tk.Frame(parent, bg=CARD, padx=20, pady=18)
+        widget = tk.Frame(parent, bg=CARD, padx=20, pady=14)
         widget.pack(fill='x', pady=9)
         return widget
 
@@ -90,18 +90,31 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     progress.pack(fill='x')
     content = tk.Frame(main, bg=BG)
     content.pack(fill='both', expand=True)
-    pages, nav_buttons = {}, {}
+    pages, bodies, canvases, nav_buttons = {}, {}, {}, {}
+    active_page = ['Início']
 
     def show(name):
         for page in pages.values():
             page.pack_forget()
         pages[name].pack(fill='both', expand=True)
+        active_page[0] = name
+        canvases[name].yview_moveto(0)
         for key, widget in nav_buttons.items():
             widget.configure(bg=RED if key == name else PANEL)
 
     for name in ('Início', 'Vídeo', 'Preparação', 'Arquivos e suporte'):
         page = tk.Frame(content, bg=BG)
         pages[name] = page
+        canvas = tk.Canvas(page, bg=BG, highlightthickness=0)
+        scrollbar = tk.Scrollbar(page, command=canvas.yview, width=12, bg=PANEL, troughcolor=BG)
+        scrollbar.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        body = tk.Frame(canvas, bg=BG)
+        item = canvas.create_window((0, 0), window=body, anchor='nw')
+        body.bind('<Configure>', lambda event, c=canvas: c.configure(scrollregion=c.bbox('all')))
+        canvas.bind('<Configure>', lambda event, c=canvas, i=item: c.itemconfigure(i, width=event.width))
+        bodies[name], canvases[name] = body, canvas
         nav = tk.Button(sidebar, text=name, command=lambda n=name: show(n), bg=PANEL, fg=TEXT,
                         activebackground=RED, activeforeground=TEXT, font=('Segoe UI', 11), bd=0,
                         anchor='w', padx=14, pady=14, cursor='hand2')
@@ -146,14 +159,14 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             return
         task(backend.play)
 
-    page = pages['Início']
+    page = bodies['Início']
     label(page, 'SEU MUNDO. SUA BUILD.', 10, GOLD, True)
-    label(page, 'Disgaea D2', 34, bold=True)
+    label(page, 'Disgaea D2', 30, bold=True)
     label(page, 'A Brighter Darkness', 16, MUTED)
-    hero = tk.Canvas(page, height=104, bg=CARD, highlightthickness=0)
-    hero.pack(fill='x', pady=(8, 18))
-    hero.create_polygon(0, 104, 175, 0, 290, 0, 115, 104, fill='#542330', outline='')
-    hero.create_polygon(125, 104, 300, 0, 322, 0, 147, 104, fill=RED, outline='')
+    hero = tk.Canvas(page, height=90, bg=CARD, highlightthickness=0)
+    hero.pack(fill='x', pady=(4, 12))
+    hero.create_polygon(0, 90, 175, 0, 290, 0, 115, 90, fill='#542330', outline='')
+    hero.create_polygon(125, 90, 300, 0, 322, 0, 147, 90, fill=RED, outline='')
     hero.create_text(310, 38, text='A próxima batalha começa aqui.', fill=TEXT, anchor='w', font=('Segoe UI', 12, 'bold'))
     hero.create_text(310, 68, text='Configuração local • Saves preservados', fill=MUTED, anchor='w', font=('Segoe UI', 10))
     info = card(page)
@@ -164,7 +177,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     button(page, 'Configurar vídeo', lambda: show('Vídeo'))
     button(page, 'Preparar ou importar meu jogo', lambda: show('Preparação'))
 
-    page = pages['Vídeo']
+    page = bodies['Vídeo']
     label(page, 'EXIBIÇÃO', 10, GOLD, True)
     label(page, 'Do seu jeito', 28, bold=True)
     label(page, 'Escolha como o jogo aparece na tela. Aplique antes de jogar.', color=MUTED)
@@ -192,7 +205,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         save_video()
     button(page, 'Restaurar padrão', reset)
 
-    page = pages['Preparação']
+    page = bodies['Preparação']
     label(page, 'PRIMEIRA VEZ E IMPORTAÇÃO', 10, GOLD, True)
     label(page, 'Prepare sua cópia', 28, bold=True)
     label(page, 'Jogo USA extraído + atualização 1.40. Os arquivos do jogo não estão incluídos.', 10, MUTED)
@@ -231,7 +244,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         task(operation)
     button(page, 'Preparar meu jogo', prepare, True)
 
-    page = pages['Arquivos e suporte']
+    page = bodies['Arquivos e suporte']
     label(page, 'TUDO EM UM LUGAR', 10, GOLD, True)
     label(page, 'Arquivos e suporte', 28, bold=True)
     label(page, 'Sua build, configuração e saves ficam na pasta local do aplicativo.', color=MUTED)
@@ -251,6 +264,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     for variable in (resolution, mode, vsync):
         variable.trace_add('write', update_summary)
     update_summary()
+    app.bind_all('<MouseWheel>', lambda event: canvases[active_page[0]].yview_scroll(-int(event.delta / 120), 'units'))
 
     def poll():
         nonlocal busy, ready
