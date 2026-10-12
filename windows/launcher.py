@@ -87,8 +87,11 @@ def build_environment():
     if not install:
         raise RuntimeError('As ferramentas C++ do Visual Studio ainda nao estao instaladas.')
     vcvars = Path(install) / 'VC/Auxiliary/Build/vcvarsall.bat'
-    command = '""' + str(vcvars) + '" x64 >nul && set"'
-    output = subprocess.check_output(['cmd.exe', '/d', '/s', '/c', command], text=True, errors='replace')
+    # Pass CMD's command line directly: list2cmdline uses C-runtime escaping,
+    # which CMD does not understand for the nested vcvarsall quotes.
+    command = 'cmd.exe /d /s /c ""' + str(vcvars) + '" x64 >nul && set"'
+    output = subprocess.check_output(command, text=True, errors='replace', timeout=90,
+                                     creationflags=subprocess.CREATE_NO_WINDOW)
     for line in output.splitlines():
         name, sep, value = line.partition('=')
         if sep and name:
