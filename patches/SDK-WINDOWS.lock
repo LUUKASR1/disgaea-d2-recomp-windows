@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/sp00nznet/ps3recomp.git",
+  "base": "a679051ef304555291de2eb3ec8a3dbf64a761a8",
+  "tree": "a23f74ffccaa440b686dc06694379b6362431038",
+  "patch": "ps3recomp-d2-windows.diff",
+  "patch_sha256": "65bf16531eff09ea130a381ecd1b6ed9da3baab97c990e8879bf90dad71c860f"
+}
