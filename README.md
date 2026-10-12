@@ -1,4 +1,4 @@
-<img width="1920" height="1080" alt="Sem-Título-1" src="https://github.com/user-attachments/assets/97307552-12cf-4b83-ad21-375dac0d4432" />
+<img width="1920" height="1080" alt="Sem-Título-1" src="https://github.com/user-attachments/assets/60258dd9-584b-4cd2-aa43-afb01ee681fc" />
 
 # Disgaea D2 static recompilation — Windows candidate
 
