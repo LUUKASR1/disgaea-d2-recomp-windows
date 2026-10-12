@@ -6,7 +6,8 @@
   unexpected payloads, paths outside the content folder, stale logs and other failures.
 - Keep the ELF SHA-256 gate, original return code and warning; reuse compatible builds.
 - Record save/load and DLC recognition confirmed in the isolated 0.1.4 build.
-- Twelve preparation tests pass locally; automatic DLC recovery needs a real retest.
+- Twelve preparation tests passed on Windows CI; a real 0.1.5 retest confirmed
+  automatic DLC reimport, ELF validation, existing build reuse and game exit code 0.
 - No runtime, graphical profile, game asset or license changes.
 
 # Launcher 0.1.4-preview

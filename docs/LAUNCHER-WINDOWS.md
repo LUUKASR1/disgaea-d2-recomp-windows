@@ -100,4 +100,7 @@ O retorno original e um aviso continuam no log. A verificacao SHA-256 do ELF
 continua obrigatoria, e a build compativel existente e reutilizada. Pacotes de
 DLC com outros formatos ou outros erros nao sao cobertos por esse contorno.
 A instalacao confirmada e diferente de validar cada conteudo dentro do jogo.
-A recuperacao automatica de DLC da 0.1.5 ainda precisa de reteste no PC do usuario.
+O reteste da 0.1.5 em 2026-10-12 confirmou reimportacao automatica do pacote
+observado, verificacao do ELF, reuso da mesma build e inicio/encerramento do
+jogo com codigo 0. A instalacao inicial do pacote e seu reconhecimento no jogo
+foram confirmados anteriormente na mesma pasta.

@@ -148,3 +148,18 @@ manual geral; nao demonstra que todos os personagens, fases e itens foram testad
 O launcher 0.1.5 adiciona verificacao de conclusao para esse formato de pacote,
 sem alterar runtime, perfil grafico ou licencas. O fluxo de importacao automatico
 precisa de reteste real. Os testes locais de preparacao agora sao 12.
+
+## Importacao automatica de DLC 0.1.5 confirmada — 2026-10-12
+
+No reteste das 16:59:43, o launcher reimportou o mesmo pacote NPUB31321/01.00
+na pasta isolada existente. O auxiliar retornou 3221226505; o launcher registrou
+a instalacao concluida e os arquivos conferidos, continuou automaticamente e
+preparou/verificou o ELF, com codigo 0 as 16:59:49. A mesma pasta de build foi
+reutilizada, sem nova geracao ou compilacao. O relatorio confirmou build pronta.
+
+O jogo abriu as 16:59:53 e encerrou as 17:00:00 com savedata quiescente e
+codigo 0. Esse teste confirma o fluxo de reimportacao automatico do pacote
+observado. O reconhecimento de DLCs e save/load ja foram confirmados nos testes
+anteriores nessa mesma build. A sessao breve atual nao e novo benchmark nem
+validacao individual de todos os conteudos. Instalacao de ferramentas em PC
+sem compiladores, outros formatos de PKG e Android permanecem pendentes.
