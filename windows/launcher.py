@@ -107,12 +107,12 @@ class Backend:
         self.home = Path(home)
         self.notify = notify
 
-    def run(self, args, env=None, timeout=None):
+    def run(self, args, env=None, timeout=None, cwd=None):
         self.home.mkdir(parents=True, exist_ok=True)
         log = self.home / 'preparacao.log'
         self.notify('Executando: ' + Path(str(args[0])).name)
         with log.open('ab') as f:
-            result = subprocess.run(list(map(str, args)), env=env, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            result = subprocess.run(list(map(str, args)), env=env, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
             raise RuntimeError('A etapa falhou. Consulte ' + str(log))
 
@@ -149,7 +149,7 @@ class Backend:
             if package.suffix.lower() != '.pkg' or not package.is_file():
                 raise ValueError('Pacote PKG inexistente: ' + str(package))
             self.notify('Instalando pacote local: ' + package.name)
-            self.run([helper, '--headless', '--installpkg', package], timeout=1800)
+            self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent)
         update = hdd / 'game/BLUS31313/USRDIR'
         if not (update / 'Data/START_7.dat').is_file() or not (update / 'EBOOT.BIN').is_file():
             raise RuntimeError('A atualizacao US 1.40 (BLUS31313) nao foi encontrada. Selecione o PKG correto.')
@@ -161,7 +161,7 @@ class Backend:
         elf = binary.with_suffix('.elf')
         elf.unlink(missing_ok=True)
         self.notify('Preparando o executavel da sua copia do jogo.')
-        self.run([helper, '--decrypt', binary], timeout=180)
+        self.run([helper, '--decrypt', binary], timeout=180, cwd=helper.parent)
         if not elf.is_file() or digest(elf) != ELF_SHA:
             raise RuntimeError('Executavel diferente da versao US 1.40 suportada. Nenhuma build foi criada.')
         cache = self.home / 'build-atual.json'
@@ -196,7 +196,7 @@ class Backend:
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())
         env = launch_environment(profile, config, os.environ)
         self.notify('Jogo em execucao.')
-        self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env)
+        self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo)
         self.notify('Jogo encerrado.')
 
     def install_tools(self):
@@ -204,8 +204,15 @@ class Backend:
         if not winget:
             raise RuntimeError('Instale o App Installer pela Microsoft Store para habilitar winget.')
         self.notify('Instalando ferramentas oficiais. O Windows pode pedir autorizacao de administrador.')
-        self.run([winget, 'install', '--id', 'Git.Git', '--exact', '--source', 'winget'])
-        self.run([winget, 'install', '--id', 'Microsoft.VisualStudio.2022.BuildTools', '--exact', '--source', 'winget', '--override', '--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --includeRecommended'])
+        commands = [
+            [winget, 'install', '--id', 'Git.Git', '--exact', '--source', 'winget'],
+            [winget, 'install', '--id', 'Microsoft.VisualStudio.2022.BuildTools', '--exact', '--source', 'winget', '--override', '--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --includeRecommended'],
+        ]
+        for command in commands:
+            # Show the official installer console so terms/prompts are actionable.
+            result = subprocess.run(command, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            if result.returncode:
+                raise RuntimeError('O instalador nao concluiu. Confira a janela oficial e tente novamente.')
         self.notify('Ferramentas instaladas. Reinicie o aplicativo antes de preparar o jogo.')
 
 
