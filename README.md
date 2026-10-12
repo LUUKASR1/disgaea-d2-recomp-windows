@@ -2,6 +2,20 @@
 
 # Disgaea D2 static recompilation — Windows candidate
 
+## Sobre o projeto
+
+Este projeto nasceu da minha paixão por Disgaea — especialmente por **Disgaea D2: A Brighter Darkness**. É a minha primeira aventura no mundo da recompilação de jogos com ajuda de IA. Recomp-IA? Vibe coding? Ainda estou descobrindo o nome, mas estou aprendendo bastante no caminho.
+
+Passei praticamente o domingo inteiro mexendo nisso. A intenção não era ficar o dia todo, mas o progresso estava tão satisfatório que eu não consegui parar. Pelo menos saiu algo! 😅
+
+Durante esse processo, apareceram vários desafios: tela branca, quedas de FPS no Castle Hallway e no ataque básico do Mothman, problemas nas texturas e outros glitches gráficos. Deu trabalho para mim e para a nossa querida IA encontrar as causas e testar as correções. Conseguimos resolver muita coisa, e continuo trabalhando para melhorar a estabilidade e o desempenho da versão Windows.
+
+Como trabalho e tenho outros afazeres, vou atualizar o projeto regularmente, conforme meu tempo permitir. Quem quiser experimentar, relatar problemas ou contribuir com melhorias está à vontade. Toda ajuda para fazer o projeto avançar é bem-vinda!
+
+Também quero explorar uma versão para portáteis Android, como o **AYN Odin 2 Portal** e o **AYN Thor**. Esse é um objetivo futuro: primeiro, quero deixar a versão Windows em um estado satisfatório. Depois, pretendo me dedicar à portabilidade assim que possível.
+
+Este trabalho parte do projeto original de **Sean13128** e do **ps3recomp**, com os devidos créditos aos seus autores e colaboradores. Minha contribuição aqui está na adaptação para Windows, nos ajustes, no launcher e nos testes, com auxílio de IA.
+
 Experimental Windows x64 port of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). Current target: US game update 1.40, Direct3D 12, clang-cl. Android is not supported by this candidate yet.
 
 **Source-only candidate; no game executable, generated game code, game data, updates/DLC, keys or saves are distributed.** Generate and compile locally from your own copy. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
