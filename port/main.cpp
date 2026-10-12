@@ -234,6 +234,63 @@ extern "C" int d2_install_draw_trace(void);
 extern "C" void rsx_draw_engine_present(void);
 extern "C" void ppu_report_guest_lrs(void);
 
+/* D2_RUNTIME_TIMING_V1: wall sections and read-only Windows CPU counters. */
+#ifdef _WIN32
+#include <tlhelp32.h>
+static double d2_runtime_now(void)
+{
+    LARGE_INTEGER c, f; QueryPerformanceCounter(&c); QueryPerformanceFrequency(&f);
+    return (double)c.QuadPart / (double)f.QuadPart;
+}
+static uint64_t d2_cpu_ticks(FILETIME a, FILETIME b)
+{
+    return (((uint64_t)a.dwHighDateTime << 32) | a.dwLowDateTime) +
+           (((uint64_t)b.dwHighDateTime << 32) | b.dwLowDateTime);
+}
+static void d2_runtime_cpu(double elapsed)
+{
+    struct CpuSample { DWORD tid; uint64_t created, ticks; };
+    static CpuSample previous[256]; static unsigned nprevious;
+    CpuSample current[256]; unsigned ncurrent = 0;
+    FILETIME c, e, k, u;
+    static uint64_t process_previous; static bool have_process;
+    if (GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u)) {
+        uint64_t ticks = d2_cpu_ticks(k,u);
+        if (have_process) fprintf(stderr,"[D2CPU] process=%.1f%% (100%%=one-core)\n",
+            (ticks-process_previous)/1e5/elapsed);
+        process_previous=ticks; have_process=true;
+    }
+    HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
+    if (snapshot==INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 te={}; te.dwSize=sizeof(te);
+    if (Thread32First(snapshot,&te)) do {
+        if (te.th32OwnerProcessID!=GetCurrentProcessId()) continue;
+        HANDLE h=OpenThread(THREAD_QUERY_LIMITED_INFORMATION,FALSE,te.th32ThreadID);
+        if (!h) continue;
+        if (GetThreadTimes(h,&c,&e,&k,&u)) {
+            uint64_t created=((uint64_t)c.dwHighDateTime<<32)|c.dwLowDateTime;
+            uint64_t ticks=d2_cpu_ticks(k,u);
+            for (unsigned i=0;i<nprevious;i++) if (previous[i].tid==te.th32ThreadID && previous[i].created==created) {
+                double percent=(ticks-previous[i].ticks)/1e5/elapsed;
+                if (percent>=1.0) fprintf(stderr,"[D2CPU] host-tid=%lu cpu=%.1f%%%s\n",
+                    (unsigned long)te.th32ThreadID,percent,
+                    te.th32ThreadID==GetCurrentThreadId()?" RSX-render":"");
+                break;
+            }
+            if (ncurrent<256) current[ncurrent++]={te.th32ThreadID,created,ticks};
+        }
+        CloseHandle(h);
+    } while (Thread32Next(snapshot,&te));
+    CloseHandle(snapshot);
+    memcpy(previous,current,ncurrent*sizeof(CpuSample)); nprevious=ncurrent;
+}
+#endif
+
+/* D2_LOOP_FRAME_V1: sections on the actual uploaded render loop. */
+#ifdef _WIN32
+#include "d2_loop_frame.h"
+#include "d2_windows_shutdown.h" /* D2_WINDOWS_SHUTDOWN_V1 */
+#endif
 static DWORD WINAPI frame_clock(LPVOID)
 {
     ps3_poll_thread_start("RSX render", 1);
@@ -268,11 +325,34 @@ static DWORD WINAPI frame_clock(LPVOID)
     uint64_t previous_vblank = cellGcmGetVBlankCount();
     ULONGLONG next_report = GetTickCount64() + 5000;
     const int boot_trace = getenv("D2_BOOT_TRACE") != nullptr;
+#ifdef _WIN32
+    const bool d2_timing = getenv("D2_RUNTIME_TIMING") != nullptr;
+    double d2_start=d2_runtime_now(), d2_wait=0, d2_tick=0, d2_present=0, d2_fifo=0, d2_pump=0;
+    unsigned d2_loops=0, d2_flips=0;
+    if (d2_timing) d2_runtime_cpu(1.0);
+#endif
 
     while (!s_frame_stopping.load()) {
+#ifdef _WIN32
+        d2_windows_shutdown_poll();
+#endif
         /* A kick drains immediately. VSYNC readiness is enforced by GCM,
          * using the same clock as its counters; HSYNC need not await vblank. */
-        cellGcm_fifo_kick_wait(cellGcm_vblank_wait_ms());
+#ifdef _WIN32
+        double d2_t=d2_timing?d2_runtime_now():0;
+#endif
+        unsigned d2_requested_wait=cellGcm_vblank_wait_ms();
+#ifdef _WIN32
+        bool d2_loop_presented=false;
+        d2_loop_step(5);
+#endif
+        cellGcm_fifo_kick_wait(d2_requested_wait);
+#ifdef _WIN32
+        d2_loop_step(0,d2_requested_wait);
+#endif
+#ifdef _WIN32
+        if(d2_timing) { double t=d2_runtime_now(); d2_wait+=t-d2_t; d2_t=t; }
+#endif
         cellGcmTickVBlank();
         uint64_t vblank = cellGcmGetVBlankCount();
         ULONGLONG now = GetTickCount64();
@@ -284,17 +364,64 @@ static DWORD WINAPI frame_clock(LPVOID)
         }
         /* Hold the batch until its scheduled refresh, submit it, then wake
          * the producer. Missed refreshes advance counters without bursts. */
+#ifdef _WIN32
+        if(d2_timing) { double t=d2_runtime_now(); d2_tick+=t-d2_t; d2_t=t; }
+#endif
+#ifdef _WIN32
+        d2_loop_step(1);
+#endif
         if (rsx_ok && cellGcm_take_flip_pending()) {
-            if (present_guest_frame()) cellGcmTickFlip();
-            else { fprintf(stderr, "[rsx] guest submission failed\n"); s_stop_failure = 1; ps3_host_request_stop(); break; }
+#ifdef _WIN32
+            if(d2_timing) d2_flips++;
+#endif
+            if (present_guest_frame()) {
+                cellGcmTickFlip();
+#ifdef _WIN32
+                d2_loop_presented=true;
+#endif
+            }
+            else { fprintf(stderr, "[rsx] guest submission failed\n"); s_stop_failure = 1; ps3_host_request_stop();
+#ifndef _WIN32
+                break;
+#endif
+            }
         } else if (rsx_ok && vblank != previous_vblank && cellGcm_flip_request_count() == 0) {
             s_backend_present();
         }
+#ifdef _WIN32
+        if(d2_timing) { double t=d2_runtime_now(); d2_present+=t-d2_t; d2_t=t; }
+#endif
+#ifdef _WIN32
+        d2_loop_step(2);
+        if(d2_loop_presented) d2_loop_complete(vblank);
+#endif
         previous_vblank = vblank;
         if (rsx_ok) {
             cellGcm_rsx_process_fifo();
+#ifdef _WIN32
+            if(d2_timing) { double t=d2_runtime_now(); d2_fifo+=t-d2_t; d2_t=t; }
+#endif
+#ifdef _WIN32
+            d2_loop_step(3);
+#endif
             if (s_backend_pump() != 0) ps3_host_request_stop();
+#ifdef _WIN32
+            d2_loop_step(4);
+#endif
         }
+#ifdef _WIN32
+        if(d2_timing) {
+            double end=d2_runtime_now(); d2_pump+=end-d2_t; d2_loops++;
+            double elapsed=end-d2_start;
+            if(elapsed>=5.0) {
+                fprintf(stderr,"[D2RUNTIME] window=%.3fs loops=%u flips=%u | kick-wait=%.3fs tick=%.3fs present=%.3fs FIFO=%.3fs pump=%.3fs\n",
+                    elapsed,d2_loops,d2_flips,d2_wait,d2_tick,d2_present,d2_fifo,d2_pump);
+                d2_runtime_cpu(elapsed);
+                d2_start=d2_runtime_now(); d2_wait=d2_tick=d2_present=d2_fifo=d2_pump=0;
+                d2_loops=d2_flips=0;
+            }
+        }
+#endif
     }
     return 0;
 }
