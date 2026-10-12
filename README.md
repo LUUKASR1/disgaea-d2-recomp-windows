@@ -1,3 +1,5 @@
+<img width="1920" height="1080" alt="Sem-Título-1" src="https://github.com/user-attachments/assets/97307552-12cf-4b83-ad21-375dac0d4432" />
+
 # Disgaea D2 static recompilation — Windows candidate
 
 Experimental Windows x64 port of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). Current target: US game update 1.40, Direct3D 12, clang-cl. Android is not supported by this candidate yet.
