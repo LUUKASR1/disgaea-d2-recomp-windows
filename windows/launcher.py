@@ -124,6 +124,8 @@ class Backend:
         directory = self.home / 'auxiliar-rpcs3'
         exe = directory / 'rpcs3.exe'
         if exe.is_file():
+            # Headless RPCS3 opens log files before it creates its data folders.
+            (directory / 'log').mkdir(parents=True, exist_ok=True)
             return exe
         self.notify('Baixando auxiliar RPCS3 oficial; usado somente na preparacao.')
         archive = self.home / 'rpcs3.7z'
@@ -145,6 +147,7 @@ class Backend:
         if not (staging / 'rpcs3.exe').is_file():
             raise RuntimeError('Layout do auxiliar RPCS3 nao reconhecido.')
         staging.rename(directory)
+        (directory / 'log').mkdir(parents=True, exist_ok=True)
         archive.unlink()
         return exe
 
@@ -342,7 +345,22 @@ def main():
         backend.run([smoke / 'build/smoke.exe'], timeout=15)
         (HOME / 'toolchain-test-ok.txt').write_text('OK')
     elif '--auxiliary-test' in sys.argv:
-        Backend(lambda text: None).helper()
+        backend = Backend(lambda text: None)
+        helper = backend.helper()
+        # Start headless RPCS3 without any game input: a missing path must fail
+        # normally, rather than fail while opening its log directory.
+        result = subprocess.run([str(helper), '--decrypt', str(HOME / 'missing-probe.bin')],
+                                cwd=helper.parent, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+        output = result.stdout.decode('utf-8', errors='replace')
+        if 'Log file open failed' in output or 'File not found:' not in output:
+            raise RuntimeError('Headless auxiliary startup failed: ' + output[-2000:])
+        if not (helper.parent / 'log/RPCS3.log').is_file():
+            raise RuntimeError('Auxiliary did not create its log file')
+        # Exercise the reuse path as well, without downloading again.
+        if backend.helper() != helper:
+            raise RuntimeError('Auxiliary reuse failed')
         (HOME / 'auxiliary-test-ok.txt').write_text('OK')
     elif len(sys.argv) > 1:
         raise ValueError('Argumentos internos nao reconhecidos: ' + repr(sys.argv[1:]))
