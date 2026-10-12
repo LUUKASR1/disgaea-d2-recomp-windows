@@ -1,5 +1,6 @@
 """Windows first-run assistant. All game-derived output stays on this PC."""
 import hashlib
+from datetime import datetime
 import io
 import json
 import os
@@ -14,6 +15,7 @@ import threading
 import urllib.request
 import uuid
 
+VERSION = '0.1.2-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
@@ -33,6 +35,25 @@ def game_root(path):
     if not (path / 'PS3_GAME/USRDIR/EBOOT.BIN').is_file():
         raise ValueError('Selecione a pasta do jogo ou PS3_GAME contendo USRDIR/EBOOT.BIN.')
     return path
+
+
+def firmware_present(directory):
+    """Check the modules used by RPCS3's boot/firmware preflight."""
+    flash = Path(directory) / 'dev_flash'
+    return all((flash / name).is_file() for name in
+               ('sys/external/liblv2.sprx', 'vsh/module/vsh.self'))
+
+
+def build_source_signature(workspace):
+    """Compare shipped runtime/lifter sources, excluding generated game files."""
+    source = ROOT / 'payload'
+    names = [p.relative_to(source) for directory in ('port', 'patches')
+             for p in (source / directory).rglob('*') if p.is_file()]
+    checksum = hashlib.sha256()
+    for name in sorted(names):
+        checksum.update(name.as_posix().encode('utf-8') + b'\0')
+        checksum.update(bytes.fromhex(digest(Path(workspace) / name)))
+    return checksum.hexdigest()
 
 
 def download(url, target, sha):
@@ -111,14 +132,78 @@ class Backend:
         self.home = Path(home)
         self.notify = notify
 
-    def run(self, args, env=None, timeout=None, cwd=None):
+    def run(self, args, env=None, timeout=None, cwd=None, label=None, log_path=None):
         self.home.mkdir(parents=True, exist_ok=True)
-        log = self.home / 'preparacao.log'
-        self.notify('Executando: ' + Path(str(args[0])).name)
+        log = Path(log_path) if log_path else self.home / 'preparacao.log'
+        log.parent.mkdir(parents=True, exist_ok=True)
+        args = list(map(str, args))
+        label = label or Path(args[0]).name
+        self.notify('Executando: ' + label)
         with log.open('ab') as f:
-            result = subprocess.run(list(map(str, args)), env=env, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            def record(message):
+                f.write((datetime.now().isoformat(timespec='seconds') + ' ' + message + '\n').encode('utf-8'))
+                f.flush()
+            record('launcher=' + VERSION + ' etapa=' + label)
+            record('comando=' + subprocess.list2cmdline(args))
+            record('pasta=' + str(cwd or Path.cwd()))
+            try:
+                result = subprocess.run(args, env=env, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            except subprocess.TimeoutExpired:
+                record('resultado=timeout limite=' + str(timeout) + ' segundos')
+                raise RuntimeError(label + ' excedeu o tempo limite. Consulte ' + str(log)) from None
+            except OSError as error:
+                record('resultado=erro ao iniciar: ' + str(error))
+                raise RuntimeError('Nao foi possivel iniciar ' + label + ': ' + str(error)) from error
+            record('codigo_saida=' + str(result.returncode))
         if result.returncode:
-            raise RuntimeError('A etapa falhou. Consulte ' + str(log))
+            raise RuntimeError(label + ' falhou (codigo ' + str(result.returncode) + '). Consulte ' + str(log))
+
+    def ensure_firmware(self, helper, firmware):
+        directory = helper.parent
+        if firmware:
+            source = Path(firmware).resolve()
+            if source.is_file() and source.suffix.lower() == '.pup':
+                self.run([helper, '--headless', '--installfw', source], timeout=1800,
+                         cwd=directory, label='Instalar firmware PS3')
+            elif source.is_dir():
+                flash = source if source.name.lower() == 'dev_flash' else source / 'dev_flash'
+                if not firmware_present(flash.parent):
+                    raise RuntimeError('A pasta selecionada nao contem um dev_flash reconhecido.')
+                target = directory / 'dev_flash'
+                if flash.resolve() != target.resolve():
+                    staging = directory / ('firmware-' + uuid.uuid4().hex)
+                    self.notify('Copiando seu firmware instalado para o auxiliar local.')
+                    shutil.copytree(flash, staging / 'dev_flash')
+                    if not firmware_present(staging):
+                        raise RuntimeError('A copia do firmware ficou incompleta; a instalacao anterior foi preservada.')
+                    if target.exists():
+                        target.rename(directory / ('dev_flash-anterior-' + uuid.uuid4().hex))
+                    (staging / 'dev_flash').rename(target)
+                    staging.rmdir()
+            else:
+                raise ValueError('Selecione um PS3UPDAT.PUP ou a pasta do seu RPCS3 com firmware instalado.')
+        if not firmware_present(directory):
+            raise RuntimeError('Firmware ausente. Selecione PS3UPDAT.PUP ou importe a pasta do seu RPCS3 antes de preparar.')
+
+    def cached_build(self):
+        cache = self.home / 'build-atual.json'
+        if not cache.is_file():
+            return None
+        try:
+            previous = json.loads(cache.read_text(encoding='utf-8'))
+            repo = Path(previous['workspace'])
+            if not (repo / 'port/build-windows-140/DisgaeaD2Recomp.exe').is_file():
+                return None
+            if digest(repo / 'work/v140/EBOOT.elf') != ELF_SHA:
+                return None
+            update = Path(previous['hdd0_root']) / 'game/BLUS31313/USRDIR'
+            if not (update / 'Data/START_7.dat').is_file() or not (update / 'EBOOT.BIN').is_file():
+                return None
+            if build_source_signature(repo) != build_source_signature(ROOT / 'payload'):
+                return None
+            return previous
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
 
     def helper(self):
         directory = self.home / 'auxiliar-rpcs3'
@@ -151,17 +236,24 @@ class Backend:
         archive.unlink()
         return exe
 
-    def prepare(self, folder, packages):
+    def prepare(self, folder, packages, firmware=None):
         game = game_root(folder)
-        env = build_environment()  # Fail before touching user packages.
+        previous = self.cached_build()
+        if previous and not packages and not firmware:
+            previous['game_root'] = str(game)
+            self.save(previous)
+            self.notify('Build local existente pronta para jogar; nenhuma recompilacao necessaria.')
+            return
         helper = self.helper()
+        self.ensure_firmware(helper, firmware)
         hdd = helper.parent / 'dev_hdd0'
         for package in packages:
             package = Path(package).resolve()
             if package.suffix.lower() != '.pkg' or not package.is_file():
                 raise ValueError('Pacote PKG inexistente: ' + str(package))
             self.notify('Instalando pacote local: ' + package.name)
-            self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent)
+            self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent,
+                     label='Instalar PKG ' + package.name)
         update = hdd / 'game/BLUS31313/USRDIR'
         if not (update / 'Data/START_7.dat').is_file() or not (update / 'EBOOT.BIN').is_file():
             raise RuntimeError('A atualizacao US 1.40 (BLUS31313) nao foi encontrada. Selecione o PKG correto.')
@@ -173,27 +265,45 @@ class Backend:
         elf = binary.with_suffix('.elf')
         elf.unlink(missing_ok=True)
         self.notify('Preparando o executavel da sua copia do jogo.')
-        self.run([helper, '--decrypt', binary], timeout=180, cwd=helper.parent)
+        self.run([helper, '--decrypt', binary], timeout=180, cwd=helper.parent, label='Preparar ELF US 1.40')
         if not elf.is_file() or digest(elf) != ELF_SHA:
             raise RuntimeError('Executavel diferente da versao US 1.40 suportada. Nenhuma build foi criada.')
-        cache = self.home / 'build-atual.json'
-        if cache.is_file():
-            previous = json.loads(cache.read_text(encoding='utf-8'))
-            repo = Path(previous['workspace'])
-            if (repo / 'port/build-windows-140/DisgaeaD2Recomp.exe').is_file():
-                previous.update(game_root=str(game), hdd0_root=str(hdd))
-                self.save(previous)
-                self.notify('Build local existente pronta para jogar.')
-                return
-        repo = self.home / ('builds/' + uuid.uuid4().hex)
-        self.notify('Preparando fontes e compilando. A primeira vez pode demorar bastante.')
-        shutil.copytree(ROOT / 'payload', repo)
-        self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env)
-        self.run([sys.executable, repo / 'tools/build_windows.py', '--elf', elf, '--json-include', ROOT / 'vendor/include', '--jobs', '4'], env)
+        if previous:
+            previous.update(game_root=str(game), hdd0_root=str(hdd))
+            self.save(previous)
+            self.notify('Conteudo importado. Build local existente pronta para jogar.')
+            return
+        env = build_environment()
+        pending = self.home / 'build-pendente.json'
+        repo = None
+        if pending.is_file():
+            try:
+                candidate = Path(json.loads(pending.read_text(encoding='utf-8'))['workspace'])
+                receipt = candidate / 'port-140-windows-generated/windows-generation.json'
+                if receipt.is_file() and build_source_signature(candidate) == build_source_signature(ROOT / 'payload'):
+                    repo = candidate
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+        resume = repo is not None
+        if resume:
+            self.notify('Retomando a compilacao interrompida; arquivos gerados serao verificados.')
+        else:
+            repo = self.home / ('builds/' + uuid.uuid4().hex)
+            self.notify('Preparando fontes e compilando. A primeira vez pode demorar bastante.')
+            shutil.copytree(ROOT / 'payload', repo)
+            pending.write_text(json.dumps(dict(workspace=str(repo))), encoding='utf-8')
+            self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env, label='Preparar SDK Windows')
+        command = [sys.executable, repo / 'tools/build_windows.py', '--elf', elf,
+                   '--json-include', ROOT / 'vendor/include', '--jobs', '4']
+        if resume:
+            command.append('--resume')
+        self.run(command, env, label='Gerar e compilar jogo Windows')
         self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd)))
+        pending.unlink(missing_ok=True)
         self.notify('Preparacao concluida. Clique em Jogar.')
 
     def save(self, config):
+        self.home.mkdir(parents=True, exist_ok=True)
         target = self.home / 'build-atual.json'
         temporary = target.with_suffix('.tmp')
         temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -208,7 +318,9 @@ class Backend:
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())
         env = launch_environment(profile, config, os.environ)
         self.notify('Jogo em execucao.')
-        self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo)
+        log = self.home / 'logs' / ('jogo-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
+        self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo,
+                 label='Executar jogo nativo', log_path=log)
         self.notify('Jogo encerrado.')
 
     def install_tools(self):
@@ -235,9 +347,16 @@ def gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
     app = tk.Tk()
-    app.title('Disgaea D2 — Preparar e Jogar (experimental)')
-    app.geometry('740x480')
-    folder = tk.StringVar()
+    app.title('Disgaea D2 — ' + VERSION + ' — Preparar e Jogar')
+    app.geometry('800x680')
+    initial_folder = ''
+    try:
+        initial_folder = json.loads((HOME / 'build-atual.json').read_text(encoding='utf-8')).get('game_root', '')
+    except (OSError, ValueError):
+        pass
+    folder = tk.StringVar(value=initial_folder)
+    firmware = tk.StringVar()
+    firmware_text = tk.StringVar(value='Firmware: instalado no auxiliar local.' if firmware_present(HOME / 'auxiliar-rpcs3') else 'Firmware: selecione um PUP ou importe do seu RPCS3.')
     status = tk.StringVar(value='Selecione seu jogo extraido e a atualizacao US 1.40.')
     packages = []
     events = queue.Queue()
@@ -257,11 +376,34 @@ def gui():
         if selected:
             packages[:] = selected
             pkg_label.configure(text='Pacotes: ' + ', '.join(Path(p).name for p in selected))
-    ttk.Button(frame, text='Selecionar jogo extraido', command=choose_folder).pack(anchor='w', pady=6)
-    ttk.Button(frame, text='Selecionar atualizacao / DLCs (.pkg)', command=choose_pkgs).pack(anchor='w')
+    buttons = []
+    button = ttk.Button(frame, text='Selecionar jogo extraido', command=choose_folder)
+    button.pack(anchor='w', pady=6)
+    buttons.append(button)
+    def choose_firmware():
+        selected = filedialog.askopenfilename(title='Firmware oficial PS3UPDAT.PUP', filetypes=[('Firmware PS3', '*.PUP *.pup')])
+        if selected:
+            firmware.set(selected)
+            firmware_text.set('Firmware selecionado: ' + selected)
+    def import_firmware():
+        selected = filedialog.askdirectory(title='Pasta do RPCS3 ou dev_flash com firmware instalado')
+        if selected:
+            firmware.set(selected)
+            firmware_text.set('Importar firmware de: ' + selected)
+    for title, action in [('Selecionar firmware PUP', choose_firmware), ('Importar firmware do meu RPCS3', import_firmware)]:
+        button = ttk.Button(frame, text=title, command=action)
+        button.pack(anchor='w', pady=3)
+        buttons.append(button)
+    ttk.Label(frame, textvariable=firmware_text, wraplength=750).pack(anchor='w', pady=5)
+    def firmware_site():
+        import webbrowser
+        webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/')
+    ttk.Button(frame, text='Pagina oficial do firmware PS3', command=firmware_site).pack(anchor='w', pady=3)
+    button = ttk.Button(frame, text='Selecionar atualizacao / DLCs (.pkg)', command=choose_pkgs)
+    button.pack(anchor='w', pady=6)
+    buttons.append(button)
     pkg_label = ttk.Label(frame, text='Nenhum PKG selecionado.', wraplength=690)
     pkg_label.pack(anchor='w', pady=6)
-    buttons = []
     def task(operation):
         nonlocal busy
         if busy:
@@ -280,7 +422,17 @@ def gui():
     def install():
         if messagebox.askokcancel('Ferramentas da primeira preparacao', 'Instalar Git e ferramentas C++ da Microsoft? O download pode ocupar varios GB. Podem aparecer termos e solicitacoes do instalador oficial.'):
             task(backend.install_tools)
-    for title, action in [('Instalar ferramentas', install), ('Preparar meu jogo', lambda: task(lambda: backend.prepare(folder.get(), list(packages)))), ('Jogar', lambda: task(backend.play)), ('Abrir pasta local / saves', lambda: (HOME.mkdir(parents=True, exist_ok=True), os.startfile(HOME)))]:
+    def prepare():
+        selected_game, selected_packages, selected_firmware = folder.get(), list(packages), firmware.get()
+        def operation():
+            backend.prepare(selected_game, selected_packages, selected_firmware)
+            events.put(('prepared', ''))
+        task(operation)
+    def open_logs():
+        logs = HOME / 'logs'
+        logs.mkdir(parents=True, exist_ok=True)
+        os.startfile(logs)
+    for title, action in [('Instalar ferramentas', install), ('Preparar meu jogo', prepare), ('Jogar', lambda: task(backend.play)), ('Abrir pasta local / saves', lambda: (HOME.mkdir(parents=True, exist_ok=True), os.startfile(HOME))), ('Abrir logs do jogo', open_logs)]:
         button = ttk.Button(frame, text=title, command=action)
         button.pack(anchor='w', pady=3)
         buttons.append(button)
@@ -293,6 +445,11 @@ def gui():
                 busy = False
                 for button in buttons:
                     button.configure(state='normal')
+            elif kind == 'prepared':
+                firmware.set('')
+                packages.clear()
+                pkg_label.configure(text='Pacotes importados. Nao precisam ser selecionados novamente.')
+                firmware_text.set('Firmware: instalado no auxiliar local.' if firmware_present(HOME / 'auxiliar-rpcs3') else 'Build existente pronta; firmware necessario somente para nova importacao.')
             else:
                 status.set(message)
                 if kind == 'error':
@@ -340,7 +497,8 @@ def main():
         (smoke / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(LauncherSmoke LANGUAGES C)\nfind_package(Python3 COMPONENTS Interpreter REQUIRED)\nadd_executable(smoke hello.c)\n')
         (smoke / 'hello.c').write_text('int main(void) { return 0; }\n')
         backend = Backend(lambda text: None)
-        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja', '-DCMAKE_C_COMPILER=clang-cl', '-DPython3_EXECUTABLE=' + sys.executable], env, timeout=60)
+        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja', '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DCMAKE_C_COMPILER=clang-cl', '-DPython3_EXECUTABLE=' + sys.executable], env, timeout=60)
+        backend.run(['cmake', '--build', smoke / 'build'], env, timeout=60)
         backend.run(['cmake', '--build', smoke / 'build'], env, timeout=60)
         backend.run([smoke / 'build/smoke.exe'], timeout=15)
         (HOME / 'toolchain-test-ok.txt').write_text('OK')
@@ -375,7 +533,11 @@ if __name__ == '__main__':
     except Exception:
         # Worker failures must exit, never open a hidden PyInstaller error dialog.
         import traceback
-        HOME.mkdir(parents=True, exist_ok=True)
-        with (HOME / 'preparacao.log').open('a', encoding='utf-8') as log:
-            traceback.print_exc(file=log)
+        if len(sys.argv) > 1 and sys.stderr is not None:
+            # Optional CMake probes use ERROR_QUIET; respect their stderr pipe.
+            traceback.print_exc(file=sys.stderr)
+        else:
+            HOME.mkdir(parents=True, exist_ok=True)
+            with (HOME / 'preparacao.log').open('a', encoding='utf-8') as log:
+                traceback.print_exc(file=log)
         sys.exit(1)

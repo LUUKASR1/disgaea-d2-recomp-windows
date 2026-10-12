@@ -63,3 +63,21 @@ o teste de compilação limpa ainda está pendente.
 ## Confirmação manual — 2026-10-12
 
 LUUKASR1 confirmou salvar, reabrir o jogo e carregar o save após a correção de fechamento. Trata-se de confirmação manual do usuário, além do relatório de Alt+F4 já analisado. A compilação limpa permanece pendente.
+
+## Build gerada pelo launcher — 2026-10-12
+
+A preparacao do launcher 0.1.1 passou pela descriptografia US 1.40 e verificacao
+do SDK; a compilacao bloqueou num ciclo de regeneracao do CMake/Ninja.
+Apos reconfiguracao manual com `CMAKE_SUPPRESS_REGENERATION=ON`, o log confirmou
+199/199 etapas e link final de `DisgaeaD2Recomp.exe` numa pasta nova do aplicativo.
+O usuario confirmou que essa build abre e salva. O coletor do titulo registrou
+fechamento por Alt+F4 com savedata quiescente e codigo de saida 0.
+
+O fundo do titulo era substituido por uma copia da tela porque a textura tinha
+o mesmo tamanho do display. O usuario confirmou que `SCREEN_AS_TEX=0` corrigiu
+o problema. Esse ajuste passa a integrar o perfil do launcher 0.1.2.
+
+Esse teste precisou de intervencao manual: nao comprova a primeira preparacao
+automatizada sem intervencao. Carregamento de saves nessa nova build, DLCs
+individuais e desempenho repetivel ainda precisam ser reconfirmados. Os relatos
+de save/load anteriores pertencem a candidata anterior. Android permanece pendente.

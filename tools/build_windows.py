@@ -12,12 +12,26 @@ import sys
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 
 
+def generation_snapshot(directory):
+    return {p.relative_to(directory).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(directory.rglob('*')) if p.is_file() and p.name != 'windows-generation.json'}
+
+
+def verify_generation(directory, sdk_tree):
+    receipt = json.loads((directory / 'windows-generation.json').read_text(encoding='utf-8'))
+    if receipt.get('elf_sha256') != ELF_SHA or receipt.get('sdk_tree') != sdk_tree:
+        raise RuntimeError('Generated input provenance differs; existing files were preserved.')
+    if not receipt.get('files') or receipt['files'] != generation_snapshot(directory):
+        raise RuntimeError('Generated files changed or are incomplete; existing files were preserved.')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--elf', required=True, type=Path)
     p.add_argument('--json-include', required=True, type=Path,
                    help='Directory containing nlohmann/json.hpp, supplied separately.')
     p.add_argument('--jobs', type=int, default=4)
+    p.add_argument('--resume', action='store_true', help='Resume a verified, fully generated local build.')
     args = p.parse_args()
     if sys.version_info < (3, 11):
         p.error('Python 3.11 or newer required.')
@@ -51,10 +65,10 @@ def main():
             p.error('SDK sources differ from SDK-WINDOWS.lock.')
     build = root / 'port/build-windows-140'
     generated = root / 'port-140-windows-generated'
-    if build.exists() or generated.exists():
+    if not args.resume and (build.exists() or generated.exists()):
         p.error('Fresh-build command requires new build/generated directories. Existing files were preserved.')
     def run(*cmd):
-        subprocess.run(list(map(str, cmd)), cwd=root, check=True)
+        subprocess.run(list(map(str, cmd)), cwd=root, check=True, stdout=sys.stdout, stderr=sys.stderr)
     local_elf = root / 'work/v140/EBOOT.elf'
     local_elf.parent.mkdir(parents=True, exist_ok=True)
     if local_elf.exists():
@@ -64,10 +78,17 @@ def main():
         shutil.copy2(elf, local_elf)
     # The Windows lock is verified above; generate_lifts uses the original
     # macOS lock, so permit this explicitly validated Windows SDK worktree.
-    run(sys.executable, root / 'tools/generate_lifts.py', '--version', '140', '--elf', local_elf,
-        '--allow-sdk-worktree', '--port-dir', generated)
+    if args.resume:
+        verify_generation(generated, lock['tree'])
+        print('Resuming verified generated files.', flush=True)
+    else:
+        run(sys.executable, root / 'tools/generate_lifts.py', '--version', '140', '--elf', local_elf,
+            '--allow-sdk-worktree', '--port-dir', generated)
+        receipt = dict(elf_sha256=ELF_SHA, sdk_tree=lock['tree'], files=generation_snapshot(generated))
+        (generated / 'windows-generation.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     run('cmake', '-S', root / 'port', '-B', build, '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl',
+        '-DCMAKE_SUPPRESS_REGENERATION=ON',
         '-DCMAKE_EXE_LINKER_FLAGS=dxguid.lib', '-DD2_GAME_VERSION=140',
         '-DPS3RECOMP_DIR=' + str(sdk), '-DPython3_EXECUTABLE=' + sys.executable,
         '-DD2_JSON_INCLUDE_DIR=' + str(include), '-DRECOMP_DIR=' + str(generated / 'src/recomp-140'),

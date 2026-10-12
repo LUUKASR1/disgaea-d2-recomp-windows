@@ -55,7 +55,7 @@ for version, elf in inputs.items():
         cmd = [sys.executable, str(sdk / 'tools' / command[0])]
         cmd += [arg.format(**values) for arg in command[1:]]
         print('+ ' + ' '.join(cmd), flush=True)
-        subprocess.run(cmd, env=env, check=True)
+        subprocess.run(cmd, env=env, check=True, stdout=sys.stdout, stderr=sys.stderr)
     # Generated files are intentionally not tracked; retain provenance beside them.
     receipt = dict(version=version, elf_sha256=config['elf_sha256'], sdk=sdk_receipt,
                    environment=manifest['environment'], commands=commands)

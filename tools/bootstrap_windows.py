@@ -5,10 +5,11 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 
 def run(*command):
-    subprocess.run(list(map(str, command)), check=True)
+    subprocess.run(list(map(str, command)), check=True, stdout=sys.stdout, stderr=sys.stderr)
 
 
 def bootstrap(destination):

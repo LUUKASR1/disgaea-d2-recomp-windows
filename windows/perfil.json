@@ -1,6 +1,7 @@
 {
   "environment": {
     "D2_MOVIE_SKIP": "1",
+    "SCREEN_AS_TEX": "0",
     "PS3_SAVEDATA_UI": "headless",
     "D2_WINDOWS_GRAPHICS_IDLE": "1",
     "D2_PRESENT_INTERVAL": "0",
