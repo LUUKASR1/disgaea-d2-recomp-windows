@@ -1,0 +1,27 @@
+Disgaea D2 Windows Launcher - experimental
+
+Feche o jogo e o launcher antes de instalar ou atualizar.
+
+Este instalador prepara o aplicativo e seus atalhos. Depois da instalacao,
+abra DisgaeaD2Launcher pelo menu Iniciar.
+
+Na primeira preparacao, selecione sua pasta extraida do jogo e a atualizacao
+US 1.40 / BLUS31313. Se faltar firmware, selecione seu PS3UPDAT.PUP oficial ou
+importe a pasta de um RPCS3 onde o firmware ja esteja instalado.
+
+O botao Instalar ferramentas permite obter Git e ferramentas C++/LLVM.
+Esses instaladores oficiais podem pedir autorizacao de administrador e ocupar
+varios GB. A primeira compilacao exige internet e pode demorar.
+
+Sua build, conteudo importado e saves ficam em:
+%LOCALAPPDATA%\DisgaeaD2Recomp
+
+Essa pasta e preservada ao atualizar ou desinstalar o launcher. Nao a apague.
+Se voce ja possui uma build compativel, ela pode ser reutilizada.
+
+Jogo, atualizacoes, DLCs, firmware, licencas e codigo recompilado do jogo nao
+fazem parte deste instalador. A build e gerada no computador do usuario.
+
+Suporte atual: Windows x64, pasta extraida e executavel US 1.40 reconhecido.
+Android e ISO ainda nao estao implementados. Desempenho depende do hardware;
+os testes do usuario relataram 55-60 FPS, sem garantia para outros cenarios.

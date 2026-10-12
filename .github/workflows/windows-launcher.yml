@@ -5,6 +5,9 @@ on:
       - 'windows/launcher.py'
       - 'windows/perfil.json'
       - 'windows/test_launcher.py'
+      - 'windows/installer.iss'
+      - 'windows/installer-info.txt'
+      - 'windows/test_installer.ps1'
       - 'tools/build_windows.py'
       - 'tools/bootstrap_windows.py'
       - 'tools/generate_lifts.py'
@@ -82,8 +85,31 @@ jobs:
             Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log"
             throw 'Official helper download/extraction failed'
           }
+      - name: Build per-user Windows installer
+        shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if ($compiler) { $iscc = $compiler.Source }
+          else {
+            $iscc = Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter 'Inno Setup*' |
+              ForEach-Object { Join-Path $_.FullName 'ISCC.exe' } |
+              Where-Object { Test-Path $_ } |
+              Select-Object -First 1
+          }
+          if (!$iscc) { throw 'Official Inno Setup compiler not installed on runner' }
+          & $iscc windows/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+      - name: Test installed launcher and preserve local saves
+        timeout-minutes: 6
+        shell: pwsh
+        run: ./windows/test_installer.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: DisgaeaD2Launcher-Windows-x64
           path: dist/DisgaeaD2Launcher/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2Launcher-Setup-Windows-x64
+          path: dist-installer/DisgaeaD2Launcher-Setup-Windows-x64.exe
           if-no-files-found: error

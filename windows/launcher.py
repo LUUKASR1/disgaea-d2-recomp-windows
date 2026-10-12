@@ -15,7 +15,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.2-preview'
+VERSION = '0.1.3-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'

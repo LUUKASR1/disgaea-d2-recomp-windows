@@ -3,8 +3,10 @@
 O launcher usa sua pasta extraida e os PKGs da sua copia para preparar uma build
 local. Nao contem o jogo, atualizacao, DLCs, ELF ou codigo recompilado do jogo.
 
-1. Extraia **todo** o ZIP do launcher para uma pasta. Abra `DisgaeaD2Launcher.exe`.
-   A pasta `_internal` precisa permanecer ao lado do executavel.
+1. Execute `DisgaeaD2Launcher-Setup-Windows-x64.exe` e abra o launcher pelo menu
+   Iniciar. O instalador e para o usuario atual e coloca as dependencias junto
+   do executavel. Como alternativa portatil, extraia **todo** o ZIP e abra
+   `DisgaeaD2Launcher.exe`; mantenha `_internal` ao lado do executavel.
 2. Na primeira vez, clique em **Instalar ferramentas**, caso nao tenha Git e
    Visual Studio com C++, SDK Windows e LLVM. Essa instalacao pode ocupar varios
    GB e apresentar solicitacoes do instalador oficial. Reinicie o launcher.
@@ -29,7 +31,13 @@ reescritos. Importar os PKGs altera somente o armazenamento local do aplicativo.
 
 ## Atualizar e retomar
 
-Extraia a nova versao do launcher para outra pasta. Preserve
+Feche o jogo e o launcher antes de executar o instalador da nova versao. O
+destino padrao e `%LOCALAPPDATA%\Programs\DisgaeaD2Launcher`. A build e os
+saves continuam em `%LOCALAPPDATA%\DisgaeaD2Recomp`, uma pasta separada que
+o instalador e desinstalador nao removem. Git, compiladores e o auxiliar nao
+sao desinstalados com o launcher. O atalho de desktop e opcional.
+
+Para usar a versao portatil, extraia a nova versao para outra pasta. Preserve
 `%LOCALAPPDATA%\DisgaeaD2Recomp`: ela contem a build e os saves. Clique em
 **Preparar meu jogo**, sem selecionar PKGs/firmware novamente, para reconhecer
 a build existente. As fontes do runtime e o ELF local sao verificados antes do
@@ -49,10 +57,14 @@ da ultima build pronta. Os PKGs selecionados sao limpos apos importacao bem-suce
 ## Gerar o aplicativo
 
 O workflow **Windows launcher** gera um ZIP contendo o executavel e suas
-dependencias. Ele testa o interpretador embutido e a presenca das dependencias.
+dependencias e um instalador Inno Setup. Ele testa o interpretador embutido
+e a presenca das dependencias.
 Tambem verifica o checksum do patch empacotado e compila um programa C minimo
 com o CMake/Ninja incluidos, clang-cl local e descoberta do Python embutido.
 Esses testes nao validam uma recompilacao completa nem a execucao do jogo.
+O teste do instalador cobre instalacao, execucao do interpretador instalado,
+reinstalacao, atalhos e desinstalacao. Fixtures de save/configuracao e um arquivo
+do usuario sao conferidos por hash para verificar sua preservacao.
 O teste completo com a copia US 1.40 e necessario antes de chamar uma release
 de estavel. Somente Windows x64 esta implementado; ISO e Android ainda nao.
 
