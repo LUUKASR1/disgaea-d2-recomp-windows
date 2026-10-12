@@ -130,3 +130,21 @@ no PC do usuario, usando ferramentas Git/C++/LLVM ja instaladas. O relatorio
 nao comprova save/load, desempenho em batalha ou DLCs nesta nova pasta; esses
 resultados nao devem ser inferidos do encerramento sem erro. Instalacao de
 ferramentas num PC sem compiladores e Android permanecem pendentes.
+
+## Save/load e reconhecimento de DLC na build isolada 0.1.4
+
+O log das 16:18:54 confirmou a transacao de save `NPUB31321_NORMAL_00`, incluindo
+a gravacao de SAVEDATA.DAT. A sessao seguinte, as 16:19:29, leu o mesmo arquivo
+e confirmou LOAD complete. Ambas encerraram com savedata quiescente e codigo 0.
+
+O auxiliar confirmou instalacao do pacote de flags NPUB31321/01.00, mas retornou
+3221226505; foi necessario reabrir o launcher para jogar. Na sessao das 16:33:12,
+o runtime abriu 45 arquivos distintos de flag EDAT, carregou o save e encerrou
+com codigo 0. O usuario relatou que as DLCs apareceram e que a Toy Vending Machine
+passou a oferecer novos icones de save; depois informou "tudo perfeito" em
+resposta ao pedido de obter conteudo adicional, salvar e reabrir. E confirmacao
+manual geral; nao demonstra que todos os personagens, fases e itens foram testados.
+
+O launcher 0.1.5 adiciona verificacao de conclusao para esse formato de pacote,
+sem alterar runtime, perfil grafico ou licencas. O fluxo de importacao automatico
+precisa de reteste real. Os testes locais de preparacao agora sao 12.

@@ -59,8 +59,8 @@ explicitamente concluida pode ser recuperado. Para firmware, exige log novo de
 sucesso e os modulos instalados. Para o update US 1.40, exige log novo confirmando
 o mesmo PKG, BLUS31313/01.40 e os arquivos instalados; em seguida o ELF extraido
 precisa corresponder ao SHA-256 suportado. O codigo original e o aviso ficam no
-log. Outros erros, timeouts e falhas de instalacao de DLC continuam interrompendo
-a preparacao. Esse contorno nao altera o runtime nem requer recompilar builds
+log. Outros erros e timeouts continuam interrompendo a preparacao.
+A recuperacao especifica de DLC foi acrescentada na versao 0.1.5, descrita abaixo. Esse contorno nao altera o runtime nem requer recompilar builds
 compativeis existentes.
 
 O reteste real da 0.1.4 em 2026-10-12 confirmou instalacao de firmware e update,
@@ -85,3 +85,19 @@ de estavel. Somente Windows x64 esta implementado; ISO e Android ainda nao.
 A primeira preparacao usa compiladores locais: este e um assistente que instala
 e coordena essas ferramentas, nao uma recompilacao instantanea. O desempenho e
 as limitacoes atuais do runtime continuam os mesmos de STATUS-WINDOWS.md.
+
+## Importacao de DLC no launcher 0.1.5
+
+A recuperacao do encerramento 3221226505 agora cobre o pacote de flags
+NPUB31321/01.00 observado no teste. Exige log novo confirmando o mesmo PKG,
+PARAM.SFO e pelo menos um arquivo `USRDIR/Data/flag/flag########.edat`. Todos
+os arquivos listados no log devem existir e ter tamanho maior que zero.
+O inventario so pode conter essas flags e os metadados/imagens conhecidos;
+conteudo adicional, caminhos fora da pasta local ou inventario incompleto
+impedem a recuperacao. Isso nao fornece licencas nem modifica arquivos EDAT.
+
+O retorno original e um aviso continuam no log. A verificacao SHA-256 do ELF
+continua obrigatoria, e a build compativel existente e reutilizada. Pacotes de
+DLC com outros formatos ou outros erros nao sao cobertos por esse contorno.
+A instalacao confirmada e diferente de validar cada conteudo dentro do jogo.
+A recuperacao automatica de DLC da 0.1.5 ainda precisa de reteste no PC do usuario.

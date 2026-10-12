@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.4-preview'
+VERSION = '0.1.5-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
@@ -60,6 +60,35 @@ def completed_update_install(directory, package, previous_log_sha, returncode):
     expected = 'GUI: Successfully installed ' + str(package).replace('\\', '/')
     return '--installpkg' in text and bool(re.search(
         re.escape(expected) + r' \(title_id=BLUS31313, title=[^\r\n]*, version=01\.40\)\.', text))
+
+
+def completed_dlc_install(directory, package, previous_log_sha, returncode):
+    """Verify the observed NPUB31321 flag package after the helper's native abort.
+
+    Installation completion is distinct from in-game recognition. Never accept
+    arbitrary package payloads or skip the subsequent supported ELF check.
+    """
+    directory, package = Path(directory), Path(package)
+    log = directory / 'log/RPCS3.log'
+    if returncode != 3221226505 or not log.is_file() or digest(log) == previous_log_sha:
+        return False
+    text = log.read_text(encoding='utf-8', errors='replace').replace('\\', '/')
+    expected = 'GUI: Successfully installed ' + str(package).replace('\\', '/')
+    if '--installpkg' not in text or not re.search(
+            re.escape(expected) + r' \(title_id=NPUB31321, title=[^\r\n]*, version=01\.00\)\.', text):
+        return False
+    entries = re.findall(r"PKG: Entry: type=(0x[0-9A-Fa-f]+), name='([^'\r\n]+)'", text)
+    files = {name for kind, name in entries if int(kind, 16) & 0xff == 3}
+    flags = {name for name in files if re.fullmatch(r'USRDIR/Data/flag/flag\d{8}\.edat', name)}
+    metadata = {'PS3LOGO.DAT', 'PARAM.SFO', 'ICON0.PNG', 'PIC1.PNG'}
+    if not flags or 'PARAM.SFO' not in files or files - flags - metadata:
+        return False
+    target = (directory / 'dev_hdd0/game/NPUB31321').resolve()
+    for name in files:
+        output = target / name
+        if not output.resolve().is_relative_to(target) or not output.is_file() or output.stat().st_size == 0:
+            return False
+    return True
 
 
 def digest(path):
@@ -307,9 +336,12 @@ class Backend:
                 self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent,
                          label='Instalar PKG ' + package.name)
             except StageFailure as error:
-                if not completed_update_install(helper.parent, package, previous_sha, error.returncode):
+                if completed_update_install(helper.parent, package, previous_sha, error.returncode):
+                    message = 'Atualizacao US 1.40 instalada; auxiliar encerrou com erro apos confirmar. O ELF sera verificado antes do uso.'
+                elif completed_dlc_install(helper.parent, package, previous_sha, error.returncode):
+                    message = 'Pacote DLC NPUB31321 instalado e arquivos conferidos; auxiliar encerrou com erro apos confirmar. Confira o conteudo no jogo.'
+                else:
                     raise
-                message = 'Atualizacao US 1.40 instalada; auxiliar encerrou com erro apos confirmar. O ELF sera verificado antes do uso.'
                 with (self.home / 'preparacao.log').open('a', encoding='utf-8') as log:
                     log.write(message + '\n')
                 self.notify(message)

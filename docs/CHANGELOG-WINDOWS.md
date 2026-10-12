@@ -1,3 +1,14 @@
+# Launcher 0.1.5-preview
+
+- Recover helper exit 3221226505 after a fresh success log for the same
+  NPUB31321/01.00 flag package and a complete installed file inventory.
+- Require PARAM.SFO and at least one known flag EDAT; reject missing/empty files,
+  unexpected payloads, paths outside the content folder, stale logs and other failures.
+- Keep the ELF SHA-256 gate, original return code and warning; reuse compatible builds.
+- Record save/load and DLC recognition confirmed in the isolated 0.1.4 build.
+- Twelve preparation tests pass locally; automatic DLC recovery needs a real retest.
+- No runtime, graphical profile, game asset or license changes.
+
 # Launcher 0.1.4-preview
 
 - Recover the observed helper exit 3221226505 only after a fresh firmware

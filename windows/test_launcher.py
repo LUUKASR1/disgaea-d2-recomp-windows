@@ -21,7 +21,96 @@ def firmware(directory, value=b'firmware fixture'):
         path.write_bytes(value)
 
 
+def dlc_fixture(root, package):
+    files = ['PARAM.SFO', 'ICON0.PNG', 'USRDIR/Data/flag/flag00010001.edat',
+             'USRDIR/Data/flag/flag00040001.edat']
+    for name in files:
+        path = root / 'dev_hdd0/game/NPUB31321' / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'owned DLC fixture')
+    log = root / 'log/RPCS3.log'
+    log.parent.mkdir(parents=True, exist_ok=True)
+    text = '--installpkg\n' + ''.join("PKG: Entry: type=0x80000003, name='" + name + "'\n" for name in files)
+    text += 'GUI: Successfully installed ' + str(package) + ' (title_id=NPUB31321, title=DisgaeaD2, version=01.00).\n'
+    log.write_text(text)
+    return log, text, files
+
+
 class PreparationTests(unittest.TestCase):
+    def test_dlc_recovery_requires_exact_fresh_success_and_entire_file_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / 'owned DLC.pkg'
+            log, success, files = dlc_fixture(root, package)
+            check = lambda p=package, previous=None, code=3221226505: launcher.completed_dlc_install(root, p, previous, code)
+            self.assertTrue(check())
+            self.assertFalse(check(previous=launcher.digest(log)))
+            self.assertFalse(check(code=1))
+            self.assertFalse(check(p=root / 'other.pkg'))
+            for text in [success.replace('NPUB31321', 'NPUB00000'), success.replace('01.00', '01.01'),
+                         success.replace('Successfully installed', 'Failed to install'),
+                         success + "PKG: Entry: type=0x80000003, name='../outside.edat'\n",
+                         success + "PKG: Entry: type=0x80000003, name='USRDIR/EBOOT.BIN'\n"]:
+                log.write_text(text)
+                self.assertFalse(check())
+            log.write_text(success)
+            flag = root / 'dev_hdd0/game/NPUB31321' / files[-1]
+            flag.write_bytes(b'')
+            self.assertFalse(check())
+            flag.unlink()
+            self.assertFalse(check())
+
+    def test_dlc_recovery_rejects_missing_metadata_or_flag_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / 'owned DLC.pkg'
+            log, text, files = dlc_fixture(root, package)
+            for missing in ['PARAM.SFO', 'USRDIR/Data/flag/']:
+                log.write_text('\n'.join(line for line in text.splitlines() if missing not in line))
+                self.assertFalse(launcher.completed_dlc_install(root, package, None, 3221226505))
+            log.write_text(text)
+            (root / 'dev_hdd0/game/NPUB31321/PARAM.SFO').unlink()
+            self.assertFalse(launcher.completed_dlc_install(root, package, None, 3221226505))
+
+    def test_verified_dlc_recovery_reuses_build_after_elf_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            helper = root / 'helper/rpcs3.exe'
+            firmware(helper.parent)
+            game = root / 'game'
+            binary = game / 'PS3_GAME/USRDIR/EBOOT.BIN'
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b'owned game fixture')
+            update = helper.parent / 'dev_hdd0/game/BLUS31313/USRDIR'
+            (update / 'Data').mkdir(parents=True)
+            (update / 'EBOOT.BIN').write_bytes(b'update fixture')
+            (update / 'Data/START_7.dat').write_bytes(b'update data fixture')
+            package = root / 'dlc.pkg'
+            package.write_bytes(b'owned package fixture')
+            messages = []
+            backend = launcher.Backend(messages.append, root / 'home')
+            backend.home.mkdir()
+            (backend.home / 'preparacao.log').touch()
+            previous = dict(workspace='preserved-build', game_root='old', hdd0_root='old')
+            elf_bytes = b'supported ELF test fixture'
+            def run(args, **kwargs):
+                if '--installpkg' in args:
+                    log, _, _ = dlc_fixture(helper.parent, package.resolve())
+                    raise launcher.StageFailure('PKG', 3221226505, log)
+                elif '--decrypt' in args:
+                    Path(args[-1]).with_suffix('.elf').write_bytes(elf_bytes)
+                else:
+                    self.fail('Compatible build must not be recompiled')
+            with patch.object(backend, 'cached_build', return_value=previous), \
+                 patch.object(backend, 'helper', return_value=helper), \
+                 patch.object(backend, 'run', side_effect=run), \
+                 patch.object(launcher, 'ELF_SHA', launcher.hashlib.sha256(elf_bytes).hexdigest()):
+                backend.prepare(game, [package])
+            saved = json.loads((backend.home / 'build-atual.json').read_text())
+            self.assertEqual(saved['workspace'], 'preserved-build')
+            self.assertEqual(saved['hdd0_root'], str(helper.parent / 'dev_hdd0'))
+            self.assertTrue(any('DLC NPUB31321 instalado' in message for message in messages))
+
     def test_update_abort_requires_exact_package_fresh_success_and_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
