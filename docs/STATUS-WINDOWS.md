@@ -114,3 +114,19 @@ Isso valida compilacao e execucao numa pasta nova, com intervencao para retomar.
 Ainda nao valida preparacao inteira sem intervencao nem instalacao das
 ferramentas numa maquina sem compiladores. O launcher 0.1.4 adiciona recuperacao
 limitada desses dois encerramentos; o fluxo automatico precisa de reteste real.
+
+## Primeira preparacao automatica 0.1.4 confirmada — 2026-10-12
+
+Um novo teste isolado iniciou em pasta vazia. Entre 16:12:21 e 16:12:32
+(horario local do usuario), o launcher instalou firmware e update US 1.40,
+registrou os dois retornos 3221226505 e continuou automaticamente apos conferir
+as instalacoes concluidas. A descriptografia terminou com codigo 0; as etapas
+de SDK, geracao e compilacao completaram 199/199, com codigo 0 as 16:14:18.
+O relatorio confirmou `build_ready: true` e uma nova pasta de build.
+
+O jogo foi iniciado as 16:14:23 e encerrou as 16:14:38 com savedata quiescente
+e codigo 0. Isso valida o fluxo automatico de preparacao e uma execucao breve
+no PC do usuario, usando ferramentas Git/C++/LLVM ja instaladas. O relatorio
+nao comprova save/load, desempenho em batalha ou DLCs nesta nova pasta; esses
+resultados nao devem ser inferidos do encerramento sem erro. Instalacao de
+ferramentas num PC sem compiladores e Android permanecem pendentes.

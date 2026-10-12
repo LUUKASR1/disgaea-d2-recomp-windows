@@ -63,6 +63,11 @@ log. Outros erros, timeouts e falhas de instalacao de DLC continuam interrompend
 a preparacao. Esse contorno nao altera o runtime nem requer recompilar builds
 compativeis existentes.
 
+O reteste real da 0.1.4 em 2026-10-12 confirmou instalacao de firmware e update,
+continuacao automatica, compilacao 199/199 e inicio/encerramento do jogo com
+codigo 0 numa pasta nova. Reutilizou compiladores ja instalados; nao valida
+instalacao em um PC sem ferramentas nem DLCs individuais. Veja STATUS-WINDOWS.md.
+
 ## Gerar o aplicativo
 
 O workflow **Windows launcher** gera um ZIP contendo o executavel e suas

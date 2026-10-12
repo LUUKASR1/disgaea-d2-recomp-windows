@@ -7,7 +7,9 @@
 - Reject stale success logs, other packages/versions, missing outputs, other
   failures and timeouts. DLC installation failures are not covered by this workaround.
 - Record the user's successful isolated 0.1.3 compilation and two game exits
-  with code 0. Automatic recovery still needs a real first-preparation retest.
+  with code 0. A subsequent fresh 0.1.4 test confirmed automatic firmware/update
+  recovery, 199/199 build completion and a brief game run/exit with code 0.
+  It reused installed compilers; individual DLCs and a toolchain-free PC remain untested.
 - No native runtime, graphical profile or game code changes.
 
 # Windows candidate 0.1
