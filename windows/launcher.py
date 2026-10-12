@@ -9,6 +9,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import sysconfig  # Required by CMake's interpreter probes inside the frozen worker.
 import threading
 import urllib.request
 import uuid
