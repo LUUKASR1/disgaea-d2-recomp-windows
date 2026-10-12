@@ -354,8 +354,10 @@ def main():
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
         output = result.stdout.decode('utf-8', errors='replace')
-        if 'Log file open failed' in output or 'File not found:' not in output:
-            raise RuntimeError('Headless auxiliary startup failed: ' + output[-2000:])
+        # RPCS3 reattaches its console for --decrypt, so its normal message
+        # may bypass our redirected stdout. Exit 1 is the missing-file result.
+        if 'Log file open failed' in output or result.returncode != 1:
+            raise RuntimeError('Headless auxiliary startup failed (exit ' + str(result.returncode) + '): ' + output[-2000:])
         if not (helper.parent / 'log/RPCS3.log').is_file():
             raise RuntimeError('Auxiliary did not create its log file')
         # Exercise the reuse path as well, without downloading again.
