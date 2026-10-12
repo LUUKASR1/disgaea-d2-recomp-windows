@@ -54,6 +54,15 @@ do titulo. Os logs das sessoes ficam em `logs/jogo-*.log`; os de preparacao
 registram comando, etapa, versao e codigo de saida. A selecao do jogo e recuperada
 da ultima build pronta. Os PKGs selecionados sao limpos apos importacao bem-sucedida.
 
+Na versao 0.1.4, o codigo 3221226505 do auxiliar depois de uma instalacao
+explicitamente concluida pode ser recuperado. Para firmware, exige log novo de
+sucesso e os modulos instalados. Para o update US 1.40, exige log novo confirmando
+o mesmo PKG, BLUS31313/01.40 e os arquivos instalados; em seguida o ELF extraido
+precisa corresponder ao SHA-256 suportado. O codigo original e o aviso ficam no
+log. Outros erros, timeouts e falhas de instalacao de DLC continuam interrompendo
+a preparacao. Esse contorno nao altera o runtime nem requer recompilar builds
+compativeis existentes.
+
 ## Gerar o aplicativo
 
 O workflow **Windows launcher** gera um ZIP contendo o executavel e suas

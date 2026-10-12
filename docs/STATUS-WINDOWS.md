@@ -94,3 +94,23 @@ captura de frametimes, duracao medida ou benchmark controlado. A faixa relatada
 e 55-60 FPS; nao anunciar 60 FPS travados nem extrapolar para outros PCs,
 campanha inteira ou Android. Os resultados anteriores documentados acima
 pertencem a sessoes anteriores e nao devem ser misturados numa media.
+
+## Compilacao isolada com launcher 0.1.3 — 2026-10-12
+
+O teste iniciou numa pasta nova, reutilizando os compiladores ja instalados no
+PC. Firmware 4.46 e update US 1.40 foram instalados pelo auxiliar, que registrou
+sucesso mas encerrou com codigo 3221226505. Foi necessario retomar o teste sem
+selecionar esses arquivos novamente. A causa do encerramento nao esta confirmada.
+
+Na retomada, a descriptografia terminou com codigo 0; a geracao e compilacao
+completaram 199/199 etapas e produziram uma nova build local. O relatorio
+registrou `build_ready: true`. Dois logs de jogo confirmaram encerramento com
+savedata quiescente e codigo 0. Em resposta ao pedido de verificar titulo,
+audio, corredor, ataque Mothman, save/load e Alt+F4, o usuario informou
+"rodou perfeitamente". E uma confirmacao manual geral, sem benchmark novo nem
+inventario individual de DLCs.
+
+Isso valida compilacao e execucao numa pasta nova, com intervencao para retomar.
+Ainda nao valida preparacao inteira sem intervencao nem instalacao das
+ferramentas numa maquina sem compiladores. O launcher 0.1.4 adiciona recuperacao
+limitada desses dois encerramentos; o fluxo automatico precisa de reteste real.

@@ -22,6 +22,80 @@ def firmware(directory, value=b'firmware fixture'):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_update_abort_requires_exact_package_fresh_success_and_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / 'owned update.pkg'
+            log = root / 'log/RPCS3.log'
+            log.parent.mkdir()
+            files = [root / 'dev_hdd0/game/BLUS31313' / name for name in
+                     ('PARAM.SFO', 'USRDIR/EBOOT.BIN', 'USRDIR/Data/START_7.dat')]
+            for path in files:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'local fixture')
+            success = '--installpkg\nGUI: Successfully installed ' + str(package) + ' (title_id=BLUS31313, title=Disgaea D2, version=01.40).\n'
+            log.write_text(success)
+            check = lambda p=package, previous=None, code=3221226505: launcher.completed_update_install(root, p, previous, code)
+            self.assertTrue(check())
+            self.assertFalse(check(previous=launcher.digest(log)))
+            self.assertFalse(check(code=1))
+            self.assertFalse(check(p=root / 'different.pkg'))
+            for replacement in (success.replace('01.40', '01.30'), success.replace('BLUS31313', 'NPUB31321'), '--installpkg\nInstallation failed'):
+                log.write_text(replacement)
+                self.assertFalse(check())
+            log.write_text(success)
+            files[-1].unlink()
+            self.assertFalse(check())
+
+    def test_firmware_abort_recovery_requires_fresh_success_and_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            firmware(root)
+            log = root / 'log/RPCS3.log'
+            log.parent.mkdir()
+            log.write_text("argv_utf8: --headless --installfw fixture.pup\nGUI: Successfully installed PS3 firmware version 4.46.\n")
+            self.assertTrue(launcher.completed_firmware_install(root, None, 3221226505))
+            self.assertFalse(launcher.completed_firmware_install(root, launcher.digest(log), 3221226505))
+            self.assertFalse(launcher.completed_firmware_install(root, None, 1))
+            log.write_text('argv_utf8: --installfw fixture.pup\nGUI: installation failed\n')
+            self.assertFalse(launcher.completed_firmware_install(root, None, 3221226505))
+            log.write_text('--installfw\nGUI: Successfully installed PS3 firmware version 4.46.')
+            (root / 'dev_flash/sys/external/liblv2.sprx').unlink()
+            self.assertFalse(launcher.completed_firmware_install(root, None, 3221226505))
+
+    def test_recovered_package_still_rejects_wrong_elf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            helper = root / 'helper/rpcs3.exe'
+            firmware(helper.parent)
+            game = root / 'game'
+            eboot = game / 'PS3_GAME/USRDIR/EBOOT.BIN'
+            eboot.parent.mkdir(parents=True)
+            eboot.write_bytes(b'owned fixture')
+            package = root / 'update.pkg'
+            package.write_bytes(b'package fixture')
+            for name in ('PARAM.SFO', 'USRDIR/EBOOT.BIN', 'USRDIR/Data/START_7.dat'):
+                path = helper.parent / 'dev_hdd0/game/BLUS31313' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'update fixture')
+            backend = launcher.Backend(lambda message: None, root / 'home')
+            def run(args, **kwargs):
+                if '--installpkg' in args:
+                    log = helper.parent / 'log/RPCS3.log'
+                    log.parent.mkdir()
+                    log.write_text('--installpkg\nGUI: Successfully installed ' + str(package.resolve()) + ' (title_id=BLUS31313, title=Disgaea D2, version=01.40).')
+                    backend.home.mkdir(parents=True, exist_ok=True)
+                    (backend.home / 'preparacao.log').touch()
+                    raise launcher.StageFailure('PKG', 3221226505, log)
+                if '--decrypt' in args:
+                    Path(args[-1]).with_suffix('.elf').write_bytes(b'unsupported ELF fixture')
+                else:
+                    self.fail('Compilation must not start with an unsupported ELF')
+            with patch.object(backend, 'helper', return_value=helper), patch.object(backend, 'run', side_effect=run):
+                with self.assertRaisesRegex(RuntimeError, 'Executavel diferente'):
+                    backend.prepare(game, [package])
+            self.assertFalse((backend.home / 'build-atual.json').exists())
+
     def test_failed_command_keeps_command_and_exit_code(self):
         with tempfile.TemporaryDirectory() as tmp:
             backend = launcher.Backend(lambda message: None, tmp)

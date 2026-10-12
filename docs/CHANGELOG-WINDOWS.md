@@ -1,3 +1,15 @@
+# Launcher 0.1.4-preview
+
+- Recover the observed helper exit 3221226505 only after a fresh firmware
+  success log and installed modules, or an exact US 1.40 package success log
+  and installed update files. Preserve the original return code and a warning.
+- Keep the supported ELF SHA-256 check mandatory after package recovery.
+- Reject stale success logs, other packages/versions, missing outputs, other
+  failures and timeouts. DLC installation failures are not covered by this workaround.
+- Record the user's successful isolated 0.1.3 compilation and two game exits
+  with code 0. Automatic recovery still needs a real first-preparation retest.
+- No native runtime, graphical profile or game code changes.
+
 # Windows candidate 0.1
 
 Unpublished development candidate based on original project commit

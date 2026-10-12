@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import runpy
 import shutil
 import subprocess
@@ -15,12 +16,50 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.3-preview'
+VERSION = '0.1.4-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 RPCS3_URL = 'https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3-v0.0.43-20284-2ba2f75b_win64_msvc.7z'
 RPCS3_SHA = '8914810c74508b0e53c6b6cb39d4ed334ecee99639973062d259b1481bfa1720'
+
+
+class StageFailure(RuntimeError):
+    def __init__(self, label, returncode, log):
+        self.returncode = returncode
+        super().__init__(label + ' falhou (codigo ' + str(returncode) + '). Consulte ' + str(log))
+
+
+def completed_firmware_install(directory, previous_log_sha, returncode):
+    """Recover only the observed native abort after an explicitly completed install."""
+    log = Path(directory) / 'log/RPCS3.log'
+    if returncode != 3221226505 or not firmware_present(directory) or not log.is_file():
+        return False
+    if digest(log) == previous_log_sha:
+        return False
+    text = log.read_text(encoding='utf-8', errors='replace')
+    return '--installfw' in text and 'GUI: Successfully installed PS3 firmware version ' in text
+
+
+def completed_update_install(directory, package, previous_log_sha, returncode):
+    """Recover only the observed US 1.40 package completion, not arbitrary DLC failures.
+
+    The caller subsequently decrypts a fresh copy and checks the supported ELF hash.
+    """
+    directory, package = Path(directory), Path(package)
+    log = directory / 'log/RPCS3.log'
+    update = directory / 'dev_hdd0/game/BLUS31313'
+    if returncode != 3221226505 or not log.is_file():
+        return False
+    if digest(log) == previous_log_sha:
+        return False
+    if not all((update / name).is_file() for name in
+               ('PARAM.SFO', 'USRDIR/EBOOT.BIN', 'USRDIR/Data/START_7.dat')):
+        return False
+    text = log.read_text(encoding='utf-8', errors='replace').replace('\\', '/')
+    expected = 'GUI: Successfully installed ' + str(package).replace('\\', '/')
+    return '--installpkg' in text and bool(re.search(
+        re.escape(expected) + r' \(title_id=BLUS31313, title=[^\r\n]*, version=01\.40\)\.', text))
 
 
 def digest(path):
@@ -156,15 +195,25 @@ class Backend:
                 raise RuntimeError('Nao foi possivel iniciar ' + label + ': ' + str(error)) from error
             record('codigo_saida=' + str(result.returncode))
         if result.returncode:
-            raise RuntimeError(label + ' falhou (codigo ' + str(result.returncode) + '). Consulte ' + str(log))
+            raise StageFailure(label, result.returncode, log)
 
     def ensure_firmware(self, helper, firmware):
         directory = helper.parent
         if firmware:
             source = Path(firmware).resolve()
             if source.is_file() and source.suffix.lower() == '.pup':
-                self.run([helper, '--headless', '--installfw', source], timeout=1800,
-                         cwd=directory, label='Instalar firmware PS3')
+                rpc_log = directory / 'log/RPCS3.log'
+                previous_sha = digest(rpc_log) if rpc_log.is_file() else None
+                try:
+                    self.run([helper, '--headless', '--installfw', source], timeout=1800,
+                             cwd=directory, label='Instalar firmware PS3')
+                except StageFailure as error:
+                    if not completed_firmware_install(directory, previous_sha, error.returncode):
+                        raise
+                    message = 'Firmware instalado e modulos presentes; auxiliar encerrou com erro apos confirmar a instalacao.'
+                    with (self.home / 'preparacao.log').open('a', encoding='utf-8') as log:
+                        log.write(message + '\n')
+                    self.notify(message)
             elif source.is_dir():
                 flash = source if source.name.lower() == 'dev_flash' else source / 'dev_flash'
                 if not firmware_present(flash.parent):
@@ -252,8 +301,18 @@ class Backend:
             if package.suffix.lower() != '.pkg' or not package.is_file():
                 raise ValueError('Pacote PKG inexistente: ' + str(package))
             self.notify('Instalando pacote local: ' + package.name)
-            self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent,
-                     label='Instalar PKG ' + package.name)
+            rpc_log = helper.parent / 'log/RPCS3.log'
+            previous_sha = digest(rpc_log) if rpc_log.is_file() else None
+            try:
+                self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent,
+                         label='Instalar PKG ' + package.name)
+            except StageFailure as error:
+                if not completed_update_install(helper.parent, package, previous_sha, error.returncode):
+                    raise
+                message = 'Atualizacao US 1.40 instalada; auxiliar encerrou com erro apos confirmar. O ELF sera verificado antes do uso.'
+                with (self.home / 'preparacao.log').open('a', encoding='utf-8') as log:
+                    log.write(message + '\n')
+                self.notify(message)
         update = hdd / 'game/BLUS31313/USRDIR'
         if not (update / 'Data/START_7.dat').is_file() or not (update / 'EBOOT.BIN').is_file():
             raise RuntimeError('A atualizacao US 1.40 (BLUS31313) nao foi encontrada. Selecione o PKG correto.')
