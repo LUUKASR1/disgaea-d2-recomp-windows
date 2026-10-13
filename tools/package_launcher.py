@@ -8,7 +8,7 @@ import sys
 import urllib.request
 
 onefile = '--onefile' in sys.argv
-package_name = 'DisgaeaD2Launcher-ISO-Preview' if onefile else 'DisgaeaD2Launcher'
+package_name = 'DisgaeaD2Launcher-ISO-Clean-Preview' if onefile else 'DisgaeaD2Launcher'
 
 root = Path(__file__).resolve().parents[1]
 staging = root / 'launcher-package'

@@ -13,6 +13,9 @@ import sys
 INPUTS = {
     'runtime/ppu/ppu_fs.cpp': '15831bbe39ddba3d7bb7f4c94816b6b6560479b4b9cff192a0ceae0dc8ba11c1',
     'runtime/syscalls/sys_fs.c': '726c6eb43026b7f29b9e507f8833c9ac7f6ff0ebd0cdce1d64b4f19f62cba847',
+    'libs/codec/cellPngDec.c': '7df1bfed294a2d47a65219d54f0e9a99cc55e1354a82201640508b6b1d69def6',
+    'libs/codec/cellJpgDec.c': '0d0136e0ce3e1593068c7cf640c707456643cce0fdbd0b4e1ab30945349012d0',
+    'libs/codec/cellGifDec.c': '55b9717393d938c23711c36761ef204b82a5ea3b15c021213999342cb61d1b79',
     'libs/filesystem/cellFs.c': 'fe046ed5ad92b893d31c1713e12a6f1ebe28bbfc62eda1bd9013d87e464e15b9',
 }
 OPERATIONS = {
@@ -62,6 +65,20 @@ def adapt(source, text):
         for name, operation in raw.items():
             pattern = rf'(int64_t sys_fs_{name}\(ppu_context\* ctx\)\s*\{{)'
             text = once(text, pattern, lambda m, op=operation: m[0] + ctx_hook(op, raw=True))
+    elif source.name in ('cellPngDec.c', 'cellJpgDec.c', 'cellGifDec.c'):
+        kind = source.stem[4:7].upper()
+        anchor = f'if (sub->src.srcSelect == CELL_{kind}DEC_FILE) {{'
+        hook = """
+        { unsigned char* bytes = NULL; uint64_t count = 0;
+          int owned = d2_iso_read_host(sub->src.fileName, sub->src.fileOffset,
+              sub->src.fileSize, &bytes, &count);
+          if (owned) {
+              if (owned < 0 || !count) { free(bytes); return -1; }
+              sub->src_data = bytes; sub->src_size = (u32)count;
+              sub->src_allocated = 1; return 0;
+          } }
+"""
+        text = once(text, re.escape(anchor), lambda m: m[0] + hook)
     else:
         functions = {
             'Open': ('OPEN', ['path', 'flags', 'fd', 'arg', 'size']),
@@ -106,7 +123,7 @@ def generate(sdk, output):
         destination = output / name
         if not destination.exists() or destination.read_text(encoding='utf-8') != text:
             destination.write_text(text, encoding='utf-8', newline='\n')
-    print('Generated three ISO filesystem adapters; pinned SDK preserved.')
+    print('Generated ISO filesystem and image adapters; pinned SDK preserved.')
 
 
 if __name__ == '__main__':

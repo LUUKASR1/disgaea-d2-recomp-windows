@@ -17,7 +17,8 @@ TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 
 def run_gui(Backend, home, version, firmware_present, preview=False):
     app = tk.Tk()
-    app.title('Disgaea D2 • Windows Launcher • ' + version)
+    clean = home.name == 'DisgaeaD2Recomp-ISO-Clean'
+    app.title('Disgaea D2 • ' + ('Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version)
     app.geometry('1040x680')
     app.minsize(920, 640)
     app.configure(bg=BG)
@@ -172,6 +173,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         threading.Thread(target=execute, daemon=False).start()
 
     def play():
+        if ready and config.get('iso_path') and not packages and not firmware.get():
+            try: save_settings(home, get_settings())
+            except (OSError, ValueError) as error:
+                messagebox.showerror('Configurações', str(error)); return
+            task(backend.play); return
+        if clean and not ready:
+            play_iso(); return
         try:
             save_settings(home, get_settings())
         except (OSError, ValueError) as error:
@@ -193,9 +201,6 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
 
     def play_iso():
-        if not ready:
-            messagebox.showinfo('Modo ISO experimental', 'Este teste usa a preparação USA 1.40 existente. Prepare primeiro no launcher atual.')
-            return
         selected = filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
             filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
         if not selected: return
@@ -203,7 +208,15 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             save_settings(home, get_settings())
         except (OSError, ValueError) as error:
             messagebox.showerror('Configurações', str(error)); return
-        task(lambda: backend.play_iso(selected))
+        if not ready:
+            if not packages and not (home / 'auxiliar-rpcs3/dev_hdd0/game/BLUS31313/USRDIR/Data/START_7.dat').is_file():
+                choose_packages()
+                if not packages:
+                    status.set('Selecione a atualização USA 1.40; DLCs são opcionais.'); return
+            task(lambda: backend.prepare_iso_and_play(selected, list(packages), firmware.get(),
+                 lambda: events.put(('prepared', ''))))
+        else:
+            task(lambda: backend.play_iso(selected))
 
     page = bodies['Início']
     label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
@@ -212,7 +225,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     logo_item = hero.create_image(0, 0, image=logo_image, anchor='n')
     hero.bind('<Configure>', lambda event: hero.coords(logo_item, event.width // 2, 0))
     button(page, '▶  JOGAR DISGAEA D2', play, True)
-    button(page, 'Jogar pela ISO (experimental)', play_iso)
+    button(page, 'Selecionar ISO e jogar' if clean else 'Jogar pela ISO (experimental)', play_iso)
     info = card(page)
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
@@ -282,6 +295,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(page, 'Na primeira execução, as ferramentas são baixadas e a build é criada automaticamente. Depois, Jogar reutiliza sua build local.', 10, MUTED)
 
     page = bodies['Arquivos e suporte']
+    button(page, 'Testar instalação ISO limpa', backend.open_clean_iso_test)
     label(page, 'TUDO EM UM LUGAR', 10, GOLD, True)
     label(page, 'Arquivos e suporte', 28, bold=True)
     label(page, 'Sua build, configuração e saves ficam na pasta local do aplicativo.', color=MUTED)
@@ -301,7 +315,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     app.bind_all('<MouseWheel>', lambda event: canvases[active_page[0]].yview_scroll(-int(event.delta / 120), 'units'))
 
     def poll():
-        nonlocal busy, ready
+        nonlocal busy, ready, config
         while not events.empty():
             kind, message = events.get()
             if kind == 'done':
@@ -311,6 +325,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                     widget.configure(state='readonly' if isinstance(widget, ttk.Combobox) else 'normal')
                 update_summary()
             elif kind == 'prepared':
+                config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
+                folder.set(config.get('game_root', ''))
                 ready = True; firmware.set(''); packages.clear()
                 package_text.set('Pacotes importados. Não precisam ser selecionados novamente.')
                 firmware_text.set('Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Build pronta para jogar.')

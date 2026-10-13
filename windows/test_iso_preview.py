@@ -67,6 +67,42 @@ class IsoPreviewTests(unittest.TestCase):
                      for p in workspace.rglob('*') if p.is_file()}
             self.assertEqual(original, after, 'Original SDK/index/ELF/generation must remain unchanged')
 
+    def test_clean_iso_preparation_never_requires_extracted_assets(self):
+        import launcher
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); payload = root / 'bundle/payload'; payload.mkdir(parents=True)
+            (payload / 'tools').mkdir(); (payload / 'tools/build_windows.py').write_text('Synthetic')
+            home = root / 'clean'; home.mkdir()
+            metadata = home / 'metadata'; (metadata / 'PS3_GAME').mkdir(parents=True)
+            (metadata / 'PS3_GAME/PARAM.SFO').write_bytes(b'Synthetic metadata only')
+            helper = home / 'helper/rpcs3.exe'; helper.parent.mkdir(); helper.write_bytes(b'Synthetic helper')
+            update = helper.parent / 'dev_hdd0/game/BLUS31313/USRDIR'
+            (update / 'Data').mkdir(parents=True)
+            (update / 'Data/START_7.dat').write_bytes(b'Synthetic update')
+            (update / 'EBOOT.BIN').write_bytes(b'Synthetic owned binary')
+            image = root / 'game.iso'; image.write_bytes(b'Synthetic ISO')
+            backend = launcher.Backend(lambda message: None, home=home)
+            commands = []
+            def run(command, *args, **kwargs):
+                commands.append(list(map(str, command)))
+                if '--decrypt' in list(map(str, command)):
+                    (home / 'entrada-local/EBOOT.elf').write_bytes(b'Synthetic owned ELF')
+            with patch.object(launcher, 'ROOT', root / 'bundle'), \
+                 patch.object(launcher, 'digest', return_value=launcher.ELF_SHA), \
+                 patch.object(backend, 'prepare_iso_source', return_value=metadata), \
+                 patch.object(backend, 'check_game_files', side_effect=AssertionError('Extracted assets forbidden')), \
+                 patch.object(backend, 'helper', return_value=helper), \
+                 patch.object(backend, 'ensure_firmware'), \
+                 patch.object(backend, 'compiler_environment', return_value={'D2_TOOLCHAIN_ID': 'fixture'}), \
+                 patch.object(backend, 'run', side_effect=run):
+                backend.prepare(None, [], iso_path=image)
+            config = json.loads((home / 'build-atual.json').read_text())
+            self.assertTrue(config['native_iso'])
+            self.assertEqual(config['iso_path'], str(image))
+            self.assertEqual(config['game_root'], str(metadata))
+            self.assertTrue(any('--iso-vfs' in command for command in commands))
+            self.assertFalse((metadata / 'PS3_GAME/USRDIR').exists())
+
     def test_iso_play_requires_existing_preparation(self):
         import launcher
         with tempfile.TemporaryDirectory() as temporary:

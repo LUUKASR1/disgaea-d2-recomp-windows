@@ -132,6 +132,18 @@ int main(int count, char** args) {
         check(d2_iso_request(D2_ISO_STAT, noMount.data(), &result) == 0 && result == 99, "unmounted backend unchanged");
         check(d2_iso_mount(utf8(image).c_str()) == 0, "mount Unicode path through C bridge");
         check(d2_iso_check_title("BLUS31313") == 0 && d2_iso_check_title("BLES00000") != 0, "runtime title compatibility gate");
+        unsigned char* hostBytes = nullptr; std::uint64_t hostCount = 0;
+        check(d2_iso_read_host("/dev_hdd0/missing", 0, 0, &hostBytes, &hostCount) == 0, "host codec HDD backend unchanged");
+        check(d2_iso_read_host("/dev_bdvd/PS3_GAME/USRDIR/Data/fragment.bin", 7, 23, &hostBytes, &hostCount) == 1
+            && hostCount == 23 && std::equal(expected.begin() + 7, expected.begin() + 30,
+                reinterpret_cast<std::byte*>(hostBytes)), "host codec positioned ISO bytes");
+        std::free(hostBytes); hostBytes = nullptr;
+        check(d2_iso_read_host("/dev_bdvd/missing.bin", 0, 0, &hostBytes, &hostCount) == -1
+            && !hostBytes && !hostCount, "missing codec asset cannot use stale folder");
+        check(d2_iso_read_host("/dev_bdvd/PS3_GAME/USRDIR/Data/fragment.bin", UINT64_MAX, 1, &hostBytes, &hostCount) == -1,
+            "host codec out-of-range offset rejected");
+        check(d2_iso_read_host("/dev_bdvd/PS3_GAME/../PARAM.SFO", 0, 0, &hostBytes, &hostCount) == -1,
+            "host codec traversal rejected");
         putPath("/dev_hdd0/home/00000001/savedata/D2");
         check(d2_iso_request(D2_ISO_STAT, std::array<std::uint64_t, 6>{64, 1000}.data(), &result) == 0, "save backend unchanged");
         putPath("/dev_hdd0/game/BLUS31313/USRDIR/Data/START_7.dat");

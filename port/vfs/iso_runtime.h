@@ -14,6 +14,10 @@ enum d2_iso_operation {
 // UTF-8 image path; host path conversion uses filesystem::u8path.
 int d2_iso_mount(const char* image_utf8);
 int d2_iso_check_title(const char* expected_title_id);
+// 0: host-owned; 1: ISO bytes allocated with malloc; -1: ISO read failed.
+// Caller frees bytes. Zero limit means remaining file; maximum 64 MiB.
+int d2_iso_read_host(const char* path, uint64_t offset, uint64_t limit,
+                     unsigned char** bytes, uint64_t* count);
 const char* d2_iso_last_error(void);
 void d2_iso_bind_memory(void* base, uint64_t length);
 // Return 0 to preserve the existing host backend (updates, DLCs, saves).

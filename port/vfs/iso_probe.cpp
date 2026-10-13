@@ -1,5 +1,6 @@
 #include "iso_vfs.h"
 #include <array>
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -54,6 +55,36 @@ static ProbeResult probe(const std::filesystem::path& image) {
     }
 }
 
+
+static int prepareMetadata(const std::filesystem::path& image, const std::filesystem::path& root) {
+    const auto checked = probe(image);
+    std::cout << checked.report;
+    if (checked.status) return checked.status;
+    try {
+        d2::vfs::IsoVfs disc(image);
+        if (disc.TitleId() != "BLUS31313") throw std::runtime_error("ISO alterada durante verificacao.");
+        auto bytes = disc.GetFileBytes("/PS3_GAME/PARAM.SFO", 1024 * 1024);
+        const auto folder = root / "PS3_GAME";
+        const auto target = folder / "PARAM.SFO";
+        if (std::filesystem::exists(target)) {
+            std::ifstream input(target, std::ios::binary);
+            std::string old((std::istreambuf_iterator<char>(input)), {});
+            if (old.size() != bytes.size() || !std::equal(bytes.begin(), bytes.end(),
+                reinterpret_cast<const std::byte*>(old.data())))
+                throw std::runtime_error("Metadados existentes diferentes; arquivos preservados.");
+            return 0;
+        }
+        std::filesystem::create_directories(folder);
+        const auto temporary = folder / "PARAM.SFO.pending";
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size()); output.close();
+        if (!output) throw std::runtime_error("Falha ao salvar metadados ISO.");
+        std::filesystem::rename(temporary, target);
+        std::cout << "Metadata-only cache ready; no game assets or executable extracted.\n";
+        return 0;
+    } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+}
+
 #ifdef _WIN32
 static std::filesystem::path saveReport(const std::string& report) {
     PWSTR downloads = nullptr;
@@ -73,6 +104,10 @@ static std::filesystem::path saveReport(const std::string& report) {
 int main() {
     int count = 0; wchar_t** args = CommandLineToArgvW(GetCommandLineW(), &count);
     if (!args) return 2;
+    if (count == 4 && std::wstring_view(args[1]) == L"--metadata-root") {
+        auto root = std::filesystem::path(args[2]); auto image = std::filesystem::path(args[3]);
+        LocalFree(args); return prepareMetadata(image, root);
+    }
     const bool interactive = count == 1;
     std::filesystem::path image;
     if (interactive) {
@@ -107,6 +142,8 @@ int main() {
 }
 #else
 int main(int count, char** args) {
+    if (count == 4 && std::string_view(args[1]) == "--metadata-root")
+        return prepareMetadata(args[3], args[2]);
     if (count != 2) { std::cerr << "Uso: d2_iso_probe <ISO descriptografada>\n"; return 2; }
     const auto result = probe(args[1]); std::cout << result.report; return result.status;
 }

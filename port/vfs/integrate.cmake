@@ -6,7 +6,8 @@ execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/vfs
     "${PS3RECOMP_DIR}" "${D2_ISO_ADAPTER_DIR}" COMMAND_ERROR_IS_FATAL ANY)
 
 get_target_property(D2_SDK_SOURCES ps3recomp_runtime SOURCES)
-foreach(relative IN ITEMS runtime/syscalls/sys_fs.c libs/filesystem/cellFs.c)
+foreach(relative IN ITEMS runtime/syscalls/sys_fs.c libs/filesystem/cellFs.c
+    libs/codec/cellPngDec.c libs/codec/cellJpgDec.c libs/codec/cellGifDec.c)
     set(original "${PS3RECOMP_DIR}/${relative}")
     if(NOT original IN_LIST D2_SDK_SOURCES)
         message(FATAL_ERROR "Filesystem source not found in SDK target: ${relative}")

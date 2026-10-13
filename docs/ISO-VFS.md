@@ -138,3 +138,20 @@ must preserve the applicable source, notices and relinking materials.
 The in-project ISO9660 reader follows the primary descriptor and directory
 record layouts in ECMA-119 (2019 edition, clauses 8 and 9):
 https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
+
+## Preparação ISO limpa — preview 0.1.12
+
+O novo `DisgaeaD2Launcher-ISO-Clean-Preview.exe` usa dados separados em
+`DisgaeaD2Recomp-ISO-Clean`, sem reaproveitar a build, ferramentas, HDD ou saves
+anteriores. Selecione **Selecionar ISO e jogar** e os PKGs locais da atualização
+USA 1.40 (DLCs opcionais). O fluxo valida os arquivos da ISO, gera um cache
+contendo apenas `PS3_GAME/PARAM.SFO` para o serviço de metadados legado e prepara
+uma nova compilação com `D2_ENABLE_ISO_VFS=ON`. Não extrai o EBOOT base, os
+arquivos DAT, áudio ou texturas do disco. PNG/JPG/GIF em caminhos do disco são
+lidos pelo VFS diretamente na memória dos codecs, sem fallback para a pasta.
+
+Este preview remove a necessidade da pasta base extraída, mas **ainda utiliza
+RPCS3 internamente na preparação dos PKGs e do ELF 1.40**, além de firmware e
+ferramentas privadas baixadas automaticamente. O gameplay usa o runtime nativo.
+Não representa ainda a meta final sem auxiliar/firmware. Instalação limpa e
+jogo completo precisam ser validados no PC do usuário antes de publicação.

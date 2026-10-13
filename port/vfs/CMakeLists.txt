@@ -59,6 +59,10 @@ if(D2_ISO_SDK_DIR)
     if(NOT WIN32)
         target_compile_definitions(d2_iso_sdk_check PRIVATE _GNU_SOURCE)
     endif()
+    add_library(d2_iso_codec_check OBJECT
+        "${D2_ISO_GENERATED}/cellPngDec.c" "${D2_ISO_GENERATED}/cellJpgDec.c" "${D2_ISO_GENERATED}/cellGifDec.c")
+    target_include_directories(d2_iso_codec_check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${D2_ISO_SDK_DIR}/include"
+        "${D2_ISO_SDK_DIR}/libs/filesystem" "${D2_ISO_SDK_DIR}/libs/codec")
     if(BUILD_TESTING)
         add_executable(d2_iso_sdk_tests tests/sdk_integration.cpp $<TARGET_OBJECTS:d2_iso_sdk_check>)
         target_include_directories(d2_iso_sdk_tests PRIVATE
@@ -85,6 +89,9 @@ if(BUILD_TESTING)
     set_tests_properties(iso_probe_complete PROPERTIES FIXTURES_REQUIRED udf_images TIMEOUT 90)
     add_test(NAME iso_probe_hybrid_fallback COMMAND d2_iso_probe "${fixtures}/hybrid-fallback.iso")
     set_tests_properties(iso_probe_hybrid_fallback PROPERTIES FIXTURES_REQUIRED udf_images TIMEOUT 90)
+    add_test(NAME iso_metadata_cache COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_metadata.py" "$<TARGET_FILE:d2_iso_probe>" "${fixtures}")
+    set_tests_properties(iso_metadata_cache PROPERTIES FIXTURES_REQUIRED udf_images TIMEOUT 90)
     if(TARGET d2_iso_sdk_tests)
         add_test(NAME iso_sdk_integration COMMAND d2_iso_sdk_tests "${fixtures}")
         set_tests_properties(iso_sdk_integration PROPERTIES FIXTURES_REQUIRED udf_images TIMEOUT 90)

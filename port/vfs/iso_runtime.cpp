@@ -4,6 +4,7 @@
 #include <array>
 #include <climits>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
 #include <unordered_map>
@@ -118,6 +119,30 @@ extern "C" int d2_iso_mount(const char* image) {
     } catch (const std::exception& error) { lastError = error.what(); return -1; }
 }
 extern "C" const char* d2_iso_last_error(void) { return lastError.c_str(); }
+extern "C" int d2_iso_read_host(const char* path, std::uint64_t offset,
+    std::uint64_t limit, unsigned char** bytes, std::uint64_t* count) {
+    std::shared_ptr<IsoVfs> volume;
+    { std::scoped_lock lock(tableMutex); volume = disc; }
+    std::string internal;
+    if (!volume || !path || !mapPath(path, internal)) return 0;
+    if (!bytes || !count) return -1;
+    *bytes = nullptr; *count = 0;
+    unsigned char* allocated = nullptr;
+    try {
+        auto file = volume->Open(internal);
+        if (offset > file->Size()) throw std::runtime_error("Offset fora do arquivo ISO.");
+        auto size = file->Size() - offset;
+        if (limit) size = std::min(size, limit);
+        if (size > 64u * 1024u * 1024u) throw std::runtime_error("Imagem ISO excede limite de memoria.");
+        allocated = static_cast<unsigned char*>(std::malloc(size ? static_cast<std::size_t>(size) : 1));
+        if (!allocated) throw std::bad_alloc();
+        auto output = std::span(reinterpret_cast<std::byte*>(allocated), static_cast<std::size_t>(size));
+        if (file->ReadAt(offset, output) != size) throw std::runtime_error("Leitura ISO incompleta.");
+        *bytes = allocated; *count = size; return 1;
+    } catch (const std::exception& error) {
+        std::free(allocated); lastError = error.what(); return -1;
+    }
+}
 extern "C" int d2_iso_check_title(const char* expected) {
     try {
         std::shared_ptr<IsoVfs> volume;

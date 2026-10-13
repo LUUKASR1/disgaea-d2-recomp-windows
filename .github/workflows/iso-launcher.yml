@@ -6,6 +6,9 @@ on:
       - 'windows/launcher_gui.py'
       - 'windows/test_iso_preview.py'
       - 'tools/build_iso_preview.py'
+      - 'tools/build_iso_reader.py'
+      - 'tools/build_windows.py'
+      - 'port/vfs/**'
       - 'tools/package_launcher.py'
       - '.github/workflows/iso-launcher.yml'
   pull_request:
@@ -14,6 +17,9 @@ on:
       - 'windows/launcher_gui.py'
       - 'windows/test_iso_preview.py'
       - 'tools/build_iso_preview.py'
+      - 'tools/build_iso_reader.py'
+      - 'tools/build_windows.py'
+      - 'port/vfs/**'
       - 'tools/package_launcher.py'
       - '.github/workflows/iso-launcher.yml'
   workflow_dispatch:
@@ -43,13 +49,13 @@ jobs:
       - name: Test embedded interpreter
         shell: pwsh
         run: |
-          $exe = Resolve-Path dist/DisgaeaD2Launcher-ISO-Preview.exe
+          $exe = Resolve-Path dist/DisgaeaD2Launcher-ISO-Clean-Preview.exe
           $process = Start-Process $exe -ArgumentList '--self-test' -PassThru
           if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Self-test timed out' }
           $process.Refresh()
           if ($process.ExitCode -ne 0) { throw 'Embedded interpreter failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2Launcher-ISO-Preview-Windows-x64
-          path: dist/DisgaeaD2Launcher-ISO-Preview.exe
+          name: DisgaeaD2Launcher-ISO-Clean-Preview-Windows-x64
+          path: dist/DisgaeaD2Launcher-ISO-Clean-Preview.exe
           if-no-files-found: error
