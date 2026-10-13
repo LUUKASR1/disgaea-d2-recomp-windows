@@ -170,3 +170,11 @@
 !/.github/workflows/iso-launcher.yml
 /build-iso-vfs/
 /ci-tools/
+
+# Native graphics sources and audited upstream FSR headers.
+!/.gitattributes
+!/port/graphics/
+!/port/graphics/**
+/port/graphics/build*/
+!/.github/workflows/graphics.yml
+/build-graphics/

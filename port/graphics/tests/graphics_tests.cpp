@@ -34,9 +34,11 @@ int main(){try{
         {"640","360","1280","720","native"},
         {"640","360","1280","720","fsr1"}};
     for(auto c:cases){
-        SetEnvironmentVariableA("D2_RENDER_WIDTH",c.rw);SetEnvironmentVariableA("D2_RENDER_HEIGHT",c.rh);
-        SetEnvironmentVariableA("D2_OUTPUT_WIDTH",c.ow);SetEnvironmentVariableA("D2_OUTPUT_HEIGHT",c.oh);
-        SetEnvironmentVariableA("D2_UPSCALER",c.mode);require(d2_graphics_configure(1280,720)==0,"Configure graphics");
+        _putenv_s("D2_RENDER_WIDTH",c.rw);_putenv_s("D2_RENDER_HEIGHT",c.rh);
+        _putenv_s("D2_OUTPUT_WIDTH",c.ow);_putenv_s("D2_OUTPUT_HEIGHT",c.oh);
+        _putenv_s("D2_UPSCALER",c.mode);require(d2_graphics_configure(1280,720)==0,"Configure graphics");
+        require(d2_graphics_render_width()==(UINT)atoi(c.rw)&&d2_graphics_render_height()==(UINT)atoi(c.rh)&&
+                d2_graphics_output_width()==(UINT)atoi(c.ow)&&d2_graphics_output_height()==(UINT)atoi(c.oh),"Requested dimensions actually active");
         DXGI_SWAP_CHAIN_DESC1 sd{};sd.Width=d2_graphics_output_width();sd.Height=d2_graphics_output_height();sd.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
         sd.SampleDesc.Count=1;sd.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;sd.BufferCount=2;sd.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;
         Ref<IDXGISwapChain1> s1;ok(factory->CreateSwapChainForHwnd(queue.p,window,&sd,nullptr,nullptr,s1.put()));
@@ -89,6 +91,6 @@ int main(){try{
             if(bad)std::fprintf(stderr,"%s\n",message->pDescription);std::free(message);require(!bad,"D3D12 validation error");
         }
     }
-    SetEnvironmentVariableA("D2_UPSCALER","dlss");require(d2_graphics_configure(1280,720)!=0,"Unsupported DLSS cannot masquerade as active");
+    _putenv_s("D2_UPSCALER","dlss");require(d2_graphics_configure(1280,720)!=0,"Unsupported DLSS cannot masquerade as active");
     DestroyWindow(window);CloseHandle(event);return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"FAIL: %s\n",e.what());d2_graphics_shutdown();return 1;}}
