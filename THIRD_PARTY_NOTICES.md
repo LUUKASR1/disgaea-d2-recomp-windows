@@ -57,3 +57,11 @@ assets and are not added to this repository.
 - Git for Windows: https://github.com/git-for-windows/git
 - PS3 firmware is downloaded directly from Sony's official update server,
   verified against a pinned SHA-256, and remains local. It is not bundled.
+
+The helper's Microsoft Visual C++ runtime DLLs are downloaded from the pinned
+Microsoft.VC.14.44.17.14.CRT.Redist.X64.base package on Microsoft's official
+Visual Studio distribution server. Only the release CRT directory is used;
+no development tools or debug DLLs are installed. Package and individual DLL
+SHA-256 checks are mandatory. The DLLs stay beside the local preparation helper.
+
+Microsoft deployment guidance: https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp

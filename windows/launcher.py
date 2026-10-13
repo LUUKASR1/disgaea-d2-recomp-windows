@@ -340,11 +340,13 @@ class Backend:
             return None
 
     def helper(self):
+        from portable_tools import ensure_helper_runtime
         directory = self.home / 'auxiliar-rpcs3'
         exe = directory / 'rpcs3.exe'
         if exe.is_file():
             # Headless RPCS3 opens log files before it creates its data folders.
             (directory / 'log').mkdir(parents=True, exist_ok=True)
+            ensure_helper_runtime(self.home, directory, download, self.notify)
             return exe
         self.notify('Baixando auxiliar RPCS3 oficial; usado somente na preparacao.')
         archive = self.home / 'rpcs3.7z'
@@ -368,6 +370,7 @@ class Backend:
         staging.rename(directory)
         (directory / 'log').mkdir(parents=True, exist_ok=True)
         archive.unlink()
+        ensure_helper_runtime(self.home, directory, download, self.notify)
         return exe
 
     def prepare(self, folder, packages, firmware=None):
@@ -598,7 +601,7 @@ def main():
         smoke.mkdir(parents=True, exist_ok=True)
         (smoke / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(LauncherSmoke LANGUAGES C CXX)\nfind_package(Python3 COMPONENTS Interpreter REQUIRED)\nadd_executable(smoke hello.cpp)\ntarget_link_libraries(smoke PRIVATE d3dcompiler xinput9_1_0 ole32)\n')
         # Exercise both legacy SDK TLS spelling and C++ TLS, without a GPU.
-        (smoke / 'hello.cpp').write_text('''#include <windows.h>
+        (smoke / 'hello.cpp').write_text(r'''#include <windows.h>
 #include <d3dcompiler.h>
 #include <xinput.h>
 #include <thread>
@@ -607,7 +610,23 @@ def main():
 #include <smmintrin.h>
 __declspec(thread) int sdk_tls = 0;
 thread_local int cpp_tls = 0;
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2) {
+        auto length = MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, nullptr, 0);
+        std::wstring directory(length, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, directory.data(), length);
+        directory.pop_back(); SetDllDirectoryW(directory.c_str());
+        const wchar_t* names[] = {L"msvcp140.dll", L"msvcp140_1.dll", L"msvcp140_2.dll",
+            L"vcruntime140.dll", L"vcruntime140_1.dll", L"concrt140.dll"};
+        for (auto name : names) {
+            auto library = LoadLibraryW((directory + L"/" + name).c_str());
+            if (!library) return 6;
+            wchar_t loaded[MAX_PATH]; GetModuleFileNameW(library, loaded, MAX_PATH);
+            std::wstring actual(loaded);
+            if (actual.substr(0, actual.find_last_of(L"/\\\\")) != directory) return 7;
+        }
+        return 0;
+    }
     sdk_tls = 7; cpp_tls = 9;
     bool ok = false;
     std::thread child([&] { ok = sdk_tls == 0 && cpp_tls == 0;
@@ -656,6 +675,10 @@ int main() {
     elif '--auxiliary-test' in sys.argv:
         backend = Backend(lambda text: None)
         helper = backend.helper()
+        probe = HOME / 'toolchain-test/build/smoke.exe'
+        if not probe.is_file():
+            raise RuntimeError('Portable runtime loading probe missing')
+        backend.run([probe, helper.parent], timeout=30, label='Verificar DLLs Microsoft privadas')
         # --help exercises the real log setup without game/firmware inputs.
         # An invalid --decrypt input triggers an upstream teardown assertion
         # on a fresh firmware-free RPCS3 profile, unrelated to log creation.

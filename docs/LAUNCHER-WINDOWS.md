@@ -177,3 +177,8 @@ A compilacao cruzada local de uma copia 1.00 gerou o executavel completo com
 essas ferramentas. Isso valida compilacao e link, nao confirma a execucao
 de uma nova build US 1.40: ainda e necessario testa-la com os arquivos proprios
 do usuario. Os testes publicos do CI usam somente fontes e fixtures sinteticas.
+
+O auxiliar recebe automaticamente as DLLs de runtime C++ da Microsoft na sua
+propria pasta. O pacote oficial e as DLLs sao verificados por SHA-256. Isso
+evita depender de uma instalacao global de Visual C++ Redistributable para
+essa etapa. A sonda nativa do CI confere o carregamento das DLLs locais.

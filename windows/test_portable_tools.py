@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path, PureWindowsPath
 import os
 import tempfile
@@ -11,6 +12,21 @@ import portable_tools
 
 
 class PortableToolsTests(unittest.TestCase):
+    def test_private_runtime_repairs_corrupt_dll_and_reuses_valid_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, helper = root / 'source', root / 'helper'
+            source.mkdir(); helper.mkdir()
+            content = b'verified runtime fixture'
+            (source / 'runtime.dll').write_bytes(content)
+            (helper / 'runtime.dll').write_bytes(b'broken')
+            hashes = {'runtime.dll': hashlib.sha256(content).hexdigest()}
+            with patch.dict(portable_tools.CRT_FILES, hashes, clear=True), patch('portable_tools.ensure_tool', return_value=source) as tool:
+                portable_tools.ensure_helper_runtime(root, helper, None, lambda text: None)
+                portable_tools.ensure_helper_runtime(root, helper, None, lambda text: None)
+                tool.assert_called_once()
+            self.assertEqual((helper / 'runtime.dll').read_bytes(), content)
+
     def test_windows_compiler_paths_do_not_leak_cmake_escapes_or_msvc_headers(self):
         with patch('portable_tools.ensure_tool', return_value=PureWindowsPath('C:/Users/test name/tools')), \
                 patch('portable_tools.shutil.which', return_value='portable-tool'), \
