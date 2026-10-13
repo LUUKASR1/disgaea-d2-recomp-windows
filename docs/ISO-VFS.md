@@ -62,6 +62,23 @@ adotado pelo projeto; as ferramentas são de desenvolvimento, não do diagnósti
 
 ## Habilitar no runtime (desenvolvimento)
 
+O artefato **DisgaeaD2Launcher-ISO-Preview-Windows-x64** da ação
+**Experimental ISO launcher** contém um único
+`DisgaeaD2Launcher-ISO-Preview.exe`. Ele detecta a preparação local USA 1.40
+existente. Clique em **Jogar pela ISO (experimental)** e selecione sua imagem.
+Na primeira vez, o launcher verifica o ELF/SDK/código gerado e compila um
+runtime separado em `iso-builds`. Depois reutiliza esse executável.
+
+A build funcional, o índice/fontes do SDK e os arquivos gerados originais são
+preservados. O teste não reinstala firmware/PKGs nem regenera código do jogo.
+As montagens atuais de HDD fornecem atualização, DLCs e saves. Os logs deste
+modo começam com `jogo-ISO-` na pasta de dados do launcher.
+
+Esse launcher **ainda requer a preparação existente**. Não remove as demais
+dependências do primeiro preparo nem garante que todos os serviços de mídia
+tenham migrado para o VFS. O objetivo desta versão é validar o jogo completo
+com os assets da ISO, mantendo a opção de executar a build anterior.
+
 Adicione `-DD2_ENABLE_ISO_VFS=ON` à configuração CMake do port. Essa opção precisa
 de uma build nova; o executável lançado anteriormente não tem este módulo.
 

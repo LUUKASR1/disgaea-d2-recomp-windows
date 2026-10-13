@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.10-preview'
+VERSION = '0.1.11-iso-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
@@ -519,16 +519,39 @@ class Backend:
         temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
         temporary.replace(target)
 
-    def play(self):
+    def play_iso(self, image):
+        image = Path(image).resolve()
+        if image.suffix.lower() != '.iso' or not image.is_file():
+            raise ValueError('Selecione uma ISO existente do jogo USA BLUS31313.')
+        try:
+            config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raise RuntimeError('Prepare o jogo USA 1.40 primeiro no launcher atual. Este teste reutiliza a preparacao existente.')
+        source = ROOT / 'payload'
+        identity = build_source_signature(source) + digest(source / 'tools/build_iso_preview.py') + str(Path(config['workspace']).resolve())
+        key = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        preview = self.home / 'iso-builds' / key
+        env = self.compiler_environment()
+        self.notify('Preparando o modo ISO. Na primeira vez, aguarde a compilação automática.')
+        self.run([sys.executable, source / 'tools/build_iso_preview.py', '--source', source,
+                  '--workspace', config['workspace'], '--preview', preview,
+                  '--json-include', ROOT / 'vendor/include'], env, label='Preparar runtime ISO experimental')
+        self.play(iso_path=image, iso_executable=preview / 'build/DisgaeaD2Recomp.exe')
+
+    def play(self, iso_path=None, iso_executable=None):
         config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
         repo = Path(config['workspace'])
-        self.check_game_files(config['game_root'])
+        if iso_path is None:
+            self.check_game_files(config['game_root'])
+        elif not Path(iso_path).is_file() or not iso_executable or not Path(iso_executable).is_file():
+            raise RuntimeError('ISO ou executavel experimental ausente.')
         sys.path.insert(0, str(ROOT / 'windows'))
         from iniciar_build import launch_environment
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())
         from display_settings import load_settings, display_environment, configure_game_window
         settings = load_settings(self.home)
         env = display_environment(launch_environment(profile, config, os.environ), settings)
+        env.pop('D2_GAME_ISO', None)
         self.notify('Jogo em execução.')
         stop = threading.Event()
         workers = []
@@ -544,9 +567,11 @@ class Backend:
             thread = threading.Thread(target=configure, daemon=True)
             workers.append(thread)
             thread.start()
-        log = self.home / 'logs' / ('jogo-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
+        log = self.home / 'logs' / (('jogo-ISO-' if iso_path else 'jogo-') + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
         try:
-            self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo,
+            command = [iso_executable or repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf']
+            if iso_path: command += ['--iso', Path(iso_path)]
+            self.run(command, env, cwd=repo,
                      label='Executar jogo nativo', log_path=log, on_started=on_started)
         finally:
             stop.set()

@@ -187,7 +187,23 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                 status.set('Selecione a atualização USA 1.40 para a primeira preparação.')
                 return
         game, pkgs, fw = folder.get(), list(packages), firmware.get()
-        task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
+        if ready and game == config.get('game_root') and not pkgs and not fw:
+            task(backend.play)
+        else:
+            task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
+
+    def play_iso():
+        if not ready:
+            messagebox.showinfo('Modo ISO experimental', 'Este teste usa a preparação USA 1.40 existente. Prepare primeiro no launcher atual.')
+            return
+        selected = filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
+            filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
+        if not selected: return
+        try:
+            save_settings(home, get_settings())
+        except (OSError, ValueError) as error:
+            messagebox.showerror('Configurações', str(error)); return
+        task(lambda: backend.play_iso(selected))
 
     page = bodies['Início']
     label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
@@ -200,6 +216,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
     button(page, 'Configurar vídeo', lambda: show('Vídeo'))
+    button(page, 'Jogar pela ISO (experimental)', play_iso)
     button(page, 'Preparar ou importar meu jogo', lambda: show('Preparação'))
 
     page = bodies['Vídeo']
