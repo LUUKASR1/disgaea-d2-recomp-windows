@@ -13,6 +13,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(D2_ENABLE_ISO_VFS "Experimental direct UDF ISO assets (decrypted images)" OFF)
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")
@@ -210,6 +212,9 @@ set(PS3RECOMP_SCAFFOLD
     "${PS3RECOMP_DIR}/runtime/ppu/ppu_fs.cpp"
     "${PS3RECOMP_DIR}/runtime/ppu/ppu_sysprx.cpp"
 )
+if(D2_ENABLE_ISO_VFS)
+    include(vfs/integrate.cmake)
+endif()
 
 # ---------------------------------------------------------------------------
 # Lifted SPU images (optional)
@@ -309,6 +314,13 @@ if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app.rc")
 endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE D2_GAME_VERSION=${D2_GAME_VERSION})
+if(D2_ENABLE_ISO_VFS)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE D2_ENABLE_ISO_VFS=1)
+    target_link_libraries(${PROJECT_NAME} PRIVATE d2_iso_vfs)
+    if(WIN32)
+        target_link_libraries(${PROJECT_NAME} PRIVATE shell32)
+    endif()
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     "${RECOMP_DIR}"                            # the generated ppu_recomp.h
