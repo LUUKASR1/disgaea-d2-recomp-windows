@@ -704,7 +704,9 @@ def main():
         sys.path.insert(0, str(ROOT / 'payload/tools'))
         sys.path.insert(0, str(ROOT / 'payload/windows'))
         import test_native_preparation
-        result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromModule(test_native_preparation))
+        HOME.mkdir(parents=True, exist_ok=True)
+        with (HOME / 'native-preparation-test.log').open('w', encoding='utf-8') as output:
+            result = unittest.TextTestRunner(stream=output, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(test_native_preparation))
         if not result.wasSuccessful(): raise RuntimeError('Embedded PKG/SELF regressions failed')
         if HOME.name != 'DisgaeaD2Recomp-Standalone': raise RuntimeError('Standalone profile isolation failed')
     elif '--toolchain-test' in sys.argv:

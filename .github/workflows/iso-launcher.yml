@@ -65,6 +65,11 @@ jobs:
           $process = Start-Process $renamed -ArgumentList '--native-preparation-test' -PassThru
           if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Native preparation tests timed out' }
           $process.Refresh()
+          $profile = Join-Path $env:LOCALAPPDATA 'DisgaeaD2Recomp-Standalone'
+          foreach ($name in @('native-preparation-test.log', 'preparacao.log')) {
+            $log = Join-Path $profile $name
+            if (Test-Path $log) { Get-Content $log -Tail 100 }
+          }
           if ($process.ExitCode -ne 0) { throw 'Embedded PKG/SELF tests failed' }
       - uses: actions/upload-artifact@v4
         with:
