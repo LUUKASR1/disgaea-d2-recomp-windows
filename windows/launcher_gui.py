@@ -75,6 +75,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     render_resolution = tk.StringVar(value=settings['render_resolution'])
     upscaler = tk.StringVar(value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
+    capture_enabled = tk.BooleanVar(value=False)
+    capture_status = tk.StringVar(value='Captura desativada.')
     status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
     build_status = tk.StringVar(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
     summary = tk.StringVar()
@@ -85,13 +87,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         widget.pack(anchor='w', pady=(0, 8))
         return widget
 
-    def button(parent, text, command, primary=False):
+    def button(parent, text, command, primary=False, while_playing=False):
         widget = tk.Button(parent, text=text, command=command, bg=RED if primary else CARD,
                            fg=TEXT, activebackground='#d34259' if primary else '#303042', activeforeground=TEXT,
                            disabledforeground='#747080', bd=0, relief='flat', cursor='hand2',
                            font=('Segoe UI', 12, 'bold' if primary else 'normal'), padx=20, pady=9)
         widget.pack(anchor='w', pady=4)
-        buttons.append(widget)
+        if not while_playing: buttons.append(widget)
         return widget
 
     def card(parent):
@@ -166,6 +168,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         if busy:
             return
         busy = True
+        backend.capture_enabled = capture_enabled.get()
         for widget in buttons + entries:
             widget.configure(state='disabled')
         progress.start(12)
@@ -331,6 +334,29 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     button(page, 'Abrir pasta de saves', lambda: open_path(home / ('hdd0/home' if standalone else 'auxiliar-rpcs3/dev_hdd0/home')))
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
+    capture_button = None
+    if home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+        diagnostic = card(page)
+        label(diagnostic, 'CAPTURA DE FRAME', 12, GOLD, True)
+        toggle = tk.Checkbutton(diagnostic, text='Habilitar captura na próxima abertura do jogo',
+            variable=capture_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
+            activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
+        toggle.pack(anchor='w', pady=4); entries.append(toggle)
+        label(diagnostic, 'Com o jogo aberto, pressione F8 ou clique em Capturar frame. Até oito capturas por sessão. Pode haver uma pausa breve durante a gravação.', 10, MUTED)
+        def request_capture():
+            try:
+                backend.request_frame_capture()
+                capture_status.set('Captura solicitada. Aguarde a gravação…')
+            except Exception as error:
+                messagebox.showinfo('Captura de frame', str(error))
+        capture_button = button(diagnostic, 'Capturar frame', request_capture, while_playing=True)
+        label(diagnostic, variable=capture_status, color=GOLD)
+        label(diagnostic, 'Ao fechar o jogo, um ZIP será salvo em Downloads. Os arquivos originais também ficam na pasta de capturas.', 10, MUTED)
+        button(diagnostic, 'Abrir pasta de capturas', lambda: open_path(home / 'captures'), while_playing=True)
+        def open_report_folder():
+            report = backend.last_capture_report
+            open_path(Path(report).parent if report else Path.home() / 'Downloads')
+        button(diagnostic, 'Abrir pasta do relatório', open_report_folder, while_playing=True)
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
     if not standalone: button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
@@ -362,6 +388,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                 status.set(message)
                 if kind == 'error':
                     messagebox.showerror('Disgaea D2', message)
+        if capture_button is not None:
+            session = backend.capture_session
+            capture_button.configure(state='normal' if session and session.running and not session.closed else 'disabled')
+            capture_status.set(backend.frame_capture_status() if session else 'Captura desativada.' if not capture_enabled.get() else 'Abra o jogo para capturar.')
         app.after(200, poll)
 
     def close():

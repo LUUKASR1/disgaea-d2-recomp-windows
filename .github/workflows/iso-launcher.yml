@@ -7,6 +7,8 @@ on:
       - 'windows/test_iso_preview.py'
       - 'windows/display_settings.py'
       - 'windows/test_display_settings.py'
+      - 'windows/frame_capture.py'
+      - 'windows/test_frame_capture.py'
       - 'port/graphics/**'
       - 'tools/build_iso_preview.py'
       - 'tools/build_iso_reader.py'
@@ -24,6 +26,8 @@ on:
       - 'windows/test_iso_preview.py'
       - 'windows/display_settings.py'
       - 'windows/test_display_settings.py'
+      - 'windows/frame_capture.py'
+      - 'windows/test_frame_capture.py'
       - 'port/graphics/**'
       - 'tools/build_iso_preview.py'
       - 'tools/build_iso_reader.py'
@@ -61,7 +65,7 @@ jobs:
       - name: Test embedded interpreter
         shell: pwsh
         run: |
-          $exe = Resolve-Path dist/DisgaeaD2Launcher-Graphics-Preview.exe
+          $exe = Resolve-Path dist/DisgaeaD2Launcher-Capture-Preview.exe
           $process = Start-Process $exe -ArgumentList '--self-test' -PassThru
           if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Self-test timed out' }
           $process.Refresh()
@@ -79,6 +83,6 @@ jobs:
           if ($process.ExitCode -ne 0) { throw 'Embedded PKG/SELF tests failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2Launcher-Graphics-Preview-Windows-x64
-          path: dist/DisgaeaD2Launcher-Graphics-Preview.exe
+          name: DisgaeaD2Launcher-Capture-Preview-Windows-x64
+          path: dist/DisgaeaD2Launcher-Capture-Preview.exe
           if-no-files-found: error

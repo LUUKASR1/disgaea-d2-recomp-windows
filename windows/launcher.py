@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.14-graphics-preview'
+VERSION = '0.1.15-capture-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
@@ -247,6 +247,17 @@ class Backend:
     def __init__(self, notify, home=HOME):
         self.home = Path(home)
         self.notify = notify
+        self.capture_enabled = False
+        self.capture_session = None
+        self.last_capture_report = None
+
+    def request_frame_capture(self):
+        if self.capture_session is None:
+            raise RuntimeError('Habilite a captura antes de abrir o jogo.')
+        self.capture_session.request()
+
+    def frame_capture_status(self):
+        return self.capture_session.status() if self.capture_session else 'Nenhuma sessão de captura ativa.'
 
     @property
     def standalone(self):
@@ -639,6 +650,14 @@ class Backend:
         from display_settings import load_settings, display_environment, configure_game_window
         settings = load_settings(self.home)
         env = display_environment(launch_environment(profile, config, os.environ), settings)
+        from frame_capture import CaptureSession, clean_capture_environment
+        env = clean_capture_environment(env)
+        session = None
+        self.last_capture_report = None
+        if self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+            session = CaptureSession(self.home, VERSION, settings)
+            env = session.environment(env)
+        self.capture_session = session
         env.pop('D2_GAME_ISO', None)
         if iso_root is not None:
             env['PS3_VFS_ROOT'] = str(iso_root)
@@ -646,6 +665,7 @@ class Backend:
         stop = threading.Event()
         workers = []
         def on_started(process):
+            if session: session.started()
             def configure():
                 try:
                     configure_game_window(process, settings, self.notify, stop)
@@ -667,7 +687,12 @@ class Backend:
             stop.set()
             for thread in workers:
                 thread.join(timeout=1)
-        self.notify('Jogo encerrado.')
+            if session:
+                try:
+                    self.last_capture_report = session.finish(log)
+                except Exception as error:
+                    self.notify('Não foi possível gerar o ZIP. As capturas permanecem em ' + str(session.directory) + ': ' + str(error))
+        self.notify('Jogo encerrado.' + (' Capturas: ' + str(self.last_capture_report) if self.last_capture_report else ''))
 
     def install_tools(self):
         winget = shutil.which('winget')

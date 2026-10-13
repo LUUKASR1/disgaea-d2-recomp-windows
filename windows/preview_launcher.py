@@ -26,7 +26,7 @@ def main():
     with tempfile.TemporaryDirectory() as root:
         app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', VERSION, lambda directory: False, preview=True)
         try:
-            for page, name in [('Início', 'inicio'), ('Vídeo', 'video'), ('Preparação', 'preparacao')]:
+            for page, name in [('Início', 'inicio'), ('Vídeo', 'video'), ('Preparação', 'preparacao'), ('Arquivos e suporte', 'capturas')]:
                 show(page); app.update(); app.update_idletasks()
                 capture(app, out / (name + '.png'))
         finally:

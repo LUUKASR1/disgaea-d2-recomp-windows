@@ -70,13 +70,36 @@ def generate(source, output):
         '            s_d3d.window_closed = 1; return;\n        }\n'
         '        s_d3d.swap_chain->lpVtbl->Present(s_d3d.swap_chain, (UINT)d2_interval, 0);')
     text = replace(text, '    /* Release D3D12 resources */',
-        '    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
+        '    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
+    text = replace(text,
+        'd2_capture_f8_next(&index)', 'd2_capture_next(&index, s_d3d.hwnd)')
+    text = replace(text, '    u32 d2_diag_valid;', '    u32 d2_capture_vs_hash;\n    u32 d2_diag_valid;')
+    text = replace(text, '        r->d2_diag_valid = enabled ? 1u : 0u;',
+        '        r->d2_capture_vs_hash = enabled && vs_idx >= 0 && vs_idx < s_d3d.vp_vs_n\n'
+        '            ? s_d3d.vp_vs[vs_idx].hash : 0;\n'
+        '        r->d2_diag_valid = enabled ? 1u : 0u;')
+    # Existing readbacks execute only upon request and restore each resource state.
+    # Convert capture-only paths to UTF-8-aware Win32 IO; preserve ordinary SDK IO.
+    start = text.index('static void cap_write_bmp(')
+    end = text.index('/* Decompile the captured RSX vertex program', start)
+    capture = text[start:end].replace('fopen(', 'd2_capture_fopen(')
+    capture = capture.replace('CreateDirectoryA(base, NULL);', 'd2_capture_mkdir(base);')
+    capture = capture.replace('CreateDirectoryA(dir, NULL);', 'd2_capture_mkdir(dir);')
+    capture = replace(capture, '                if(r->is_vp) {',
+        '                if(r->is_vp) {\n'
+        '                    fprintf(mf,"      SHADER vs-record-hash=%08X fp-address=%08X\\n",\n'
+        '                        r->d2_capture_vs_hash,r->fp_addr);')
+    capture = capture.replace('+ d) * VP_CB_STRIDE', '+ r->cb_slot) * VP_CB_STRIDE')
+    capture = replace(capture, '    printf("[RSXCAP] frame %llu -> %s (%u ops)\\n",',
+        '    d2_capture_finish(dir, s_d3d.frame_count, ndraws);\n'
+        '    printf("[RSXCAP] frame %llu -> %s (%u ops)\\n",')
+    text = text[:start] + capture + text[end:]
     def includes(match):
         path = source.parent / match[1]
         return '#include "'+path.resolve().as_posix()+'"' if path.is_file() else match[0]
     text = re.sub(r'#\s*include\s*"([^"\n]+)"', includes, text)
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text('#include "graphics.h"\n'+text, encoding='utf-8', newline='\n')
+    output.write_text('#include "graphics.h"\n#include "capture.h"\n'+text, encoding='utf-8', newline='\n')
 
 
 if __name__ == '__main__': generate(sys.argv[1], sys.argv[2])
