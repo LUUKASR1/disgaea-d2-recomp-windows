@@ -31,7 +31,7 @@ class DisplayTests(unittest.TestCase):
             (home / 'save.dat').write_bytes(b'owned save')
             value = {'resolution': '2560x1440', 'mode': 'borderless', 'vsync': True}
             display.save_settings(home, value)
-            self.assertEqual(display.load_settings(home), value)
+            self.assertEqual(display.load_settings(home), dict(display.DEFAULTS, **value))
             self.assertEqual((home / 'build-atual.json').read_bytes(), b'working build')
             self.assertEqual((home / 'save.dat').read_bytes(), b'owned save')
             self.assertFalse((home / 'launcher-settings.tmp').exists())
@@ -55,6 +55,15 @@ class DisplayTests(unittest.TestCase):
             self.assertEqual(path.read_text(), '{broken')
             display.save_settings(root, display.DEFAULTS)
             self.assertEqual(display.load_settings(root), display.DEFAULTS)
+
+    def test_render_size_and_output_size_are_independent(self):
+        value = dict(display.DEFAULTS, resolution='2560x1440', render_resolution='1280x720', upscaler='fsr1')
+        env = display.display_environment({'D2_UPSCALER': 'dlss'}, value)
+        self.assertEqual((env['D2_RENDER_WIDTH'], env['D2_OUTPUT_WIDTH']), ('1280', '2560'))
+        self.assertEqual(env['D2_UPSCALER'], 'fsr1')
+        for bad in ({'upscaler': 'dlss'}, {'frame_generation': True}, {'fsr_sharpness': float('nan')},
+                    {'fsr_sharpness': True}, {'resolution': '1280x720', 'render_resolution': '3840x2160', 'upscaler': 'fsr1'}):
+            with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, **bad))
 
     def test_window_fits_monitor_and_retains_aspect(self):
         value = dict(display.DEFAULTS, resolution='3840x2160')

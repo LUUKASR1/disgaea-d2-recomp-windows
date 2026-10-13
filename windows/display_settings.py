@@ -2,9 +2,12 @@
 import json
 from pathlib import Path
 import time
+import math
 
 RESOLUTIONS = ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')
-DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False}
+RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
+DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
+            'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False}
 
 
 def validate_settings(value):
@@ -17,6 +20,19 @@ def validate_settings(value):
         raise ValueError('Modo de exibição inválido.')
     if type(result['vsync']) is not bool:
         raise ValueError('VSync deve estar ligado ou desligado.')
+    if result['render_resolution'] not in RENDER_RESOLUTIONS:
+        raise ValueError('Resolução interna inválida.')
+    if result['upscaler'] not in ('native', 'fsr1'):
+        raise ValueError('DLSS/FSR temporal ainda indisponível nesta versão.')
+    sharp = result['fsr_sharpness']
+    if type(sharp) not in (int, float) or not math.isfinite(sharp) or not 0 <= sharp <= 1:
+        raise ValueError('Nitidez FSR deve estar entre 0 e 1.')
+    if result['frame_generation'] is not False:
+        raise ValueError('Frame generation ainda indisponível nesta versão.')
+    rw, rh = map(int, ('1280x720' if result['render_resolution'] == 'native' else result['render_resolution']).split('x'))
+    ow, oh = map(int, result['resolution'].split('x'))
+    if result['upscaler'] == 'fsr1' and (rw > ow or rh > oh):
+        raise ValueError('FSR 1 requer resolução interna menor ou igual à saída.')
     return result
 
 
@@ -43,7 +59,12 @@ def save_settings(home, value):
 
 def display_environment(inherited, settings):
     env = inherited.copy()
-    env['D2_PRESENT_INTERVAL'] = '1' if validate_settings(settings)['vsync'] else '0'
+    value = validate_settings(settings)
+    env['D2_PRESENT_INTERVAL'] = '1' if value['vsync'] else '0'
+    rw, rh = ('1280x720' if value['render_resolution'] == 'native' else value['render_resolution']).split('x')
+    ow, oh = value['resolution'].split('x')
+    env.update(D2_RENDER_WIDTH=rw, D2_RENDER_HEIGHT=rh, D2_OUTPUT_WIDTH=ow, D2_OUTPUT_HEIGHT=oh,
+               D2_UPSCALER=value['upscaler'], D2_FSR_SHARPNESS=str(value['fsr_sharpness']))
     return env
 
 

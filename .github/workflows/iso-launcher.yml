@@ -5,6 +5,9 @@ on:
       - 'windows/launcher.py'
       - 'windows/launcher_gui.py'
       - 'windows/test_iso_preview.py'
+      - 'windows/display_settings.py'
+      - 'windows/test_display_settings.py'
+      - 'port/graphics/**'
       - 'tools/build_iso_preview.py'
       - 'tools/build_iso_reader.py'
       - 'tools/import_owned_pkg.py'
@@ -19,6 +22,9 @@ on:
       - 'windows/launcher.py'
       - 'windows/launcher_gui.py'
       - 'windows/test_iso_preview.py'
+      - 'windows/display_settings.py'
+      - 'windows/test_display_settings.py'
+      - 'port/graphics/**'
       - 'tools/build_iso_preview.py'
       - 'tools/build_iso_reader.py'
       - 'tools/import_owned_pkg.py'
@@ -55,7 +61,7 @@ jobs:
       - name: Test embedded interpreter
         shell: pwsh
         run: |
-          $exe = Resolve-Path dist/DisgaeaD2Launcher-Standalone-Preview.exe
+          $exe = Resolve-Path dist/DisgaeaD2Launcher-Graphics-Preview.exe
           $process = Start-Process $exe -ArgumentList '--self-test' -PassThru
           if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Self-test timed out' }
           $process.Refresh()
@@ -65,7 +71,7 @@ jobs:
           $process = Start-Process $renamed -ArgumentList '--native-preparation-test' -PassThru
           if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Native preparation tests timed out' }
           $process.Refresh()
-          $profile = Join-Path $env:LOCALAPPDATA 'DisgaeaD2Recomp-Standalone'
+          $profile = Join-Path $env:LOCALAPPDATA 'DisgaeaD2Recomp-Graphics-Preview'
           foreach ($name in @('native-preparation-test.log', 'preparacao.log')) {
             $log = Join-Path $profile $name
             if (Test-Path $log) { Get-Content $log -Tail 100 }
@@ -73,6 +79,6 @@ jobs:
           if ($process.ExitCode -ne 0) { throw 'Embedded PKG/SELF tests failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2Launcher-Standalone-Preview-Windows-x64
-          path: dist/DisgaeaD2Launcher-Standalone-Preview.exe
+          name: DisgaeaD2Launcher-Graphics-Preview-Windows-x64
+          path: dist/DisgaeaD2Launcher-Graphics-Preview.exe
           if-no-files-found: error

@@ -1,0 +1,36 @@
+cmake_minimum_required(VERSION 3.20)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(D2Graphics LANGUAGES C CXX)
+    include(CTest)
+endif()
+if(NOT WIN32)
+    message(FATAL_ERROR "D2 graphics pipeline requires Windows DirectX 12")
+endif()
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    generate_shaders.py vendor/fsr1/ffx_a.h vendor/fsr1/ffx_fsr1.h)
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_shaders.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fsr_shaders.h" COMMAND_ERROR_IS_FATAL ANY)
+add_library(d2_graphics STATIC graphics.cpp)
+target_compile_features(d2_graphics PUBLIC cxx_std_20)
+target_include_directories(d2_graphics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(d2_graphics PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(d2_graphics PUBLIC d3d12 dxgi d3dcompiler dxguid uuid)
+if(BUILD_TESTING)
+    add_executable(d2_graphics_tests tests/graphics_tests.cpp)
+    target_link_libraries(d2_graphics_tests PRIVATE d2_graphics)
+    target_compile_definitions(d2_graphics_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    add_test(NAME graphics_gpu COMMAND d2_graphics_tests)
+    set_tests_properties(graphics_gpu PROPERTIES TIMEOUT 120)
+endif()
+
+set(D2_GRAPHICS_SDK_DIR "" CACHE PATH "Optional audited SDK renderer compile check")
+if(D2_GRAPHICS_SDK_DIR)
+    set(adapted "${CMAKE_CURRENT_BINARY_DIR}/rsx_d3d12_backend.c")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/adapt_graphics.py"
+        "${D2_GRAPHICS_SDK_DIR}/libs/video/rsx_d3d12_backend.c" "${adapted}" COMMAND_ERROR_IS_FATAL ANY)
+    add_library(d2_graphics_sdk_check OBJECT "${adapted}")
+    target_include_directories(d2_graphics_sdk_check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${D2_GRAPHICS_SDK_DIR}/include" "${D2_GRAPHICS_SDK_DIR}/libs/video"
+        "${D2_GRAPHICS_SDK_DIR}/libs/system" "${D2_GRAPHICS_SDK_DIR}/runtime/ppu")
+endif()

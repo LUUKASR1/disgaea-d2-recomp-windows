@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import webbrowser
 
-from display_settings import DEFAULTS, RESOLUTIONS, load_settings, save_settings
+from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, load_settings, save_settings
 
 BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
 TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
@@ -17,7 +17,7 @@ TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 
 def run_gui(Backend, home, version, firmware_present, preview=False):
     app = tk.Tk()
-    standalone = home.name == 'DisgaeaD2Recomp-Standalone'
+    standalone = home.name in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview')
     clean = standalone or home.name == 'DisgaeaD2Recomp-ISO-Clean'
     app.title('Disgaea D2 • ' + ('Standalone • ' if standalone else 'Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version)
     app.geometry('1040x680')
@@ -72,6 +72,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     resolution = tk.StringVar(value=settings['resolution'])
     mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
+    render_resolution = tk.StringVar(value=settings['render_resolution'])
+    upscaler = tk.StringVar(value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
+    sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
     status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
     build_status = tk.StringVar(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
     summary = tk.StringVar()
@@ -145,7 +148,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • Experimental', 9, MUTED)
 
     def get_settings():
-        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get()}
+        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'render_resolution': render_resolution.get(),
+                'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
+                'fsr_sharpness': sharpness.get(), 'frame_generation': False}
 
     def update_summary(*unused):
         display = resolution.get().replace('x', ' × ') if mode.get() == 'Janela' else 'Resolução do monitor'
@@ -249,7 +254,23 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                            selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
     check.pack(anchor='w', pady=8); entries.append(check)
     label(video, 'Padrão: VSync desligado, como na build que você já utiliza. Ligar pode alterar o ritmo dos quadros.', 10, MUTED)
-    label(page, 'A resolução de exibição amplia a imagem. Não aumenta a resolução interna nem adiciona detalhes ao jogo.', 10, MUTED)
+    graphics = card(page)
+    label(graphics, 'Resolução interna de renderização', bold=True)
+    render_combo = ttk.Combobox(graphics, textvariable=render_resolution, values=RENDER_RESOLUTIONS,
+                                state='readonly', style='D2.TCombobox', width=32)
+    render_combo.pack(anchor='w', pady=(0, 10)); entries.append(render_combo)
+    label(graphics, 'native = 1280 × 720. Alterar a resolução interna muda a rasterização na GPU.', 10, MUTED)
+    label(graphics, 'Upscaling', bold=True)
+    upscale_combo = ttk.Combobox(graphics, textvariable=upscaler, values=('Desligado', 'FSR 1 — espacial'),
+                               state='readonly', style='D2.TCombobox', width=32)
+    upscale_combo.pack(anchor='w', pady=(0, 10)); entries.append(upscale_combo)
+    label(graphics, 'Nitidez FSR', bold=True)
+    slider = tk.Scale(graphics, variable=sharpness, from_=0, to=1, resolution=0.05, orient='horizontal',
+                      bg=CARD, fg=TEXT, troughcolor=PANEL, highlightthickness=0, length=280)
+    slider.pack(anchor='w'); entries.append(slider)
+    label(graphics, 'DLSS e Frame Generation: ainda indisponíveis nesta versão.', 10, MUTED)
+    label(graphics, 'FSR 1 é espacial. FSR 3, DLSS e geração de frames exigem outra etapa de integração.', 10, MUTED)
+    label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
     def save_video():
         try:
             persist()
@@ -258,6 +279,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     button(page, 'Salvar configurações', save_video, True)
     def reset():
         resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync'])
+        render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
         save_video()
     button(page, 'Restaurar padrão', reset)
 

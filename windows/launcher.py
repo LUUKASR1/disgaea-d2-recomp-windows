@@ -16,12 +16,12 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.13-standalone-preview'
+VERSION = '0.1.14-graphics-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
-    'DisgaeaD2Recomp-Standalone' if _standalone else 'DisgaeaD2Recomp-ISO-Clean' if _clean_iso else 'DisgaeaD2Recomp')
+    'DisgaeaD2Recomp-Graphics-Preview' if (ROOT / 'vendor/graphics.json').is_file() else 'DisgaeaD2Recomp-Standalone' if _standalone else 'DisgaeaD2Recomp-ISO-Clean' if _clean_iso else 'DisgaeaD2Recomp')
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 RPCS3_URL = 'https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3-v0.0.43-20284-2ba2f75b_win64_msvc.7z'
 RPCS3_SHA = '8914810c74508b0e53c6b6cb39d4ed334ecee99639973062d259b1481bfa1720'
@@ -250,7 +250,7 @@ class Backend:
 
     @property
     def standalone(self):
-        return self.home.name == 'DisgaeaD2Recomp-Standalone'
+        return self.home.name in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview')
 
     def run(self, args, env=None, timeout=None, cwd=None, label=None, log_path=None, on_started=None):
         self.home.mkdir(parents=True, exist_ok=True)
@@ -600,12 +600,35 @@ class Backend:
         metadata = self.prepare_iso_source(image)
         self.play(iso_path=image, iso_executable=preview / 'build/DisgaeaD2Recomp.exe', iso_root=metadata)
 
+    def adopt_standalone_for_graphics(self):
+        if self.home.name != 'DisgaeaD2Recomp-Graphics-Preview' or (self.home / 'build-atual.json').exists(): return
+        previous = self.home.parent / 'DisgaeaD2Recomp-Standalone/build-atual.json'
+        if not previous.is_file(): return
+        config = json.loads(previous.read_text(encoding='utf-8'))
+        repo = Path(config['workspace'])
+        if (config.get('native_iso') and config.get('standalone') and
+                digest(repo / 'work/v140/EBOOT.elf') == ELF_SHA):
+            self.save(config)
+
+    def graphics_runtime(self, config):
+        source = ROOT / 'payload'
+        identity = build_source_signature(source) + digest(source / 'tools/build_iso_preview.py') + str(Path(config['workspace']).resolve())
+        key = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        output = self.home / 'graphics-builds' / key
+        env = self.compiler_environment()
+        self.run([sys.executable, source / 'tools/build_iso_preview.py', '--source', source,
+                  '--workspace', config['workspace'], '--preview', output,
+                  '--json-include', ROOT / 'vendor/include'], env, label='Preparar runtime gráfico separado')
+        return output / 'build/DisgaeaD2Recomp.exe'
+
     def play(self, iso_path=None, iso_executable=None, iso_root=None):
         config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
         repo = Path(config['workspace'])
         if iso_path is None and config.get('iso_path'):
             iso_path = Path(config['iso_path'])
             iso_executable = repo / 'port/build-windows-140/DisgaeaD2Recomp.exe'
+        if self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+            iso_executable = self.graphics_runtime(config)
         if iso_path is None:
             self.check_game_files(config['game_root'])
         elif not Path(iso_path).is_file() or not iso_executable or not Path(iso_executable).is_file():
@@ -668,6 +691,7 @@ class Backend:
 
 def gui():
     from launcher_gui import run_gui
+    Backend(lambda text: None).adopt_standalone_for_graphics()
     run_gui(Backend, HOME, VERSION, firmware_present)
 
 
@@ -708,7 +732,7 @@ def main():
         with (HOME / 'native-preparation-test.log').open('w', encoding='utf-8') as output:
             result = unittest.TextTestRunner(stream=output, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(test_native_preparation))
         if not result.wasSuccessful(): raise RuntimeError('Embedded PKG/SELF regressions failed')
-        if HOME.name != 'DisgaeaD2Recomp-Standalone': raise RuntimeError('Standalone profile isolation failed')
+        if HOME.name not in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview'): raise RuntimeError('Standalone profile isolation failed')
     elif '--toolchain-test' in sys.argv:
         backend = Backend(lambda text: None)
         env = backend.compiler_environment()
