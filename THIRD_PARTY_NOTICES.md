@@ -66,3 +66,12 @@ permission. No Visual Studio development environment or Vulkan SDK is installed.
 
 - Microsoft Visual C++: https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
 - Vulkan runtime: https://vulkan.lunarg.com/sdk/home
+
+## Independent package/SELF preparation
+
+The standalone preparation modules are original implementations using published
+PS3 format layouts and public constants. See docs/NATIVE-PREPARATION.md for
+pinned primary references. RPCS3 implementation code and binaries are not
+incorporated in these modules or invoked by the standalone preparation path.
+AES operations use the already bundled PyCryptodome dependency and its existing
+license notices. Owned update/ELF files and generated game code stay local.

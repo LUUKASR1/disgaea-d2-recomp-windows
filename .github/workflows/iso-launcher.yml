@@ -7,6 +7,9 @@ on:
       - 'windows/test_iso_preview.py'
       - 'tools/build_iso_preview.py'
       - 'tools/build_iso_reader.py'
+      - 'tools/import_owned_pkg.py'
+      - 'tools/prepare_owned_self.py'
+      - 'windows/test_native_preparation.py'
       - 'tools/build_windows.py'
       - 'port/vfs/**'
       - 'tools/package_launcher.py'
@@ -18,6 +21,9 @@ on:
       - 'windows/test_iso_preview.py'
       - 'tools/build_iso_preview.py'
       - 'tools/build_iso_reader.py'
+      - 'tools/import_owned_pkg.py'
+      - 'tools/prepare_owned_self.py'
+      - 'windows/test_native_preparation.py'
       - 'tools/build_windows.py'
       - 'port/vfs/**'
       - 'tools/package_launcher.py'
@@ -49,13 +55,19 @@ jobs:
       - name: Test embedded interpreter
         shell: pwsh
         run: |
-          $exe = Resolve-Path dist/DisgaeaD2Launcher-ISO-Clean-Preview.exe
+          $exe = Resolve-Path dist/DisgaeaD2Launcher-Standalone-Preview.exe
           $process = Start-Process $exe -ArgumentList '--self-test' -PassThru
           if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Self-test timed out' }
           $process.Refresh()
           if ($process.ExitCode -ne 0) { throw 'Embedded interpreter failed' }
+          $renamed = Join-Path $env:RUNNER_TEMP 'DisgaeaD2.exe'
+          Copy-Item $exe $renamed
+          $process = Start-Process $renamed -ArgumentList '--native-preparation-test' -PassThru
+          if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Native preparation tests timed out' }
+          $process.Refresh()
+          if ($process.ExitCode -ne 0) { throw 'Embedded PKG/SELF tests failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2Launcher-ISO-Clean-Preview-Windows-x64
-          path: dist/DisgaeaD2Launcher-ISO-Clean-Preview.exe
+          name: DisgaeaD2Launcher-Standalone-Preview-Windows-x64
+          path: dist/DisgaeaD2Launcher-Standalone-Preview.exe
           if-no-files-found: error

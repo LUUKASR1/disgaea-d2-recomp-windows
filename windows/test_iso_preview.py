@@ -103,6 +103,45 @@ class IsoPreviewTests(unittest.TestCase):
             self.assertTrue(any('--iso-vfs' in command for command in commands))
             self.assertFalse((metadata / 'PS3_GAME/USRDIR').exists())
 
+    def test_standalone_preparation_never_calls_helper_or_firmware(self):
+        import launcher
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); payload = root / 'bundle/payload'; payload.mkdir(parents=True)
+            (payload / 'tools').mkdir(); (payload / 'tools/build_windows.py').write_text('Synthetic')
+            home = root / 'DisgaeaD2Recomp-Standalone'; home.mkdir()
+            metadata = home / 'metadata'; (metadata / 'PS3_GAME').mkdir(parents=True)
+            (metadata / 'PS3_GAME/PARAM.SFO').write_bytes(b'Synthetic metadata only')
+            helper = home / 'helper/rpcs3.exe'; helper.parent.mkdir(); helper.write_bytes(b'Synthetic helper')
+            update = home / 'hdd0/game/BLUS31313/USRDIR'
+            (update / 'Data').mkdir(parents=True)
+            (update / 'Data/START_7.dat').write_bytes(b'Synthetic update')
+            (update / 'EBOOT.BIN').write_bytes(b'Synthetic owned binary')
+            image = root / 'game.iso'; image.write_bytes(b'Synthetic ISO')
+            backend = launcher.Backend(lambda message: None, home=home)
+            commands = []
+            def run(command, *args, **kwargs):
+                commands.append(list(map(str, command)))
+                if '--self' in list(map(str, command)):
+                    (home / 'entrada-local/EBOOT.elf').write_bytes(b'Synthetic owned ELF')
+            with patch.object(launcher, 'ROOT', root / 'bundle'), \
+                 patch.object(launcher, 'digest', return_value=launcher.ELF_SHA), \
+                 patch.object(backend, 'prepare_iso_source', return_value=metadata), \
+                 patch.object(backend, 'check_game_files', side_effect=AssertionError('Extracted assets forbidden')), \
+                 patch.object(backend, 'helper', side_effect=AssertionError('Emulator forbidden')), \
+                 patch.object(backend, 'ensure_firmware', side_effect=AssertionError('Firmware forbidden')), \
+                 patch.object(backend, 'compiler_environment', return_value={'D2_TOOLCHAIN_ID': 'fixture'}), \
+                 patch.object(backend, 'run', side_effect=run):
+                backend.prepare(None, [], iso_path=image)
+            config = json.loads((home / 'build-atual.json').read_text())
+            self.assertTrue(config['standalone'])
+            self.assertFalse(any('--decrypt' in c or '--installfw' in c for c in commands))
+            self.assertTrue(any('--self' in c for c in commands))
+            self.assertTrue(config['native_iso'])
+            self.assertEqual(config['iso_path'], str(image))
+            self.assertEqual(config['game_root'], str(metadata))
+            self.assertTrue(any('--iso-vfs' in command for command in commands))
+            self.assertFalse((metadata / 'PS3_GAME/USRDIR').exists())
+
     def test_iso_play_requires_existing_preparation(self):
         import launcher
         with tempfile.TemporaryDirectory() as temporary:

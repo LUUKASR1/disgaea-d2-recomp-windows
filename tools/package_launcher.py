@@ -8,7 +8,7 @@ import sys
 import urllib.request
 
 onefile = '--onefile' in sys.argv
-package_name = 'DisgaeaD2Launcher-ISO-Clean-Preview' if onefile else 'DisgaeaD2Launcher'
+package_name = 'DisgaeaD2Launcher-Standalone-Preview' if onefile else 'DisgaeaD2Launcher'
 
 root = Path(__file__).resolve().parents[1]
 staging = root / 'launcher-package'
@@ -32,6 +32,7 @@ for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(root / name, payload / name)
 vendor = staging / 'vendor'
 (vendor / 'bin').mkdir(parents=True)
+if onefile: (vendor / 'standalone.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
 for name in ('cmake', 'ninja'):
     tool = shutil.which(name)
     if not tool:

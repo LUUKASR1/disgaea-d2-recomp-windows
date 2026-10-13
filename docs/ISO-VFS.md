@@ -155,3 +155,10 @@ RPCS3 internamente na preparação dos PKGs e do ELF 1.40**, além de firmware e
 ferramentas privadas baixadas automaticamente. O gameplay usa o runtime nativo.
 Não representa ainda a meta final sem auxiliar/firmware. Instalação limpa e
 jogo completo precisam ser validados no PC do usuário antes de publicação.
+
+## Próxima etapa: standalone preview 0.1.13
+
+O fluxo independente de PKG/SELF, sem RPCS3 ou firmware, está documentado em
+[NATIVE-PREPARATION.md](NATIVE-PREPARATION.md). O executável
+`DisgaeaD2Launcher-Standalone-Preview.exe` usa um novo perfil separado.
+A primeira execução ainda baixa ferramentas portáteis e compila localmente.
