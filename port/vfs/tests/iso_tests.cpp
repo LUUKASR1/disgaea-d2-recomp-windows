@@ -50,6 +50,15 @@ int main(int count, char** args) {
         const auto image = root / std::filesystem::path(u8"RETRÔ-ação") / "D2.iso";
         const auto expected = readHost(root / "expected.bin");
         IsoVfs disc(image);
+        const auto udfLayout = InspectImage(image);
+        check(udfLayout.udfRecognition && udfLayout.udfAnchor && !udfLayout.iso9660Primary, "UDF format inspection");
+        const auto isoLayout = InspectImage(root / "iso9660.iso");
+        check(isoLayout.iso9660Primary && !isoLayout.udfRecognition && !isoLayout.udfAnchor, "ISO9660-only inspection");
+        check(isoLayout.Description().find("nao comprova criptografia") != std::string::npos, "format evidence does not diagnose encryption");
+        const auto bridgeLayout = InspectImage(root / "bridge.iso");
+        check(bridgeLayout.iso9660Primary && bridgeLayout.udfRecognition && bridgeLayout.udfAnchor, "ISO9660/UDF bridge inspection");
+        const auto unknownLayout = InspectImage(root / "bad.iso");
+        check(!unknownLayout.iso9660Primary && !unknownLayout.udfRecognition && !unknownLayout.udfAnchor, "unrecognized format stays unknown");
         check(disc.Stat("/").directory, "root directory");
         check(disc.Stat("/PS3_GAME/USRDIR/Data").directory, "nested directory");
         check(disc.Stat("/PS3_GAME/PARAM.SFO").size == 58, "inline file size");

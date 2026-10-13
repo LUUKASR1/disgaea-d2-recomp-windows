@@ -14,11 +14,17 @@
 struct ProbeResult { int status; std::string report; };
 static ProbeResult probe(const std::filesystem::path& image) {
     std::ostringstream report;
-    report << "Disgaea D2 - ISO VFS check (experimental)\n"
+    report << "Disgaea D2 - ISO VFS check v2 (experimental)\n"
            << "Checks native UDF reads only; does not launch the game.\n";
     auto name = image.u8string();
     report << "ISO: " << std::string(reinterpret_cast<const char*>(name.data()), name.size()) << "\n";
     try {
+        auto layout = d2::vfs::InspectImage(image);
+        report << "Image bytes=" << layout.bytes << " aligned_2048=" << layout.aligned << '\n'
+               << "Format: ISO9660=" << layout.iso9660Primary << " UDF_VRS=" << layout.udfRecognition
+               << " UDF_anchor=" << layout.udfAnchor << '\n';
+        for (const auto& descriptor : layout.descriptors) report << descriptor << '\n';
+        report << "Inspection: " << layout.Description() << '\n';
         d2::vfs::IsoVfs disc(image);
         const auto title = disc.TitleId();
         if (title != "BLUS31313") throw std::runtime_error("Este port requer BLUS31313; ISO selecionada: " + title);
@@ -86,7 +92,7 @@ int main() {
         const auto report = saveReport(result.report);
         std::wstring message = result.status == 0
             ? L"Leitura UDF dos arquivos base aprovada.\nEste diagnostico ainda nao executa o jogo.\n\nRelatorio: "
-            : L"A ISO nao passou na verificacao.\nConfira o motivo no relatorio.\n\nRelatorio: ";
+            : L"A ISO nao passou na verificacao UDF.\nIsso nao confirma criptografia ou arquivo danificado.\nConfira o formato e os descritores no relatorio.\n\nRelatorio: ";
         message += report.wstring();
         if (interactive) MessageBoxW(nullptr, message.c_str(), L"Disgaea D2 - ISO Check",
             MB_OK | (result.status ? MB_ICONWARNING : MB_ICONINFORMATION));

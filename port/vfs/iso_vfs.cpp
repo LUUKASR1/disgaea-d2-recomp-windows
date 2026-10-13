@@ -2,8 +2,10 @@
 #include "udfread.h"
 #include "blockinput.h"
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <climits>
+#include <cstring>
 #include <limits>
 #include <mutex>
 #ifdef _WIN32
@@ -98,6 +100,62 @@ private:
 };
 }
 
+std::string ImageLayout::Description() const {
+    if (iso9660Primary && !udfRecognition && !udfAnchor)
+        return "ISO9660 identificado; UDF nao identificado nos descritores inspecionados. "
+               "O leitor UDF atual nao suporta imagens somente ISO9660. Isso nao comprova criptografia.";
+    if (udfRecognition || udfAnchor)
+        return "Descritores UDF presentes. Uma falha de montagem requer verificar estruturas/particoes "
+               "e o suporte do leitor; este diagnostico nao determina criptografia dos assets.";
+    return "Formato nao identificado nos descritores inspecionados. Pode ser formato nao suportado, "
+           "imagem truncada/danificada ou dados criptografados; a causa nao foi determinada.";
+}
+
+ImageLayout InspectImage(const std::filesystem::path& image) {
+    NativeImage input(image);
+    ImageLayout layout;
+    layout.bytes = input.Size(); layout.aligned = layout.bytes % BlockSize == 0;
+    std::array<std::uint8_t, UDF_BLOCK_SIZE> block{};
+    for (std::uint64_t sector = 16; sector < 64 && sector < layout.bytes / BlockSize; ++sector) {
+        if (!input.ReadExact(sector * BlockSize, block.data(), block.size()))
+            throw Error(ErrorCode::Io, "Falha ao ler descritores da ISO.");
+        if (!std::memcmp(block.data() + 1, "CD001", 5) && block[6] == 1) {
+            auto text = "sector=" + std::to_string(sector) + " ISO9660 CD001 type=" + std::to_string(block[0]);
+            if (block[0] == 1) {
+                const auto logicalBlock = std::uint16_t(block[128]) | (std::uint16_t(block[129]) << 8);
+                const auto blockBigEndian = (std::uint16_t(block[130]) << 8) | block[131];
+                if (logicalBlock == 2048 && blockBigEndian == logicalBlock) {
+                    layout.iso9660Primary = true;
+                    const auto rootLba = std::uint32_t(block[158]) | (std::uint32_t(block[159]) << 8) |
+                        (std::uint32_t(block[160]) << 16) | (std::uint32_t(block[161]) << 24);
+                    text += " logical_block=2048 root_lba=" + std::to_string(rootLba);
+                } else text += " invalid_logical_block=" + std::to_string(logicalBlock);
+            }
+            layout.descriptors.push_back(std::move(text));
+        }
+        for (const char* signature : {"BEA01", "NSR02", "NSR03", "TEA01"}) {
+            if (!std::memcmp(block.data() + 1, signature, 5) && block[0] == 0 && block[6] == 1) {
+                layout.descriptors.push_back("sector=" + std::to_string(sector) + " UDF " + signature);
+                if (!std::strcmp(signature, "NSR02") || !std::strcmp(signature, "NSR03"))
+                    layout.udfRecognition = true;
+            }
+        }
+    }
+    const auto sectors = layout.bytes / BlockSize;
+    if (sectors > 256) {
+        for (const auto sector : {UINT64_C(256), sectors - 257, sectors - 1}) {
+            if (!input.ReadExact(sector * BlockSize, block.data(), block.size())) continue;
+            if (block[0] != 2 || block[1] != 0) continue;
+            unsigned sum = 0;
+            for (unsigned i = 0; i < 16; ++i) if (i != 4) sum += block[i];
+            if ((sum & 255) != block[4]) continue;
+            layout.udfAnchor = true;
+            layout.descriptors.push_back("sector=" + std::to_string(sector) + " UDF anchor tag checksum OK");
+        }
+    }
+    return layout;
+}
+
 struct IsoVfs::State {
     explicit State(const std::filesystem::path& path) : image(path) {
         if (image.Size() % BlockSize || image.Size() / BlockSize > UINT32_MAX ||
@@ -120,7 +178,8 @@ struct IsoVfs::State {
         if (udfread_open_input(volume, &input.api) < 0) {
             udfread_close(volume); volume = nullptr;
             throw Error(ErrorCode::InvalidImage,
-                "Imagem UDF invalida, danificada ou nao suportada. ISO criptografada requer descriptografia.");
+                "O leitor nao conseguiu montar esta imagem como UDF. "
+                "Isso nao determina a causa nem confirma criptografia; consulte a inspecao de formato.");
         }
     }
     ~State() { if (volume) udfread_close(volume); }

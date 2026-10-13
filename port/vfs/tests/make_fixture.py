@@ -148,6 +148,19 @@ def main(root):
     corrupt = bytearray(data)
     put(corrupt, (PART + 5) * B + 176 + 8, 'I', 0xffffffff)
     (root / 'bad-sfo.iso').write_bytes(corrupt)
+    # Metadata-only ISO9660 fixture, independent of the UDF parser. Its empty
+    # root directory is enough for format detection; it is not a PS3 game ISO.
+    pure = bytearray(64 * B)
+    primary = memoryview(pure)[16 * B:17 * B]
+    primary[0] = 1; primary[1:6] = b'CD001'; primary[6] = 1
+    primary[128:132] = struct.pack('<H', B) + struct.pack('>H', B)
+    primary[156] = 34
+    primary[158:166] = struct.pack('<I', 20) + struct.pack('>I', 20)
+    pure[17 * B] = 255; pure[17 * B + 1:17 * B + 6] = b'CD001'; pure[17 * B + 6] = 1
+    (root / 'iso9660.iso').write_bytes(pure)
+    bridge = bytearray(data)
+    bridge[19 * B:20 * B] = primary
+    (root / 'bridge.iso').write_bytes(bridge)
     print('Synthetic UDF fixtures ready; large.iso is sparse.')
 
 

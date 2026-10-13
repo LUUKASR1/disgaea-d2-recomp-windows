@@ -20,6 +20,17 @@ public:
 };
 struct FileInfo { bool directory; std::uint64_t size; };
 struct DirectoryEntry { std::string name; bool directory; };
+struct ImageLayout {
+    std::uint64_t bytes = 0;
+    bool aligned = false;
+    bool iso9660Primary = false;
+    bool udfRecognition = false;
+    bool udfAnchor = false;
+    std::vector<std::string> descriptors;
+    std::string Description() const;
+};
+// Read-only metadata inspection, independent of whether the UDF mount succeeds.
+ImageLayout InspectImage(const std::filesystem::path& image);
 
 // Read-only UDF mount. Assets are never extracted or written into the ISO.
 // All public operations are serialized at the volume; file handles retain

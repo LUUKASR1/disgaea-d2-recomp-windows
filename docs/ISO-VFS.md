@@ -33,6 +33,12 @@ Downloads e mostra o caminho ao terminar. É um
 diagnóstico do leitor; **não executa o jogo** e não altera a ISO ou seus saves.
 Também aceita um caminho de ISO na linha de comando.
 
+A versão 2 inspeciona primeiro os descritores ISO9660/UDF e as âncoras UDF,
+mesmo quando a montagem falha. Uma falha do leitor UDF **não comprova** que a
+imagem está criptografada ou danificada. Se identificar ISO9660 sem UDF, registra
+essa limitação do backend atual. Essa inspeção não adiciona suporte ISO9660 ao
+runtime nem verifica criptografia de todos os assets.
+
 ## Compilar e testar o módulo (desenvolvimento)
 
 ```sh
