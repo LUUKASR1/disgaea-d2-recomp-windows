@@ -4,7 +4,7 @@
 
 ## Começar no Windows
 
-Baixe o instalador ou a versão portátil em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). O launcher atual é o **0.1.8-preview**. A primeira preparação gera e compila o jogo no seu computador; as sessões seguintes reutilizam essa build.
+Baixe o instalador ou a versão portátil em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). O launcher atual é o **0.1.9-preview**. A primeira preparação gera e compila o jogo no seu computador; as sessões seguintes reutilizam essa build.
 
 Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313**, do PKG de atualização **US 1.40** e de firmware PS3 (`PS3UPDAT.PUP` ou uma instalação existente para importar). DLCs são opcionais e precisam dos seus próprios arquivos e licenças. A entrada direta de ISO ainda não está implementada.
 
@@ -14,7 +14,7 @@ Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313
 4. Clique em **Preparar meu jogo** e aguarde. A primeira preparação requer internet para obter as dependências e pode demorar.
 5. Clique em **Jogar**. Nas próximas sessões, use esse botão diretamente.
 
-**Já tem uma build funcionando?** Feche o jogo e o launcher, instale a atualização do launcher e clique em **Jogar**. Na atualização para 0.1.8, a build compatível e os saves são preservados; não é necessário recompilar ou importar novamente os pacotes. Não apague `%LOCALAPPDATA%\DisgaeaD2Recomp`.
+**Já tem uma build funcionando?** Feche o jogo e o launcher, instale a atualização do launcher e clique em **Jogar**. Na atualização para 0.1.9, a build compatível e os saves são preservados; não é necessário recompilar ou importar novamente os pacotes. Não apague `%LOCALAPPDATA%\DisgaeaD2Recomp`.
 
 Se o launcher apontar um arquivo ausente ou vazio, restaure-o da sua própria cópia extraída. A verificação cobre 18 arquivos de início e não substitui uma conferência completa dos dados. Consulte o [guia do launcher](docs/LAUNCHER-WINDOWS.md) para os detalhes.
 
@@ -22,7 +22,7 @@ A aba **Vídeo** oferece resolução de exibição em janela, tela cheia sem bor
 
 ## Getting started on Windows
 
-Download the installer or portable package from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). The current launcher is **0.1.8-preview**. The first preparation generates and compiles the game on your computer; later sessions reuse that build.
+Download the installer or portable package from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). The current launcher is **0.1.9-preview**. The first preparation generates and compiles the game on your computer; later sessions reuse that build.
 
 You need your own **extracted** US game copy (**BLUS31313**), the **US 1.40** update PKG, and PS3 firmware (`PS3UPDAT.PUP` or an existing installation to import). DLCs are optional and require your own files and licenses. Direct ISO input is not implemented yet.
 
@@ -32,7 +32,7 @@ You need your own **extracted** US game copy (**BLUS31313**), the **US 1.40** up
 4. Click **Preparar meu jogo** and wait. The first preparation needs internet access to obtain dependencies and may take some time.
 5. Click **Jogar**. Use that button directly in subsequent sessions.
 
-**Already have a working build?** Close the game and launcher, install the launcher update, and click **Jogar**. Updating to 0.1.8 preserves your compatible build and saves; no recompilation or package reimport is needed. Do not delete `%LOCALAPPDATA%\DisgaeaD2Recomp`.
+**Already have a working build?** Close the game and launcher, install the launcher update, and click **Jogar**. Updating to 0.1.9 preserves your compatible build and saves; no recompilation or package reimport is needed. Do not delete `%LOCALAPPDATA%\DisgaeaD2Recomp`.
 
 If the launcher reports a missing or empty file, restore it from your own extracted copy. This check covers 18 startup files and does not validate all game data. See the [launcher guide](docs/LAUNCHER-WINDOWS.md) for details.
 
