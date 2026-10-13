@@ -9,6 +9,7 @@ namespace {
 HANDLE request = nullptr;
 bool initialized = false, was_down = false;
 uint32_t count = 0;
+std::string directory;
 constexpr uint32_t limit = 8;
 std::wstring wide(const char* value) {
     if (!value) return {};
@@ -48,7 +49,22 @@ extern "C" int d2_capture_next(uint32_t* index, void* window) {
 }
 extern "C" void d2_capture_shutdown(void) {
     if (request) CloseHandle(request);
-    request = nullptr; initialized = false; was_down = false; count = 0;
+    request = nullptr; initialized = false; was_down = false; count = 0; directory.clear();
+}
+extern "C" const char* d2_capture_directory(void) {
+    if (!directory.empty()) return directory.c_str();
+    DWORD size = GetEnvironmentVariableW(L"RSX_CAP_DIR", nullptr, 0);
+    if (!size) return nullptr;
+    std::wstring path(size, L'\0');
+    DWORD copied = GetEnvironmentVariableW(L"RSX_CAP_DIR", path.data(), size);
+    if (!copied || copied >= size) return nullptr;
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (!bytes) return nullptr;
+    directory.resize(bytes);
+    if (!WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, directory.data(), bytes, nullptr, nullptr)) {
+        directory.clear(); return nullptr;
+    }
+    directory.resize(bytes-1); return directory.c_str();
 }
 extern "C" FILE* d2_capture_fopen(const char* path, const char* mode) {
     auto p = wide(path), m = wide(mode);

@@ -83,6 +83,8 @@ def generate(source, output):
     start = text.index('static void cap_write_bmp(')
     end = text.index('/* Decompile the captured RSX vertex program', start)
     capture = text[start:end].replace('fopen(', 'd2_capture_fopen(')
+    capture = replace(capture, 'const char* base = getenv("RSX_CAP_DIR");',
+        'const char* base = d2_capture_directory();')
     capture = capture.replace('CreateDirectoryA(base, NULL);', 'd2_capture_mkdir(base);')
     capture = capture.replace('CreateDirectoryA(dir, NULL);', 'd2_capture_mkdir(dir);')
     capture = replace(capture, '                if(r->is_vp) {',

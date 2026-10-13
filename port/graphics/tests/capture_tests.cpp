@@ -29,6 +29,8 @@ int main() {
         std::filesystem::path dir = std::filesystem::temp_directory_path()/L"D2-captura-\u00e7\u00e3";
         std::filesystem::create_directories(dir);
         auto bytes = dir.u8string(); std::string path(bytes.begin(), bytes.end());
+        SetEnvironmentVariableW(L"RSX_CAP_DIR",dir.c_str());
+        require(d2_capture_directory() && path==d2_capture_directory(), "Unicode environment path");
         require(d2_graphics_configure(1280,720)==0, "configure");
         d2_capture_finish(path.c_str(),42,12);
         std::ifstream failed(dir/"complete.json"); std::string first((std::istreambuf_iterator<char>(failed)),{});
@@ -41,6 +43,7 @@ int main() {
         std::ifstream complete(dir/"complete.json"); std::string second((std::istreambuf_iterator<char>(complete)),{});
         require(second.find("complete") != std::string::npos && second.find("1280") != std::string::npos,"completion marker");
         std::filesystem::remove_all(dir);
+        SetEnvironmentVariableW(L"RSX_CAP_DIR",nullptr); d2_capture_shutdown();
         std::puts("Capture disabled/event/one-shot/limit/Unicode/completion checks passed");
         return 0;
     } catch (const std::exception& error) { std::fprintf(stderr,"%s\n",error.what()); return 1; }
