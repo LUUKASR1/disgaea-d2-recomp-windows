@@ -60,7 +60,8 @@ class CaptureSession:
         (self.directory / 'session.json').write_text(json.dumps({
             'schema': 1, 'launcher': version, 'settings': settings, 'limit': LIMIT,
             'image': 'internal-scene-with-HUD', 'created': datetime.now().isoformat(),
-            'description': 'Capturas pontuais. Não contém ISO, ELF nem saves. A HUD ainda não está separada.'
+            'hud_replay': 'experimental-capture-only',
+            'description': 'Capturas pontuais e reprodução isolada da HUD quando reconhecida. A renderização normal permanece como referência.'
         }, ensure_ascii=False, indent=2), encoding='utf-8')
         self.event = event_factory(self.name)
 
@@ -105,7 +106,14 @@ class CaptureSession:
                 self.pending = False
             complete = sum(item['status'] == 'complete' for _, item in results)
             failed = len(results) - complete
-            return f'{complete}/{LIMIT} capturas prontas' + (f' • {failed} falharam' if failed else '') + (' • Gravando…' if self.pending else '')
+            verified = 0
+            for folder, _ in results:
+                try:
+                    split = json.loads((folder / 'hud-split.json').read_text(encoding='utf-8'))
+                    if split.get('status') == 'exact-match': verified += 1
+                except (OSError, ValueError):
+                    pass
+            return f'{complete}/{LIMIT} capturas prontas' + (f' • HUD idêntica em {verified}' if verified else '') + (f' • {failed} falharam' if failed else '') + (' • Gravando…' if self.pending else '')
 
     def finish(self, game_log=None, destination=None):
         with self.lock:

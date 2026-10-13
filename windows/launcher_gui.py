@@ -337,12 +337,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     capture_button = None
     if home.name == 'DisgaeaD2Recomp-Graphics-Preview':
         diagnostic = card(page)
-        label(diagnostic, 'CAPTURA DE FRAME', 12, GOLD, True)
+        label(diagnostic, 'CAPTURA E SEPARAÇÃO EXPERIMENTAL DA HUD', 12, GOLD, True)
         toggle = tk.Checkbutton(diagnostic, text='Habilitar captura na próxima abertura do jogo',
             variable=capture_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
             activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
         toggle.pack(anchor='w', pady=4); entries.append(toggle)
         label(diagnostic, 'Com o jogo aberto, pressione F8 ou clique em Capturar frame. Até oito capturas por sessão. Pode haver uma pausa breve durante a gravação.', 10, MUTED)
+        label(diagnostic, 'Nas cenas reconhecidas, o relatório inclui cena sem HUD, HUD isolada, recomposição e comparação de pixels. A imagem normal do jogo continua sendo a referência.', 10, MUTED)
         def request_capture():
             try:
                 backend.request_frame_capture()

@@ -70,10 +70,9 @@ def generate(source, output):
         '            s_d3d.window_closed = 1; return;\n        }\n'
         '        s_d3d.swap_chain->lpVtbl->Present(s_d3d.swap_chain, (UINT)d2_interval, 0);')
     text = replace(text, '    /* Release D3D12 resources */',
-        '    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
-    text = replace(text,
-        'd2_capture_f8_next(&index)', 'd2_capture_next(&index, s_d3d.hwnd)')
-    text = replace(text, '    u32 d2_diag_valid;', '    u32 d2_capture_vs_hash;\n    u32 d2_diag_valid;')
+        '    d2_hud_shutdown();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
+    text = replace(text, '    u32 d2_diag_valid;',
+        '    ID3D12PipelineState* d2_hud_pso;\n    u32 d2_capture_vs_hash;\n    u32 d2_diag_valid;')
     text = replace(text, '        r->d2_diag_valid = enabled ? 1u : 0u;',
         '        r->d2_capture_vs_hash = enabled && vs_idx >= 0 && vs_idx < s_d3d.vp_vs_n\n'
         '            ? s_d3d.vp_vs[vs_idx].hash : 0;\n'
@@ -92,16 +91,49 @@ def generate(source, output):
         '                    fprintf(mf,"      SHADER vs-record-hash=%08X fp-address=%08X\\n",\n'
         '                        r->d2_capture_vs_hash,r->fp_addr);')
     capture = capture.replace('+ d) * VP_CB_STRIDE', '+ r->cb_slot) * VP_CB_STRIDE')
-    capture = replace(capture, '    printf("[RSXCAP] frame %llu -> %s (%u ops)\\n",',
-        '    d2_capture_finish(dir, s_d3d.frame_count, ndraws);\n'
-        '    printf("[RSXCAP] frame %llu -> %s (%u ops)\\n",')
     text = text[:start] + capture + text[end:]
+    text = replace(text, 'static void render_frame(void)\n{',
+        '#include "hud_adapter.inc"\n\nstatic void render_frame(void)\n{')
+    text = replace(text, '    /* Transition render target to RENDER_TARGET state */',
+        '    u32 d2_capture_index=0,d2_hud_start=s_d3d.draw_count;\n'
+        '    int d2_hud_snapshotted=0;\n'
+        '    int d2_capture_requested=s_present_this_frame && s_d3d.draw_count>0 &&\n'
+        '        d2_capture_next(&d2_capture_index,s_d3d.hwnd);\n'
+        '    if(d2_capture_requested) {\n'
+        '        for(u32 d=0;d<s_d3d.draw_count && d<MAX_DRAWS;d++) s_d3d.draws[d].d2_hud_pso=NULL;\n'
+        '        d2_hud_start=d2_hud_find_boundary(s_d3d.draw_count);\n'
+        '        if(d2_hud_start<s_d3d.draw_count &&\n'
+        '           d2_hud_prepare(s_d3d.device,s_d3d.cmd_queue,s_d3d.render_targets[fi],s_d3d.depth_buffer)!=0)\n'
+        '            d2_hud_start=s_d3d.draw_count;\n'
+        '    }\n\n    /* Transition render target to RENDER_TARGET state */')
+    text = replace(text, '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
+                const D3D12DrawRecord* dr = &s_d3d.draws[d];
+                if (!dr->is_vp) continue;''', '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
+                const D3D12DrawRecord* dr = &s_d3d.draws[d];
+                if(d2_capture_requested && d==d2_hud_start)
+                    d2_hud_snapshotted=d2_hud_snapshot(s_d3d.cmd_list,s_d3d.render_targets[fi],s_d3d.depth_buffer)==0;
+                if (!dr->is_vp) continue;''')
+    text = replace(text, '''                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
+                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);''',
+        '''                if(d2_capture_requested && d>=d2_hud_start) {
+                    s_d3d.draws[d].d2_hud_pso=dpso?dpso:vpso;
+                    s_d3d.draws[d].d2_hud_pso->lpVtbl->AddRef(s_d3d.draws[d].d2_hud_pso);
+                }
+                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
+                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);''')
+    text = replace(text, '''        u32 index;
+        if(s_present_this_frame && s_dbg_last_draws>0 && d2_capture_f8_next(&index))
+            rsx_capture_frame(fi,s_dbg_last_draws,index);''',
+        '''        if(d2_capture_requested) {
+            rsx_capture_frame(fi,s_dbg_last_draws,d2_capture_index);
+            d2_hud_dump(fi,s_dbg_last_draws,d2_hud_start,d2_capture_index,d2_hud_snapshotted);
+        }''')
     def includes(match):
         path = source.parent / match[1]
         return '#include "'+path.resolve().as_posix()+'"' if path.is_file() else match[0]
     text = re.sub(r'#\s*include\s*"([^"\n]+)"', includes, text)
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text('#include "graphics.h"\n#include "capture.h"\n'+text, encoding='utf-8', newline='\n')
+    output.write_text('#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n'+text, encoding='utf-8', newline='\n')
 
 
 if __name__ == '__main__': generate(sys.argv[1], sys.argv[2])
