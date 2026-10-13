@@ -107,13 +107,21 @@ class CaptureSession:
             complete = sum(item['status'] == 'complete' for _, item in results)
             failed = len(results) - complete
             verified = 0
+            output_hud = 0
+            output_verified = 0
             for folder, _ in results:
                 try:
                     split = json.loads((folder / 'hud-split.json').read_text(encoding='utf-8'))
                     if split.get('status') == 'exact-match': verified += 1
                 except (OSError, ValueError):
                     pass
-            return f'{complete}/{LIMIT} capturas prontas' + (f' • HUD idêntica em {verified}' if verified else '') + (f' • {failed} falharam' if failed else '') + (' • Gravando…' if self.pending else '')
+                try:
+                    presentation = json.loads((folder / 'presentation.json').read_text(encoding='utf-8'))
+                    if presentation.get('hud_after_upscale') is True: output_hud += 1
+                    if presentation.get('native_comparison_available') is True and presentation.get('status') == 'exact-match': output_verified += 1
+                except (OSError, ValueError):
+                    pass
+            return f'{complete}/{LIMIT} capturas prontas' + (f' • Replay interno idêntico em {verified}' if verified else '') + (f' • HUD na saída em {output_hud}' if output_hud else '') + (f' • Saída nativa idêntica em {output_verified}' if output_verified else '') + (f' • {failed} falharam' if failed else '') + (' • Gravando…' if self.pending else '')
 
     def finish(self, game_log=None, destination=None):
         with self.lock:
