@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from launcher import Backend
+from launcher import Backend, VERSION
 from launcher_gui import run_gui
 
 
@@ -24,7 +24,7 @@ $bitmap.Dispose()
 def main():
     out = Path('launcher-previews'); out.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as root:
-        app, show = run_gui(Backend, Path(root), '0.1.9-preview', lambda directory: False, preview=True)
+        app, show = run_gui(Backend, Path(root), VERSION, lambda directory: False, preview=True)
         try:
             for page, name in [('Início', 'inicio'), ('Vídeo', 'video'), ('Preparação', 'preparacao')]:
                 show(page); app.update(); app.update_idletasks()
