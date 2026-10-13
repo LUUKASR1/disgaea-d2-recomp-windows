@@ -696,10 +696,15 @@ int main(int argc, char** argv) {
         # --help exercises the real log setup without game/firmware inputs.
         # An invalid --decrypt input triggers an upstream teardown assertion
         # on a fresh firmware-free RPCS3 profile, unrelated to log creation.
-        result = subprocess.run([str(helper), '--help'],
-                                cwd=helper.parent, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            result = subprocess.run([str(helper), '--help'],
+                                    cwd=helper.parent, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+        except subprocess.TimeoutExpired as error:
+            log = helper.parent / 'log/RPCS3.log'
+            detail = log.read_text(encoding='utf-8', errors='replace')[-4000:] if log.is_file() else 'No RPCS3 log created.'
+            raise RuntimeError('Auxiliary startup timed out: ' + (error.stdout or b'').decode('utf-8', errors='replace') + '\n' + detail) from error
         output = result.stdout.decode('utf-8', errors='replace')
         if 'Log file open failed' in output or result.returncode != 0:
             raise RuntimeError('Headless auxiliary startup failed (exit ' + str(result.returncode) + '): ' + output[-2000:])

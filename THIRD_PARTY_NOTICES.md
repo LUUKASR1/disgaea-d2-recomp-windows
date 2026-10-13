@@ -59,7 +59,7 @@ assets and are not added to this repository.
   verified against a pinned SHA-256, and remains local. It is not bundled.
 
 The helper's Microsoft Visual C++ runtime DLLs are downloaded from the pinned
-Microsoft.VC.14.44.17.14.CRT.Redist.X64.base package on Microsoft's official
+Microsoft.VC.14.52.CRT.Redist.X64.base package on Microsoft's official
 Visual Studio distribution server. Only the release CRT directory is used;
 no development tools or debug DLLs are installed. Package and individual DLL
 SHA-256 checks are mandatory. The DLLs stay beside the local preparation helper.
