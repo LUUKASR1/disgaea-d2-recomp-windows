@@ -47,11 +47,20 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         pass
-    folder = tk.StringVar(value=config.get('game_root', ''))
-    firmware = tk.StringVar()
+    inputs = {}
+    try:
+        candidate = json.loads((home / 'preparacao-inputs.json').read_text(encoding='utf-8'))
+        if (isinstance(candidate, dict) and isinstance(candidate.get('game_root'), str) and
+                isinstance(candidate.get('firmware'), str) and isinstance(candidate.get('packages'), list) and
+                all(isinstance(value, str) for value in candidate['packages'])):
+            inputs = candidate
+    except (OSError, ValueError):
+        pass
+    folder = tk.StringVar(value=inputs.get('game_root', config.get('game_root', '')))
+    firmware = tk.StringVar(value=inputs.get('firmware', ''))
     firmware_text = tk.StringVar(value='Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Firmware: resolvido durante a primeira preparação.')
-    packages = []
-    package_text = tk.StringVar(value='Nenhum pacote selecionado.')
+    packages = list(inputs.get('packages', []))
+    package_text = tk.StringVar(value=' • '.join(Path(value).name for value in packages) or 'Nenhum pacote selecionado.')
     ready = bool(config.get('workspace'))
     initial_error = ''
     try:
@@ -252,12 +261,6 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             package_text.set(str(len(values)) + ' pacote(s) selecionado(s). Serão importados na preparação.')
     button(setup, 'Selecionar atualização / DLCs (.pkg)', choose_packages)
     label(setup, variable=package_text, size=9, color=MUTED, wrap=620)
-    def prepare():
-        game, pkgs, fw = folder.get(), list(packages), firmware.get()
-        def operation():
-            backend.prepare(game, pkgs, fw)
-            events.put(('prepared', ''))
-        task(operation)
     button(page, '▶  PREPARAR E JOGAR', play, True)
     label(page, 'Na primeira execução, as ferramentas são baixadas e a build é criada automaticamente. Depois, Jogar reutiliza sua build local.', 10, MUTED)
 
@@ -273,9 +276,6 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
     button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
-    def install():
-        if messagebox.askokcancel('Ferramentas de preparação', 'Instalar Git e ferramentas C++ da Microsoft? O download pode ocupar vários GB. Os instaladores oficiais podem apresentar termos e pedir autorização.'):
-            task(backend.install_tools)
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
     label(page, 'Não apague a pasta local para atualizar o launcher. Android ainda não está disponível.', 10, MUTED)
     for variable in (resolution, mode, vsync):

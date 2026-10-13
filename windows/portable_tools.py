@@ -13,7 +13,7 @@ TOOLS = {
         'b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35',
         'llvm-mingw-20260616-ucrt-x86_64',
         ('bin/x86_64-w64-mingw32-clang.exe', 'bin/x86_64-w64-mingw32-clang++.exe',
-         'bin/x86_64-w64-mingw32-windres.exe', 'x86_64-w64-mingw32/include/windows.h')),
+         'bin/x86_64-w64-mingw32-windres.exe', 'include/windows.h')),
     'git': (
         'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip',
         'da35e72aa21c005a5a0d298cfbae110bc1609a815730ea0dde84b01a1b3cd3be',
@@ -54,8 +54,9 @@ def ensure_tool(home, name, download, notify):
     try:
         extract_checked(archive, staging)
         source = staging / prefix if prefix else staging
-        if not all((source / p).is_file() and (source / p).stat().st_size for p in required):
-            raise RuntimeError('Pacote de ferramentas incompleto: ' + name)
+        missing = [p for p in required if not (source / p).is_file() or not (source / p).stat().st_size]
+        if missing:
+            raise RuntimeError('Pacote de ferramentas incompleto: ' + name + ': ' + ', '.join(missing))
         (source / 'download.json').write_text(json.dumps({'sha256': sha}))
         if target.exists():
             target.rename(root / ('anterior-' + uuid.uuid4().hex))

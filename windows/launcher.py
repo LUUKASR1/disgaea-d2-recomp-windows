@@ -380,8 +380,15 @@ class Backend:
         if previous and not packages and not firmware:
             previous['game_root'] = str(game)
             self.save(previous)
+            (self.home / 'preparacao-inputs.json').unlink(missing_ok=True)
             self.notify('Build local existente pronta para jogar; nenhuma recompilacao necessaria.')
             return
+        self.home.mkdir(parents=True, exist_ok=True)
+        inputs_record = self.home / 'preparacao-inputs.json'
+        temporary = inputs_record.with_suffix('.tmp')
+        temporary.write_text(json.dumps(dict(game_root=str(game), packages=list(map(str, packages)),
+                                            firmware=str(firmware) if firmware else ''), ensure_ascii=False), encoding='utf-8')
+        temporary.replace(inputs_record)
         helper = self.helper()
         self.ensure_firmware(helper, firmware)
         hdd = helper.parent / 'dev_hdd0'
@@ -422,6 +429,7 @@ class Backend:
         if previous:
             previous.update(game_root=str(game), hdd0_root=str(hdd))
             self.save(previous)
+            inputs_record.unlink(missing_ok=True)
             self.notify('Conteudo importado. Build local existente pronta para jogar.')
             return
         env = self.compiler_environment()
@@ -453,6 +461,7 @@ class Backend:
         self.run(command, env, label='Gerar e compilar jogo Windows')
         self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd)))
         pending.unlink(missing_ok=True)
+        inputs_record.unlink(missing_ok=True)
         self.notify('Preparação concluída.')
 
     def prepare_and_play(self, folder, packages=(), firmware=None, on_prepared=None):
