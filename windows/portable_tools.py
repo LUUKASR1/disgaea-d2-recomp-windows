@@ -76,9 +76,10 @@ def portable_environment(home, bundled, download, notify):
              Path(bundled) / 'vendor/bin', Path(bundled) / 'vendor/cmake/bin']
     env['PATH'] = os.pathsep.join(map(str, paths)) + os.pathsep + os.environ.get('PATH', os.environ.get('Path', ''))
     env['D2_TOOLCHAIN_ID'] = TOOLCHAIN_ID
-    env['D2_PORTABLE_COMPILER'] = str(llvm / 'bin/x86_64-w64-mingw32-clang.exe')
-    env['D2_PORTABLE_CXX'] = str(llvm / 'bin/x86_64-w64-mingw32-clang++.exe')
-    env['D2_PORTABLE_RC'] = str(llvm / 'bin/x86_64-w64-mingw32-windres.exe')
+    # CMakeRCCompiler.cmake does not normalize backslashes before quoting.
+    env['D2_PORTABLE_COMPILER'] = (llvm / 'bin/x86_64-w64-mingw32-clang.exe').as_posix()
+    env['D2_PORTABLE_CXX'] = (llvm / 'bin/x86_64-w64-mingw32-clang++.exe').as_posix()
+    env['D2_PORTABLE_RC'] = (llvm / 'bin/x86_64-w64-mingw32-windres.exe').as_posix()
     for name in ('git', 'cmake', 'ninja'):
         if not shutil.which(name, path=env['PATH']):
             raise RuntimeError('Ferramenta portátil ausente: ' + name)

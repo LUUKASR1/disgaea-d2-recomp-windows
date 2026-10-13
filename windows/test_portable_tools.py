@@ -1,5 +1,6 @@
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -10,6 +11,16 @@ import portable_tools
 
 
 class PortableToolsTests(unittest.TestCase):
+    def test_windows_compiler_paths_do_not_leak_cmake_escapes_or_msvc_headers(self):
+        with patch('portable_tools.ensure_tool', return_value=PureWindowsPath('C:/Users/test name/tools')), \
+                patch('portable_tools.shutil.which', return_value='portable-tool'), \
+                patch.dict(os.environ, {'INCLUDE': 'msvc headers', 'LIB': 'msvc libs', 'CFLAGS': 'foreign flags'}, clear=True):
+            env = portable_tools.portable_environment('home', 'bundled', None, None)
+        self.assertEqual(env['D2_PORTABLE_RC'], 'C:/Users/test name/tools/bin/x86_64-w64-mingw32-windres.exe')
+        self.assertNotIn('INCLUDE', env)
+        self.assertNotIn('LIB', env)
+        self.assertNotIn('CFLAGS', env)
+
     def test_rejects_unsafe_zip_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
