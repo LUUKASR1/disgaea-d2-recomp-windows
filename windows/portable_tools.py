@@ -17,7 +17,7 @@ TOOLS = {
     'git': (
         'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip',
         'da35e72aa21c005a5a0d298cfbae110bc1609a815730ea0dde84b01a1b3cd3be',
-        '', ('cmd/git.exe', 'mingw64/bin/git.exe')),
+        '', ('cmd/git.exe', 'ucrt64/bin/git.exe')),
 }
 
 
@@ -72,7 +72,7 @@ def portable_environment(home, bundled, download, notify):
     git = ensure_tool(home, 'git', download, notify)
     env = {k: v for k, v in os.environ.items() if k.upper() not in
            ('PATH', 'LIB', 'INCLUDE', 'LIBPATH', 'CC', 'CXX', 'RC', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS')}
-    paths = [llvm / 'bin', git / 'cmd', git / 'mingw64/bin',
+    paths = [llvm / 'bin', git / 'cmd', git / 'ucrt64/bin',
              Path(bundled) / 'vendor/bin', Path(bundled) / 'vendor/cmake/bin']
     env['PATH'] = os.pathsep.join(map(str, paths)) + os.pathsep + os.environ.get('PATH', os.environ.get('Path', ''))
     env['D2_TOOLCHAIN_ID'] = TOOLCHAIN_ID
