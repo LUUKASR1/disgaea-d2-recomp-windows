@@ -49,7 +49,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         pass
     folder = tk.StringVar(value=config.get('game_root', ''))
     firmware = tk.StringVar()
-    firmware_text = tk.StringVar(value='Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Selecione seu firmware PUP ou importe do RPCS3.')
+    firmware_text = tk.StringVar(value='Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Firmware: resolvido durante a primeira preparação.')
     packages = []
     package_text = tk.StringVar(value='Nenhum pacote selecionado.')
     ready = bool(config.get('workspace'))
@@ -61,7 +61,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     resolution = tk.StringVar(value=settings['resolution'])
     mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
-    status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Prepare sua cópia do jogo para começar.'))
+    status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
     build_status = tk.StringVar(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
     summary = tk.StringVar()
 
@@ -168,7 +168,17 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         except (OSError, ValueError) as error:
             messagebox.showerror('Configurações', str(error))
             return
-        task(backend.play)
+        if not folder.get():
+            choose_folder()
+            if not folder.get():
+                return
+        if not ready and not packages and not (home / 'auxiliar-rpcs3/dev_hdd0/game/BLUS31313/USRDIR/Data/START_7.dat').is_file():
+            choose_packages()
+            if not packages:
+                status.set('Selecione a atualização USA 1.40 para a primeira preparação.')
+                return
+        game, pkgs, fw = folder.get(), list(packages), firmware.get()
+        task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
 
     page = bodies['Início']
     label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
@@ -213,7 +223,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
 
     page = bodies['Preparação']
     label(page, 'PRIMEIRA VEZ E IMPORTAÇÃO', 10, GOLD, True)
-    label(page, 'Prepare sua cópia', 28, bold=True)
+    label(page, 'Arquivos da sua cópia', 28, bold=True)
     label(page, 'Jogo USA extraído + atualização 1.40. Os arquivos do jogo não estão incluídos.', 10, MUTED)
     setup = card(page)
     entry = tk.Entry(setup, textvariable=folder, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief='flat', font=('Segoe UI', 10))
@@ -248,7 +258,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             backend.prepare(game, pkgs, fw)
             events.put(('prepared', ''))
         task(operation)
-    button(page, 'Preparar meu jogo', prepare, True)
+    button(page, '▶  PREPARAR E JOGAR', play, True)
+    label(page, 'Na primeira execução, as ferramentas são baixadas e a build é criada automaticamente. Depois, Jogar reutiliza sua build local.', 10, MUTED)
 
     page = bodies['Arquivos e suporte']
     label(page, 'TUDO EM UM LUGAR', 10, GOLD, True)
@@ -265,7 +276,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     def install():
         if messagebox.askokcancel('Ferramentas de preparação', 'Instalar Git e ferramentas C++ da Microsoft? O download pode ocupar vários GB. Os instaladores oficiais podem apresentar termos e pedir autorização.'):
             task(backend.install_tools)
-    button(page, 'Instalar ferramentas', install)
+    label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
     label(page, 'Não apague a pasta local para atualizar o launcher. Android ainda não está disponível.', 10, MUTED)
     for variable in (resolution, mode, vsync):
         variable.trace_add('write', update_summary)
@@ -287,7 +298,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                 package_text.set('Pacotes importados. Não precisam ser selecionados novamente.')
                 firmware_text.set('Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Build pronta para jogar.')
                 build_status.set('BUILD LOCAL DISPONÍVEL')
-                status.set('Preparação concluída. Clique em Jogar na aba Início.')
+                status.set('Preparação concluída. Iniciando o jogo…')
             else:
                 status.set(message)
                 if kind == 'error':

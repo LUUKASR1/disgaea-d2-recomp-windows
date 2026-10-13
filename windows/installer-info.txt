@@ -5,13 +5,14 @@ Feche o jogo e o launcher antes de instalar ou atualizar.
 Este instalador prepara o aplicativo e seus atalhos. Depois da instalacao,
 abra DisgaeaD2Launcher pelo menu Iniciar.
 
-Na primeira preparacao, selecione sua pasta extraida do jogo e a atualizacao
-US 1.40 / BLUS31313. Se faltar firmware, selecione seu PS3UPDAT.PUP oficial ou
-importe a pasta de um RPCS3 onde o firmware ja esteja instalado.
+Clique em Jogar e selecione sua pasta extraida do jogo e a atualizacao
+US 1.40 / BLUS31313. Inclua seus PKGs de DLC se desejar.
 
-O botao Instalar ferramentas permite obter Git e ferramentas C++/LLVM.
-Esses instaladores oficiais podem pedir autorizacao de administrador e ocupar
-varios GB. A primeira compilacao exige internet e pode demorar.
+Na primeira execucao, o launcher baixa ferramentas portateis, o auxiliar
+oficial e o firmware Sony verificado, compila a build local e inicia o jogo.
+Nao e necessario instalar Git, Visual Studio ou LLVM manualmente.
+A primeira preparacao exige internet e pode demorar; as proximas reutilizam
+a build local. A importacao de firmware proprio continua disponivel.
 
 Sua build, conteudo importado e saves ficam em:
 %LOCALAPPDATA%\DisgaeaD2Recomp

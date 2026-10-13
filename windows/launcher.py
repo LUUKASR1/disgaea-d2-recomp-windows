@@ -16,12 +16,14 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.9-preview'
+VERSION = '0.1.10-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 RPCS3_URL = 'https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3-v0.0.43-20284-2ba2f75b_win64_msvc.7z'
 RPCS3_SHA = '8914810c74508b0e53c6b6cb39d4ed334ecee99639973062d259b1481bfa1720'
+FIRMWARE_URL = 'http://dus01.ps3.update.playstation.net/update/ps3/image/us/2026_0318_a2b60b6ac1d2e49e230144345616927c/PS3UPDAT.PUP'
+FIRMWARE_SHA = '158471fd834f8ea8036136b6aab43cd86c7ba73d79ca30e0af3c0fe0001cf365'
 
 
 class StageFailure(RuntimeError):
@@ -276,6 +278,12 @@ class Backend:
 
     def ensure_firmware(self, helper, firmware):
         directory = helper.parent
+        if not firmware and not firmware_present(directory):
+            source = self.home / 'downloads/PS3UPDAT-4.93.PUP'
+            if not source.is_file() or digest(source) != FIRMWARE_SHA:
+                self.notify('Baixando firmware PS3 4.93 da Sony. Somente na primeira preparação.')
+                download(FIRMWARE_URL, source, FIRMWARE_SHA)
+            firmware = str(source)
         if firmware:
             source = Path(firmware).resolve()
             if source.is_file() and source.suffix.lower() == '.pup':
@@ -364,6 +372,10 @@ class Backend:
 
     def prepare(self, folder, packages, firmware=None):
         game = self.check_game_files(folder)
+        packages = [Path(package).resolve() for package in packages]
+        for package in packages:
+            if package.suffix.lower() != '.pkg' or not package.is_file() or not package.stat().st_size:
+                raise ValueError('Pacote PKG inexistente ou vazio: ' + str(package))
         previous = self.cached_build()
         if previous and not packages and not firmware:
             previous['game_root'] = str(game)
@@ -417,9 +429,11 @@ class Backend:
         repo = None
         if pending.is_file():
             try:
-                candidate = Path(json.loads(pending.read_text(encoding='utf-8'))['workspace'])
+                pending_config = json.loads(pending.read_text(encoding='utf-8'))
+                candidate = Path(pending_config['workspace'])
                 receipt = candidate / 'port-140-windows-generated/windows-generation.json'
-                if receipt.is_file() and build_source_signature(candidate) == build_source_signature(ROOT / 'payload'):
+                if (pending_config.get('toolchain') == env.get('D2_TOOLCHAIN_ID') and
+                        receipt.is_file() and build_source_signature(candidate) == build_source_signature(ROOT / 'payload')):
                     repo = candidate
             except (OSError, ValueError, KeyError, TypeError):
                 pass
@@ -430,7 +444,7 @@ class Backend:
             repo = self.home / ('builds/' + uuid.uuid4().hex)
             self.notify('Preparando fontes e compilando. A primeira vez pode demorar bastante.')
             shutil.copytree(ROOT / 'payload', repo)
-            pending.write_text(json.dumps(dict(workspace=str(repo))), encoding='utf-8')
+            pending.write_text(json.dumps(dict(workspace=str(repo), toolchain=env.get('D2_TOOLCHAIN_ID'))), encoding='utf-8')
             self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env, label='Preparar SDK Windows')
         command = [sys.executable, repo / 'tools/build_windows.py', '--elf', elf,
                    '--json-include', ROOT / 'vendor/include', '--jobs', '4']
@@ -439,7 +453,13 @@ class Backend:
         self.run(command, env, label='Gerar e compilar jogo Windows')
         self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd)))
         pending.unlink(missing_ok=True)
-        self.notify('Preparacao concluida. Clique em Jogar.')
+        self.notify('Preparação concluída.')
+
+    def prepare_and_play(self, folder, packages=(), firmware=None, on_prepared=None):
+        self.prepare(folder, packages, firmware)
+        if on_prepared:
+            on_prepared()
+        self.play()
 
     def check_game_files(self, folder):
         try:
@@ -457,12 +477,13 @@ class Backend:
         with log_path.open('a', encoding='utf-8') as log:
             log.write(datetime.now().isoformat(timespec='seconds') + ' launcher=' + VERSION + ' etapa=Detectar ferramentas C++\n')
             try:
-                env = build_environment()
+                from portable_tools import portable_environment
+                env = portable_environment(self.home, ROOT, download, self.notify)
             except Exception as error:
                 log.write('falha_deteccao=' + type(error).__name__ + ': ' + str(error) + '\n')
                 raise
-            log.write('visual_studio=' + env.get('D2_SELECTED_VS', '') + '\n')
-            for tool in ('git', 'cmake', 'ninja', 'clang-cl'):
+            log.write('toolchain=' + env.get('D2_TOOLCHAIN_ID', '') + '\n')
+            for tool in ('git', 'cmake', 'ninja'):
                 log.write(tool + '=' + str(shutil.which(tool, path=env['PATH'])) + '\n')
             return env
 
@@ -562,16 +583,66 @@ def main():
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
     elif '--toolchain-test' in sys.argv:
-        env = build_environment()
+        backend = Backend(lambda text: None)
+        env = backend.compiler_environment()
         smoke = HOME / 'toolchain-test'
         smoke.mkdir(parents=True, exist_ok=True)
-        (smoke / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(LauncherSmoke LANGUAGES C)\nfind_package(Python3 COMPONENTS Interpreter REQUIRED)\nadd_executable(smoke hello.c)\n')
-        (smoke / 'hello.c').write_text('int main(void) { return 0; }\n')
-        backend = Backend(lambda text: None)
-        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja', '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DCMAKE_C_COMPILER=clang-cl', '-DPython3_EXECUTABLE=' + sys.executable], env, timeout=60)
+        (smoke / 'CMakeLists.txt').write_text('cmake_minimum_required(VERSION 3.20)\nproject(LauncherSmoke LANGUAGES C CXX)\nfind_package(Python3 COMPONENTS Interpreter REQUIRED)\nadd_executable(smoke hello.cpp)\ntarget_link_libraries(smoke PRIVATE d3dcompiler xinput9_1_0 ole32)\n')
+        # Exercise both legacy SDK TLS spelling and C++ TLS, without a GPU.
+        (smoke / 'hello.cpp').write_text('''#include <windows.h>
+#include <d3dcompiler.h>
+#include <xinput.h>
+#include <thread>
+#include <string>
+#include <stdexcept>
+#include <smmintrin.h>
+__declspec(thread) int sdk_tls = 0;
+thread_local int cpp_tls = 0;
+int main() {
+    sdk_tls = 7; cpp_tls = 9;
+    bool ok = false;
+    std::thread child([&] { ok = sdk_tls == 0 && cpp_tls == 0;
+        sdk_tls = 1; cpp_tls = 2; });
+    child.join();
+    if (!ok || sdk_tls != 7 || cpp_tls != 9) return 1;
+    ULONG_PTR low, high; GetCurrentThreadStackLimits(&low, &high);
+    if (high <= low) return 2;
+    if (_mm_extract_epi32(_mm_set1_epi32(42), 1) != 42) return 3;
+    try { throw std::runtime_error("probe"); }
+    catch (const std::exception& e) { if (std::string(e.what()) != "probe") return 4; }
+    XINPUT_STATE pad{}; XInputGetState(0, &pad);
+    const char shader[] = "float4 main():SV_Target{return float4(1,0,0,1);}";
+    ID3DBlob *code = nullptr, *errors = nullptr;
+    auto result = D3DCompile(shader, sizeof(shader)-1, nullptr, nullptr, nullptr,
+        "main", "ps_5_0", 0, 0, &code, &errors);
+    if (errors) errors->Release();
+    if (FAILED(result) || !code) return 5;
+    code->Release(); return 0;
+}
+''')
+        backend.run(['cmake', '-S', smoke, '-B', smoke / 'build', '-G', 'Ninja',
+                     '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DCMAKE_C_COMPILER=' + env['D2_PORTABLE_COMPILER'],
+                     '-DCMAKE_CXX_COMPILER=' + env['D2_PORTABLE_CXX'],
+                     '-DCMAKE_CXX_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions -msse4.1',
+                     '-DCMAKE_EXE_LINKER_FLAGS=-static', '-DPython3_EXECUTABLE=' + sys.executable], env, timeout=120)
         backend.run(['cmake', '--build', smoke / 'build'], env, timeout=60)
         backend.run(['cmake', '--build', smoke / 'build'], env, timeout=60)
         backend.run([smoke / 'build/smoke.exe'], timeout=15)
+        sdk_probe = HOME / 'portable-sdk-test'
+        if not sdk_probe.exists():
+            shutil.copytree(ROOT / 'payload', sdk_probe)
+        if not (sdk_probe / 'ps3recomp').exists():
+            backend.run([sys.executable, sdk_probe / 'tools/bootstrap_windows.py'], env,
+                        timeout=240, label='Testar SDK com Git portátil')
+        backend.run(['cmake', '-S', sdk_probe / 'ps3recomp', '-B', sdk_probe / 'runtime-build', '-G', 'Ninja',
+                     '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_TESTING=OFF',
+                     '-DCMAKE_C_COMPILER=' + env['D2_PORTABLE_COMPILER'],
+                     '-DCMAKE_CXX_COMPILER=' + env['D2_PORTABLE_CXX'],
+                     '-DCMAKE_RC_COMPILER=' + env['D2_PORTABLE_RC'],
+                     '-DCMAKE_C_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions',
+                     '-DCMAKE_CXX_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions'], env, timeout=120)
+        backend.run(['cmake', '--build', sdk_probe / 'runtime-build', '--parallel', '4'], env,
+                    timeout=360, label='Compilar runtime com ferramentas portáteis')
         (HOME / 'toolchain-test-ok.txt').write_text('OK')
     elif '--auxiliary-test' in sys.argv:
         backend = Backend(lambda text: None)
@@ -592,6 +663,14 @@ def main():
         if backend.helper() != helper:
             raise RuntimeError('Auxiliary reuse failed')
         (HOME / 'auxiliary-test-ok.txt').write_text('OK')
+    elif '--firmware-test' in sys.argv:
+        backend = Backend(lambda text: None)
+        helper = backend.helper()
+        backend.ensure_firmware(helper, None)
+        if not firmware_present(helper.parent):
+            raise RuntimeError('Automatic firmware installation incomplete')
+        backend.ensure_firmware(helper, None)
+        (HOME / 'firmware-test-ok.txt').write_text('OK')
     elif len(sys.argv) > 1:
         raise ValueError('Argumentos internos nao reconhecidos: ' + repr(sys.argv[1:]))
     else:

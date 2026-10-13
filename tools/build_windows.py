@@ -35,11 +35,12 @@ def main():
     args = p.parse_args()
     if sys.version_info < (3, 11):
         p.error('Python 3.11 or newer required.')
-    if os.name != 'nt' or not os.environ.get('LIB') or not os.environ.get('INCLUDE'):
+    portable = bool(os.environ.get('D2_PORTABLE_COMPILER'))
+    if os.name != 'nt' or (not portable and (not os.environ.get('LIB') or not os.environ.get('INCLUDE'))):
         p.error('Use the x64 Native Tools Command Prompt for Visual Studio with Windows SDK.')
     if args.jobs < 1:
         p.error('--jobs must be positive.')
-    for name in ['git', 'cmake', 'ninja', 'clang-cl']:
+    for name in ['git', 'cmake', 'ninja'] + ([] if portable else ['clang-cl']):
         if not shutil.which(name):
             p.error('Missing build tool: ' + name)
     elf = args.elf.resolve()
@@ -86,10 +87,23 @@ def main():
             '--allow-sdk-worktree', '--port-dir', generated)
         receipt = dict(elf_sha256=ELF_SHA, sdk_tree=lock['tree'], files=generation_snapshot(generated))
         (generated / 'windows-generation.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
+    compiler_options = ['-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl',
+                        '-DCMAKE_EXE_LINKER_FLAGS=dxguid.lib']
+    if portable:
+        for name in ('D2_PORTABLE_COMPILER', 'D2_PORTABLE_CXX', 'D2_PORTABLE_RC'):
+            if not Path(os.environ[name]).is_file():
+                p.error('Portable compiler incomplete: ' + name)
+        compiler_options = [
+            '-DCMAKE_C_COMPILER=' + os.environ['D2_PORTABLE_COMPILER'],
+            '-DCMAKE_CXX_COMPILER=' + os.environ['D2_PORTABLE_CXX'],
+            '-DCMAKE_RC_COMPILER=' + os.environ['D2_PORTABLE_RC'],
+            '-DCMAKE_C_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions',
+            '-DCMAKE_CXX_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions',
+            '-DCMAKE_EXE_LINKER_FLAGS=-static -ldxguid -ld3d12 -ldxgi -ld3dcompiler -luuid -lpthread -lxinput9_1_0']
     run('cmake', '-S', root / 'port', '-B', build, '-G', 'Ninja',
-        '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl',
+        '-DCMAKE_BUILD_TYPE=Release', *compiler_options,
         '-DCMAKE_SUPPRESS_REGENERATION=ON',
-        '-DCMAKE_EXE_LINKER_FLAGS=dxguid.lib', '-DD2_GAME_VERSION=140',
+        '-DD2_GAME_VERSION=140',
         '-DPS3RECOMP_DIR=' + str(sdk), '-DPython3_EXECUTABLE=' + sys.executable,
         '-DD2_JSON_INCLUDE_DIR=' + str(include), '-DRECOMP_DIR=' + str(generated / 'src/recomp-140'),
         '-DD2_OUT_DIR=' + str(generated / 'out-140'), '-DSPU_DIR=' + str(generated / 'spu-140'),

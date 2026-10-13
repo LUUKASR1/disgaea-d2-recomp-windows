@@ -215,16 +215,16 @@ class ToolchainTests(unittest.TestCase):
     def test_compiler_detection_failure_and_selection_are_logged(self):
         with tempfile.TemporaryDirectory() as tmp:
             backend = launcher.Backend(lambda message: None, tmp)
-            with patch.object(launcher, 'build_environment', side_effect=RuntimeError('missing compiler fixture')):
+            with patch('portable_tools.portable_environment', side_effect=RuntimeError('missing compiler fixture')):
                 with self.assertRaisesRegex(RuntimeError, 'missing compiler fixture'):
                     backend.compiler_environment()
             log = Path(tmp) / 'preparacao.log'
             self.assertIn('falha_deteccao=RuntimeError: missing compiler fixture', log.read_text())
-            env = {'PATH': 'fixture', 'D2_SELECTED_VS': 'complete VS fixture'}
-            with patch.object(launcher, 'build_environment', return_value=env), \
+            env = {'PATH': 'fixture', 'D2_TOOLCHAIN_ID': 'portable fixture'}
+            with patch('portable_tools.portable_environment', return_value=env), \
                  patch.object(launcher.shutil, 'which', return_value='fixture-tool'):
                 self.assertEqual(backend.compiler_environment(), env)
-            self.assertIn('visual_studio=complete VS fixture', log.read_text())
+            self.assertIn('toolchain=portable fixture', log.read_text())
 
 
 class PreparationTests(unittest.TestCase):
@@ -391,12 +391,12 @@ class PreparationTests(unittest.TestCase):
             self.assertIn('codigo_saida=7', log)
             self.assertIn('comando=', log)
 
-    def test_missing_firmware_is_rejected_before_pkg_install(self):
+    def test_failed_firmware_download_stops_before_install(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             backend = launcher.Backend(lambda message: None, directory)
-            with patch.object(backend, 'run') as run:
-                with self.assertRaisesRegex(RuntimeError, 'Firmware ausente'):
+            with patch.object(backend, 'run') as run, patch.object(launcher, 'download', side_effect=RuntimeError('download failed')):
+                with self.assertRaisesRegex(RuntimeError, 'download failed'):
                     backend.ensure_firmware(directory / 'rpcs3.exe', None)
                 run.assert_not_called()
 

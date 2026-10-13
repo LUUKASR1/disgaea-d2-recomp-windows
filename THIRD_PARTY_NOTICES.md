@@ -45,3 +45,15 @@ public GameFAQs save files used only for local import testing.
 ## Windows port additions
 
 The Windows SDK patch keeps the ps3recomp/at3 licenses above. Windows SDK headers and libraries (Direct3D 12, DXGI, WASAPI, XInput, Winsock, BCrypt) are supplied by the user through the Microsoft development tools, under their terms; they are not shipped here. The nlohmann/json header is also supplied separately by the user.
+
+## Portable preparation tools
+
+The launcher downloads pinned, SHA-256-verified LLVM-MinGW (20260616 UCRT x64)
+and MinGit (2.56.0.2 x64) from their official releases. The extracted upstream
+license files are retained in the private tools directory. They are not game
+assets and are not added to this repository.
+
+- LLVM-MinGW: https://github.com/mstorsjo/llvm-mingw
+- Git for Windows: https://github.com/git-for-windows/git
+- PS3 firmware is downloaded directly from Sony's official update server,
+  verified against a pinned SHA-256, and remains local. It is not bundled.

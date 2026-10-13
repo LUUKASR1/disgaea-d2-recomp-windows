@@ -7,21 +7,16 @@ local. Nao contem o jogo, atualizacao, DLCs, ELF ou codigo recompilado do jogo.
    Iniciar. O instalador e para o usuario atual e coloca as dependencias junto
    do executavel. Como alternativa portatil, extraia **todo** o ZIP e abra
    `DisgaeaD2Launcher.exe`; mantenha `_internal` ao lado do executavel.
-2. Na primeira vez, clique em **Instalar ferramentas**, caso nao tenha Git e
-   Visual Studio com C++, SDK Windows e LLVM. Essa instalacao pode ocupar varios
-   GB e apresentar solicitacoes do instalador oficial. Reinicie o launcher.
-3. Se o auxiliar ainda nao tiver firmware, selecione seu `PS3UPDAT.PUP`, obtido
-   pela pagina oficial da Sony indicada no aplicativo, ou importe a pasta do
-   seu RPCS3 com `dev_flash` instalado. O launcher instala/copia somente no
-   auxiliar local. Firmware nao faz parte do ZIP distribuido.
-4. Selecione a pasta do jogo (ou `PS3_GAME`) e o PKG **US 1.40 / BLUS31313**.
-   Pode selecionar tambem seus PKGs de DLC. Licencas RAP/EDAT nao sao fornecidas;
-   conteudo que exija licenca continua precisando da sua licenca local.
-5. Clique em **Preparar meu jogo**. E necessario acesso a internet na primeira
-   preparacao, para obter o auxiliar RPCS3 oficial e o SDK de recompilacao.
-   O RPCS3 instala pacotes e prepara o ELF; o jogo roda na build nativa depois.
-6. Quando a preparacao terminar, clique em **Jogar**. A build fica armazenada e
-   e reutilizada; nao precisa recompilar em cada sessao.
+2. Clique em **Jogar**. Selecione sua pasta extraida (ou `PS3_GAME`) e o PKG
+   **US 1.40 / BLUS31313**. Pode incluir seus PKGs de DLC. A aba **Preparação**
+   tambem permite selecionar esses arquivos antes de clicar em Jogar.
+3. Aguarde a primeira preparacao: o launcher baixa Git e LLVM-MinGW portateis,
+   o auxiliar oficial e firmware Sony verificado, prepara o ELF, compila e inicia
+   o jogo. Os downloads ficam na pasta local do aplicativo. Nao instala
+   ferramentas no sistema nem altera o PATH global; nao exige Visual Studio.
+4. Nas proximas sessoes, clique em **Jogar**. A build local e reutilizada.
+   Firmware PUP proprio ou um `dev_flash` existente podem ser importados como
+   alternativa ao download automatico. ISO e Android ainda nao estao disponiveis.
 
 O aplicativo mantem builds, auxiliar, saves e `preparacao.log` em
 `%LOCALAPPDATA%\DisgaeaD2Recomp`. Saves ficam em
@@ -40,7 +35,7 @@ sao desinstalados com o launcher. O atalho de desktop e opcional.
 Para usar a versao portatil, extraia a nova versao para outra pasta. Preserve
 `%LOCALAPPDATA%\DisgaeaD2Recomp`: ela contem a build e os saves. Quando o
 launcher mostra uma build pronta, clique em **Jogar** diretamente. Se precisar
-reconhecer/verificar a build para preparacao, use **Preparar meu jogo** sem
+reconhecer/verificar a build para preparacao, use **Jogar** sem
 selecionar PKGs/firmware novamente. Essa etapa verifica as fontes do runtime e
 o ELF local antes do reuso; mudancas no runtime exigem nova build, em outra pasta.
 A atualizacao de uma build compativel para o launcher 0.1.7 foi confirmada pelo
@@ -77,7 +72,9 @@ O workflow **Windows launcher** gera um ZIP contendo o executavel e suas
 dependencias e um instalador Inno Setup. Ele testa o interpretador embutido
 e a presenca das dependencias.
 Tambem verifica o checksum do patch empacotado e compila um programa C minimo
-com o CMake/Ninja incluidos, clang-cl local e descoberta do Python embutido.
+com o CMake/Ninja incluidos, LLVM-MinGW portatil e descoberta do Python embutido.
+A sonda verifica isolamento TLS em threads, excecoes C++, SSE4.1, XInput e
+compilacao de shader D3D, e compila a biblioteca do SDK com o Git portatil.
 Esses testes nao validam uma recompilacao completa nem a execucao do jogo.
 O teste do instalador cobre instalacao, execucao do interpretador instalado,
 reinstalacao, atalhos e desinstalacao. Fixtures de save/configuracao e um arquivo
@@ -85,8 +82,8 @@ do usuario sao conferidos por hash para verificar sua preservacao.
 O teste completo com a copia US 1.40 e necessario antes de chamar uma release
 de estavel. Somente Windows x64 esta implementado; ISO e Android ainda nao.
 
-A primeira preparacao usa compiladores locais: este e um assistente que instala
-e coordena essas ferramentas, nao uma recompilacao instantanea. O desempenho e
+A primeira preparacao baixa compiladores portateis para a pasta privada do
+aplicativo e pode demorar. Nas proximas sessoes, a build pronta e reutilizada. O desempenho e
 as limitacoes atuais do runtime continuam os mesmos de STATUS-WINDOWS.md.
 
 ## Importacao de DLC no launcher 0.1.5
@@ -166,3 +163,17 @@ Essa versão mantém runtime, patch, arquivos do jogo e saves. Não exige
 recompilação de uma build compatível. Os novos modos precisam de confirmação
 no PC do usuário; testes de janela sintética não comprovam imagem/performance
 no jogo real.
+
+## Preparacao portatil 0.1.10
+
+A troca de compilador so se aplica a novas builds. As fontes do runtime e o
+patch permanecem iguais, para preservar as builds compativeis existentes.
+Compilacoes interrompidas so sao retomadas com o mesmo identificador de
+ferramentas; uma build pendente feita com outro compilador e preservada, e
+um novo workspace e criado. O executavel usa as bibliotecas padrao do Windows,
+com libc++ e winpthreads estaticos e XInput9_1_0 do sistema.
+
+A compilacao cruzada local de uma copia 1.00 gerou o executavel completo com
+essas ferramentas. Isso valida compilacao e link, nao confirma a execucao
+de uma nova build US 1.40: ainda e necessario testa-la com os arquivos proprios
+do usuario. Os testes publicos do CI usam somente fontes e fixtures sinteticas.
