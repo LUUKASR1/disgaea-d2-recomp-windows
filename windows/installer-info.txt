@@ -14,6 +14,10 @@ Nao e necessario instalar Git, Visual Studio ou LLVM manualmente.
 A primeira preparacao exige internet e pode demorar; as proximas reutilizam
 a build local. A importacao de firmware proprio continua disponivel.
 
+Se faltarem runtimes C++/Vulkan do Windows, os instaladores oficiais sao
+obtidos automaticamente. O Windows pode pedir autorizacao de administrador.
+Um driver de video adequado continua necessario.
+
 Sua build, conteudo importado e saves ficam em:
 %LOCALAPPDATA%\DisgaeaD2Recomp
 

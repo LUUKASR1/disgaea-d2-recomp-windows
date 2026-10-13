@@ -8,6 +8,8 @@ on:
       - 'windows/test_branding.py'
       - 'windows/portable_tools.py'
       - 'windows/test_portable_tools.py'
+      - 'windows/runtime_dependencies.py'
+      - 'windows/test_runtime_dependencies.py'
       - 'windows/display_settings.py'
       - 'windows/test_display_settings.py'
       - 'windows/preview_launcher.py'
@@ -45,30 +47,8 @@ jobs:
           name: DisgaeaD2Launcher-UI-Preview
           path: launcher-previews/
           if-no-files-found: error
-      - name: Initialize installed C++ toolchain for CI
-        shell: pwsh
-        run: |
-          @'
-          import os, sys
-          sys.path.insert(0, 'windows')
-          from launcher import build_environment
-          env = build_environment()
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
-              for name in ['PATH', 'LIB', 'INCLUDE', 'LIBPATH', 'VSINSTALLDIR', 'VCToolsInstallDir', 'WindowsSdkDir']:
-                  value = next((v for k, v in env.items() if k.upper() == name.upper()), None)
-                  if value:
-                      output.write(name + '=' + value + '\n')
-          '@ | python -
-      - name: Build bundled Vulkan loader from official source
-        shell: pwsh
-        run: |
-          git clone --depth 1 --branch v1.4.350 https://github.com/KhronosGroup/Vulkan-Loader.git "$env:RUNNER_TEMP/vulkan-loader"
-          cmake -S "$env:RUNNER_TEMP/vulkan-loader" -B "$env:RUNNER_TEMP/vulkan-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DUPDATE_DEPS=ON -DBUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX="$env:RUNNER_TEMP/vulkan-runtime"
-          cmake --build "$env:RUNNER_TEMP/vulkan-build" --config Release --target install --parallel 2
-          "$env:RUNNER_TEMP/vulkan-runtime/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: Build source-only launcher with private helper loader
-        shell: pwsh
-        run: python tools/package_launcher.py --vulkan-loader "$env:RUNNER_TEMP/vulkan-runtime/bin/vulkan-1.dll" --vulkan-license "$env:RUNNER_TEMP/vulkan-loader/LICENSE.txt"
+      - name: Build source-only launcher
+        run: python tools/package_launcher.py
       - name: Test bundled interpreter and dependencies
         timeout-minutes: 12
         shell: pwsh
@@ -92,6 +72,11 @@ jobs:
           if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Worker timed out' }
           $process.Refresh()
           if ($process.ExitCode -ne 0 -or !(Get-Content $probe)) { throw 'Python worker probe failed' }
+          $process = Run-Launcher '--runtime-test'
+          if ($process.ExitCode -ne 0 -or !(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/runtime-test-ok.txt")) {
+            Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log"
+            throw 'Official runtime setup failed'
+          }
           $process = Run-Launcher '--toolchain-test'
           if ($process.ExitCode -ne 0 -or !(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp/toolchain-test-ok.txt")) {
             Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp/preparacao.log"

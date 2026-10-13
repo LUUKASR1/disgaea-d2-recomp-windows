@@ -178,12 +178,11 @@ essas ferramentas. Isso valida compilacao e link, nao confirma a execucao
 de uma nova build US 1.40: ainda e necessario testa-la com os arquivos proprios
 do usuario. Os testes publicos do CI usam somente fontes e fixtures sinteticas.
 
-O auxiliar recebe automaticamente as DLLs de runtime C++ da Microsoft na sua
-propria pasta. O pacote oficial e as DLLs sao verificados por SHA-256. Isso
-evita depender de uma instalacao global de Visual C++ Redistributable para
-essa etapa. A sonda nativa do CI confere o carregamento das DLLs locais.
-
-O launcher tambem inclui o loader Vulkan compilado das fontes oficiais da
-Khronos. Ele fica junto do auxiliar e permite iniciar a preparacao mesmo
-sem um loader Vulkan global. A execucao nativa do jogo continua usando D3D12
-e requer um driver de video adequado. Nao e instalado um SDK Vulkan.
+O auxiliar exige que os runtimes C++ e Vulkan sejam instalados nas pastas
+de sistema do Windows. O launcher verifica essa presenca e obtem os
+instaladores oficiais quando necessario, com SHA-256 fixado antes da execucao.
+O Windows pode pedir uma autorizacao de administrador para essa etapa.
+Isso nao instala Visual Studio ou SDK Vulkan. Bibliotecas locais antigas que
+interferirem no auxiliar sao preservadas numa subpasta de backup; firmware,
+conteudo e saves ficam no mesmo lugar. O jogo nativo continua usando D3D12
+e requer um driver de video adequado.

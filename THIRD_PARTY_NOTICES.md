@@ -58,17 +58,11 @@ assets and are not added to this repository.
 - PS3 firmware is downloaded directly from Sony's official update server,
   verified against a pinned SHA-256, and remains local. It is not bundled.
 
-The helper's Microsoft Visual C++ runtime DLLs are downloaded from the pinned
-Microsoft.VC.14.52.CRT.Redist.X64.base package on Microsoft's official
-Visual Studio distribution server. Only the release CRT directory is used;
-no development tools or debug DLLs are installed. Package and individual DLL
-SHA-256 checks are mandatory. The DLLs stay beside the local preparation helper.
+The preparation helper requires system-installed Microsoft Visual C++ and
+Vulkan runtimes. Missing runtimes are downloaded from their official vendor
+servers and verified by pinned SHA-256 before the standard installers run.
+These installers are not bundled. They may require Windows administrator
+permission. No Visual Studio development environment or Vulkan SDK is installed.
 
-Microsoft deployment guidance: https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp
-
-The bundled Vulkan loader is built from KhronosGroup/Vulkan-Loader v1.4.350
-using its official sources, with a static C runtime. Its LICENSE.txt is retained
-in vendor/vulkan. It is copied only beside the local preparation helper; no
-Vulkan SDK or graphics driver is installed.
-
-https://github.com/KhronosGroup/Vulkan-Loader
+- Microsoft Visual C++: https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
+- Vulkan runtime: https://vulkan.lunarg.com/sdk/home

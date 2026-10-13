@@ -152,7 +152,7 @@ def download(url, target, sha):
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_suffix(target.suffix + '.part')
     try:
-        with urllib.request.urlopen(url, timeout=90) as response, part.open('wb') as f:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'DisgaeaD2Launcher/' + VERSION}), timeout=90) as response, part.open('wb') as f:
             shutil.copyfileobj(response, f)
         if digest(part) != sha:
             raise RuntimeError('O arquivo baixado falhou na verificacao SHA-256.')
@@ -373,17 +373,18 @@ class Backend:
         return exe
 
     def helper_support(self, directory):
-        from portable_tools import ensure_helper_runtime
-        ensure_helper_runtime(self.home, directory, download, self.notify)
-        source = ROOT / 'vendor/vulkan/vulkan-1.dll'
-        sha = (ROOT / 'vendor/vulkan/sha256.txt').read_text().strip()
-        if digest(source) != sha:
-            raise RuntimeError('Loader Vulkan empacotado falhou na verificação SHA-256.')
-        target = directory / 'vulkan-1.dll'
-        if not target.is_file() or digest(target) != sha:
-            part = target.with_suffix('.dll.part')
-            shutil.copy2(source, part)
-            part.replace(target)
+        from runtime_dependencies import ensure_runtimes, VC_FILES
+        # Keep user data and firmware in place; preserve misplaced old DLLs.
+        names = set(VC_FILES) | {'vulkan-1.dll', 'concrt140.dll', 'vccorlib140.dll',
+                                 'msvcp140_atomic_wait.dll', 'msvcp140_codecvt_ids.dll', 'vcruntime140_threads.dll'}
+        misplaced = [directory / name for name in names if (directory / name).is_file()]
+        if misplaced:
+            backup = directory / ('runtimes-anteriores-' + uuid.uuid4().hex)
+            backup.mkdir()
+            for file in misplaced:
+                file.rename(backup / file.name)
+            self.notify('Bibliotecas locais anteriores preservadas; usando a instalação oficial do Windows.')
+        ensure_runtimes(self.home, download, self.notify)
 
     def prepare(self, folder, packages, firmware=None):
         game = self.check_game_files(folder)
@@ -604,8 +605,6 @@ def main():
         for asset in ('logo-winport.png', 'launcher-icon.png', 'launcher.ico'):
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
-        if digest(ROOT / 'vendor/vulkan/vulkan-1.dll') != (ROOT / 'vendor/vulkan/sha256.txt').read_text().strip():
-            raise RuntimeError('Bundled Vulkan loader missing or corrupted')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
     elif '--toolchain-test' in sys.argv:
@@ -620,6 +619,7 @@ def main():
 #include <xinput.h>
 #include <thread>
 #include <string>
+#include <cwchar>
 #include <stdexcept>
 #include <smmintrin.h>
 __declspec(thread) int sdk_tls = 0;
@@ -637,7 +637,7 @@ int main(int argc, char** argv) {
             if (!library) return 6;
             wchar_t loaded[MAX_PATH]; GetModuleFileNameW(library, loaded, MAX_PATH);
             std::wstring actual(loaded);
-            if (actual.substr(0, actual.find_last_of(L"/\\\\")) != directory) return 7;
+            if (_wcsicmp(actual.substr(0, actual.find_last_of(L"/\\\\")).c_str(), directory.c_str()) != 0) return 7;
         }
         return 0;
     }
@@ -692,7 +692,8 @@ int main(int argc, char** argv) {
         probe = HOME / 'toolchain-test/build/smoke.exe'
         if not probe.is_file():
             raise RuntimeError('Portable runtime loading probe missing')
-        backend.run([probe, helper.parent], timeout=30, label='Verificar DLLs Microsoft privadas')
+        from runtime_dependencies import system_directory
+        backend.run([probe, system_directory()], timeout=30, label='Verificar runtimes oficiais do Windows')
         # --help exercises the real log setup without game/firmware inputs.
         # An invalid --decrypt input triggers an upstream teardown assertion
         # on a fresh firmware-free RPCS3 profile, unrelated to log creation.
@@ -714,6 +715,17 @@ int main(int argc, char** argv) {
         if backend.helper() != helper:
             raise RuntimeError('Auxiliary reuse failed')
         (HOME / 'auxiliary-test-ok.txt').write_text('OK')
+    elif '--runtime-setup' in sys.argv or '--runtime-test' in sys.argv:
+        from runtime_dependencies import ensure_runtimes
+        backend = Backend(lambda text: None)
+        ensure_runtimes(HOME, download, backend.notify, force='--runtime-test' in sys.argv)
+        HOME.mkdir(parents=True, exist_ok=True)
+        (HOME / 'runtime-test-ok.txt').write_text('OK')
+    elif len(sys.argv) == 3 and sys.argv[1] == '--install-runtimes':
+        from runtime_dependencies import install_manifest
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            raise RuntimeError('O Windows precisa autorizar a instalação dos runtimes.')
+        install_manifest(sys.argv[2])
     elif '--firmware-test' in sys.argv:
         backend = Backend(lambda text: None)
         helper = backend.helper()

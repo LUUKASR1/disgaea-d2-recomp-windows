@@ -10,7 +10,7 @@ Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313
 
 1. Instale `DisgaeaD2Launcher-Setup-Windows-x64.exe` e abra o launcher. Se usar o ZIP portátil, extraia tudo e mantenha a pasta `_internal` junto do executável.
 2. Clique em **Jogar**, selecione a pasta do jogo (ou `PS3_GAME`) e a atualização 1.40; inclua seus PKGs de DLC, se desejar. Também pode selecionar esses arquivos na aba **Preparação**.
-3. Aguarde a primeira preparação. O launcher baixa ferramentas portáteis, o auxiliar oficial e o firmware PS3 oficial verificado; gera a build local e inicia o jogo. Não é necessário instalar Git, Visual Studio ou LLVM manualmente. A primeira vez requer internet e pode demorar; nas próximas, **Jogar** reutiliza a build. Firmware próprio ou do RPCS3 continua disponível como opção avançada.
+3. Aguarde a primeira preparação. O launcher baixa ferramentas portáteis, o auxiliar oficial e o firmware PS3 oficial verificado; gera a build local e inicia o jogo. Não é necessário instalar Git, Visual Studio ou LLVM manualmente. A primeira vez requer internet e pode demorar; nas próximas, **Jogar** reutiliza a build. Firmware próprio ou do RPCS3 continua disponível como opção avançada. Se faltarem runtimes de execução C++/Vulkan no Windows, os instaladores oficiais são obtidos automaticamente; o Windows pode pedir autorização de administrador. Um driver de vídeo adequado continua necessário.
 
 **Já tem uma build funcionando?** Feche o jogo e o launcher, instale a atualização do launcher e clique em **Jogar**. Na atualização para 0.1.10, a build compatível e os saves são preservados; não é necessário recompilar ou importar novamente os pacotes. Não apague `%LOCALAPPDATA%\DisgaeaD2Recomp`.
 
@@ -26,7 +26,7 @@ You need your own **extracted** US game copy (**BLUS31313**) and the **US 1.40**
 
 1. Install `DisgaeaD2Launcher-Setup-Windows-x64.exe` and open the launcher. For the portable ZIP, extract everything and keep `_internal` next to the executable.
 2. Click **Jogar**, select the game folder (or `PS3_GAME`) and the 1.40 update; add your DLC PKGs if desired. These files can also be selected in the **Preparação** tab.
-3. Wait for the first preparation. The launcher downloads private portable tools, the official helper and verified official PS3 firmware, generates the local build, and starts the game. No manual Git, Visual Studio or LLVM installation is needed. The first run requires internet and can take time; later sessions reuse the build. Importing your existing firmware remains an advanced option.
+3. Wait for the first preparation. The launcher downloads private portable tools, the official helper and verified official PS3 firmware, generates the local build, and starts the game. No manual Git, Visual Studio or LLVM installation is needed. The first run requires internet and can take time; later sessions reuse the build. Importing your existing firmware remains an advanced option. Missing Windows C++/Vulkan runtimes are obtained through official installers; Windows may request administrator permission. A suitable graphics driver is still required.
 
 **Already have a working build?** Close the game and launcher, install the launcher update, and click **Jogar**. Updating to 0.1.10 preserves your compatible build and saves; no recompilation or package reimport is needed. Do not delete `%LOCALAPPDATA%\DisgaeaD2Recomp`.
 

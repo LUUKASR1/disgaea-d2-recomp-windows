@@ -1,21 +1,11 @@
 """Build a Windows launcher without including game-derived files."""
 import hashlib
-import argparse
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import urllib.request
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--vulkan-loader', required=True, type=Path)
-parser.add_argument('--vulkan-license', required=True, type=Path)
-args = parser.parse_args()
-if not args.vulkan_loader.is_file() or args.vulkan_loader.read_bytes()[:2] != b'MZ':
-    parser.error('A compiled official Windows Vulkan loader is required.')
-if not args.vulkan_license.is_file():
-    parser.error('Vulkan loader license missing.')
 
 root = Path(__file__).resolve().parents[1]
 staging = root / 'launcher-package'
@@ -50,10 +40,6 @@ for name in ('cmake', 'ninja'):
     else:
         import ninja
         shutil.copy2(Path(ninja.BIN_DIR) / 'ninja.exe', vendor / 'bin/ninja.exe')
-(vendor / 'vulkan').mkdir()
-shutil.copy2(args.vulkan_loader, vendor / 'vulkan/vulkan-1.dll')
-shutil.copy2(args.vulkan_license, vendor / 'vulkan/LICENSE.txt')
-(vendor / 'vulkan/sha256.txt').write_text(hashlib.sha256(args.vulkan_loader.read_bytes()).hexdigest())
 url = 'https://raw.githubusercontent.com/nlohmann/json/v3.11.3/single_include/nlohmann/json.hpp'
 data = urllib.request.urlopen(url, timeout=60).read()
 if hashlib.sha256(data).hexdigest() != '9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6':

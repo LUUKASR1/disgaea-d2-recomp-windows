@@ -1,6 +1,5 @@
 """Private, pinned Windows tools. No system installation or global PATH edits."""
 import json
-import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -20,9 +19,6 @@ TOOLS = {
         'da35e72aa21c005a5a0d298cfbae110bc1609a815730ea0dde84b01a1b3cd3be',
         '', ('cmd/git.exe', 'ucrt64/bin/git.exe')),
 }
-
-CRT_FILES = {'msvcp140_1.dll': '4981865aeba0e8c5d8a7b81fa73c50e919da670c9deca0a01490084fc9ed412a', 'msvcp140_codecvt_ids.dll': '5ffc1ec682d5867f4e6047806c2e655bfb19d441187c0bfeface0ae4f54bf8cf', 'vcruntime140_1.dll': 'f8b039fdb1a0249a9db7f399d1730bf94a97836e37035d615070c91c6f9e4577', 'msvcp140_2.dll': '4d4cd5e1e34fd4c3dfff7a7f5498b09e8e43b4fa8795c789ae59003dfad8c270', 'vcruntime140_threads.dll': '5550e13c894e4b879cab0d9385f1c183a84d09585165dc18d2142995e53ee2aa', 'msvcp140_atomic_wait.dll': 'cfe8323ac03156930be2a894826b918efbb47dfe78991e93287a6993a841bc8f', 'vccorlib140.dll': '3c059c5f0aec7e6b580acfee2b8cc6ddcbe9adab95997eea4f9b3c7bc89412a1', 'vcruntime140.dll': 'aabdd441c96b7928184ab5623245624be576abce1a2c35a7d96dcedbcffd33f3', 'msvcp140.dll': '4a25710800a9e86464369d52e6e0e044533fc0dd12e3e1c35283f095cf9a65b1', 'concrt140.dll': '187d0ad3f3efd61e6dd1da5ebf3c9111d4c149421db8af1211d712a7af3ddf46'}
-TOOLS['crt'] = ('https://download.visualstudio.microsoft.com/download/pr/fedfadc0-2ddc-42f8-afa2-24eda4792a5f/aafe93c23baefa98078ce3406b43defdb73979d249a598583de127e229595f75/Microsoft.VC.14.52.CRT.Redist.X64.base.vsix', 'aafe93c23baefa98078ce3406b43defdb73979d249a598583de127e229595f75', 'Contents/VC/Redist/MSVC/14.52.36725/x64/Microsoft.VC145.CRT', tuple(CRT_FILES))
 
 
 def extract_checked(archive, staging):
@@ -88,21 +84,3 @@ def portable_environment(home, bundled, download, notify):
         if not shutil.which(name, path=env['PATH']):
             raise RuntimeError('Ferramenta portátil ausente: ' + name)
     return env
-
-
-def ensure_helper_runtime(home, directory, download, notify):
-    directory = Path(directory)
-    def matches(path, sha):
-        return path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == sha
-    if all(matches(directory / name, sha) for name, sha in CRT_FILES.items()):
-        return
-    source = ensure_tool(home, 'crt', download, notify)
-    if not all(matches(source / name, sha) for name, sha in CRT_FILES.items()):
-        raise RuntimeError('Bibliotecas locais do auxiliar falharam na verificação SHA-256.')
-    notify('Preparando bibliotecas Microsoft no auxiliar local, sem instalar ferramentas no Windows.')
-    for name, sha in CRT_FILES.items():
-        target = directory / name
-        if not matches(target, sha):
-            part = target.with_suffix('.dll.part')
-            shutil.copy2(source / name, part)
-            part.replace(target)

@@ -44,6 +44,7 @@ Name: "{userprograms}\Disgaea D2 Recomp\DisgaeaD2Launcher"; Filename: "{app}\Dis
 Name: "{userdesktop}\DisgaeaD2Launcher"; Filename: "{app}\DisgaeaD2Launcher.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+Filename: "{app}\DisgaeaD2Launcher.exe"; Parameters: "--runtime-setup"; StatusMsg: "Verificando bibliotecas de execucao do Windows..."; Flags: waituntilterminated
 Filename: "{app}\DisgaeaD2Launcher.exe"; Description: "Abrir DisgaeaD2Launcher"; Flags: nowait postinstall skipifsilent
 
 ; No [UninstallDelete] or [InstallDelete] sections: LocalAppData game/build/save
