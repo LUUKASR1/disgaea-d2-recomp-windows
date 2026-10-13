@@ -559,7 +559,7 @@ int main(int argc, char** argv)
         if (d2_iso_mount(iso_path.c_str()) != 0 || d2_iso_check_title("BLUS31313") != 0) {
             fprintf(stderr, "ERROR: ISO mount: %s\n", d2_iso_last_error()); return 1;
         }
-        fprintf(stderr, "[vfs] direct UDF ISO mounted; updates/DLC/saves use existing HDD mounts\n");
+        fprintf(stderr, "[vfs] direct ISO mounted; updates/DLC/saves use existing HDD mounts\n");
     }
 #endif
 

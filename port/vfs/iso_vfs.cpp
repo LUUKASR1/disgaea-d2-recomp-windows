@@ -1,4 +1,5 @@
 #include "iso_vfs.h"
+#include "iso9660_reader.h"
 #include "udfread.h"
 #include "blockinput.h"
 #include <algorithm>
@@ -103,7 +104,7 @@ private:
 std::string ImageLayout::Description() const {
     if (iso9660Primary && !udfRecognition && !udfAnchor)
         return "ISO9660 identificado; UDF nao identificado nos descritores inspecionados. "
-               "O leitor UDF atual nao suporta imagens somente ISO9660. Isso nao comprova criptografia.";
+               "O leitor tentara a estrutura ISO9660. Isso nao comprova criptografia.";
     if (udfRecognition || udfAnchor)
         return "Descritores UDF presentes. Uma falha de montagem requer verificar estruturas/particoes "
                "e o suporte do leitor; este diagnostico nao determina criptografia dos assets.";
@@ -159,8 +160,8 @@ ImageLayout InspectImage(const std::filesystem::path& image) {
 struct IsoVfs::State {
     explicit State(const std::filesystem::path& path) : image(path) {
         if (image.Size() % BlockSize || image.Size() / BlockSize > UINT32_MAX ||
-            image.Size() < 257 * BlockSize)
-            throw Error(ErrorCode::InvalidImage, "Tamanho de imagem UDF invalido.");
+            image.Size() < 17 * BlockSize)
+            throw Error(ErrorCode::InvalidImage, "Tamanho de imagem ISO invalido.");
         input.owner = &image;
         input.api.size = [](udfread_block_input* p) -> std::uint32_t {
             return static_cast<std::uint32_t>(
@@ -177,9 +178,15 @@ struct IsoVfs::State {
         if (!volume) throw Error(ErrorCode::Io, "Falha ao alocar leitor UDF.");
         if (udfread_open_input(volume, &input.api) < 0) {
             udfread_close(volume); volume = nullptr;
-            throw Error(ErrorCode::InvalidImage,
-                "O leitor nao conseguiu montar esta imagem como UDF. "
-                "Isso nao determina a causa nem confirma criptografia; consulte a inspecao de formato.");
+            try {
+                iso9660 = std::make_unique<detail::Iso9660Reader>(
+                    [this](std::uint64_t offset, void* buffer, std::size_t size) {
+                        return image.ReadExact(offset, buffer, size);
+                    }, image.Size());
+            } catch (const Error& error) {
+                throw Error(ErrorCode::InvalidImage,
+                    std::string("UDF nao montado; alternativa ISO9660 falhou: ") + error.what());
+            }
         }
     }
     ~State() { if (volume) udfread_close(volume); }
@@ -187,11 +194,13 @@ struct IsoVfs::State {
     Input input;
     udfread* volume = nullptr;
     std::mutex mutex;
+    std::unique_ptr<detail::Iso9660Reader> iso9660;
 };
 struct IsoVfs::File::Handle {
     std::shared_ptr<State> state;
     UDFFILE* file = nullptr;
     std::uint64_t size = 0;
+    detail::IsoNode isoNode;
     ~Handle() { if (file) { std::scoped_lock lock(state->mutex); udfread_file_close(file); } }
 };
 
@@ -215,6 +224,7 @@ std::string IsoVfs::NormalizePath(std::string_view input) {
 }
 
 IsoVfs::IsoVfs(const std::filesystem::path& path) : state_(std::make_shared<State>(path)) {}
+std::string IsoVfs::BackendName() const { return state_->iso9660 ? "ISO9660" : "UDF"; }
 IsoVfs::File::File(std::shared_ptr<Handle> h) : handle_(std::move(h)) {}
 std::uint64_t IsoVfs::File::Size() const noexcept { return handle_->size; }
 
@@ -223,19 +233,25 @@ std::shared_ptr<IsoVfs::File> IsoVfs::Open(std::string_view input) const {
     auto handle = std::make_shared<File::Handle>();
     handle->state = state_;
     {
-    std::scoped_lock lock(state_->mutex);
-    if (UDFDIR* dir = udfread_opendir(state_->volume, path.c_str())) {
-        udfread_closedir(dir);
-        throw Error(ErrorCode::IsDirectory, "Caminho aponta para diretorio: " + path);
-    }
-    UDFFILE* file = udfread_file_open(state_->volume, path.c_str());
-    if (!file) throw Error(ErrorCode::NotFound, "Arquivo nao encontrado: " + path);
-    const auto size = udfread_file_size(file);
-    if (size < 0) {
-        udfread_file_close(file);
-        throw Error(ErrorCode::Io, "Falha ao consultar arquivo: " + path);
-    }
-    handle->file = file; handle->size = static_cast<std::uint64_t>(size);
+        std::scoped_lock lock(state_->mutex);
+        if (state_->iso9660) {
+            handle->isoNode = state_->iso9660->Resolve(path);
+            if (handle->isoNode.directory) throw Error(ErrorCode::IsDirectory, "Caminho aponta para diretorio: " + path);
+            handle->size = handle->isoNode.size;
+        } else {
+        if (UDFDIR* dir = udfread_opendir(state_->volume, path.c_str())) {
+            udfread_closedir(dir);
+            throw Error(ErrorCode::IsDirectory, "Caminho aponta para diretorio: " + path);
+        }
+        UDFFILE* file = udfread_file_open(state_->volume, path.c_str());
+        if (!file) throw Error(ErrorCode::NotFound, "Arquivo nao encontrado: " + path);
+        const auto size = udfread_file_size(file);
+        if (size < 0) {
+            udfread_file_close(file);
+            throw Error(ErrorCode::Io, "Falha ao consultar arquivo: " + path);
+        }
+        handle->file = file; handle->size = static_cast<std::uint64_t>(size);
+        }
     }
     return std::shared_ptr<File>(new File(std::move(handle)));
 }
@@ -244,6 +260,8 @@ std::size_t IsoVfs::File::ReadAt(std::uint64_t offset, std::span<std::byte> out)
     if (offset >= Size() || out.empty()) return 0;
     const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(out.size(), Size() - offset));
     std::scoped_lock lock(handle_->state->mutex);
+    if (handle_->state->iso9660)
+        return handle_->state->iso9660->ReadAt(handle_->isoNode, offset, out);
     if (udfread_file_seek(handle_->file, static_cast<std::int64_t>(offset), UDF_SEEK_SET)
         != static_cast<std::int64_t>(offset)) throw Error(ErrorCode::Io, "Falha ao posicionar leitura.");
     std::size_t done = 0;
@@ -260,6 +278,10 @@ FileInfo IsoVfs::Stat(std::string_view input) const {
     const auto path = NormalizePath(input);
     {
         std::scoped_lock lock(state_->mutex);
+        if (state_->iso9660) {
+            const auto node = state_->iso9660->Resolve(path);
+            return {node.directory, node.directory ? 0 : node.size};
+        }
         if (UDFDIR* dir = udfread_opendir(state_->volume, path.c_str())) {
             udfread_closedir(dir); return {true, 0};
         }
@@ -270,6 +292,12 @@ FileInfo IsoVfs::Stat(std::string_view input) const {
 std::vector<DirectoryEntry> IsoVfs::ListDirectory(std::string_view input) const {
     const auto path = NormalizePath(input);
     std::scoped_lock lock(state_->mutex);
+    if (state_->iso9660) {
+        const auto node = state_->iso9660->Resolve(path);
+        std::vector<DirectoryEntry> result;
+        for (const auto& entry : state_->iso9660->Directory(node)) result.push_back({entry.name, entry.directory});
+        return result;
+    }
     std::unique_ptr<UDFDIR, decltype(&udfread_closedir)> dir(
         udfread_opendir(state_->volume, path.c_str()), udfread_closedir);
     if (!dir) throw Error(ErrorCode::NotDirectory, "Nao foi possivel abrir diretorio: " + path);

@@ -138,6 +138,8 @@ def make(path, large=False, complete=False):
 
 def main(root):
     root.mkdir(parents=True, exist_ok=True)
+    from make_iso9660 import generate
+    generate(root)
     fragments = make(root / 'RETRÔ-ação' / 'D2.iso')
     (root / 'expected.bin').write_bytes(fragments)
     make(root / 'large.iso', large=True)

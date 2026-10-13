@@ -51,6 +51,7 @@ public:
     };
 
     explicit IsoVfs(const std::filesystem::path& image);
+    std::string BackendName() const;
     std::shared_ptr<File> Open(std::string_view internalPath) const;
     FileInfo Stat(std::string_view internalPath) const;
     std::vector<DirectoryEntry> ListDirectory(std::string_view internalPath) const;

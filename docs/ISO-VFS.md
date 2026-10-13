@@ -1,6 +1,6 @@
 # VFS nativo para ISO — experimental / Native ISO VFS — experimental
 
-Este desenvolvimento adiciona leitura direta de **UDF** em C++20, sem montar a
+Este desenvolvimento adiciona leitura direta de **UDF/ISO9660** em C++20, sem montar a
 ISO no Windows e sem extrair assets. A integração fica desativada por padrão.
 A versão publicada do launcher continua funcional com sua preparação existente.
 
@@ -12,6 +12,13 @@ A versão publicada do launcher continua funcional com sua preparação existent
   acesso serializado ao volume. O leitor UDF e o sistema operacional fornecem
   os buffers atuais; um cache LRU próprio e prefetch ainda não foram adicionados.
 - Resolução de extents pelo libudfread 1.2.0 incorporado ao fonte.
+- Alternativa ISO9660 própria, usada quando a montagem UDF falha, inclusive em
+  imagens que têm os dois formatos. Lê o descritor primário com blocos de 2048
+  bytes, diretórios, arquivos vazios e arquivos com várias seções/extents.
+  Confere campos little/big-endian, tamanhos e limites físicos. Trata `;1` e
+  versões de arquivo; usa comparação ASCII sem distinguir maiúsculas no
+  backend ISO9660. O backend UDF mantém sua semântica original.
+- Cache ISO9660 limitado a 32 diretórios; arquivos grandes continuam em streaming.
 - Ponte de arquivos somente leitura para `/dev_bdvd` e `/app_home`.
 - Adaptadores para PPU `cellFs`, syscalls LV2 `sys_fs` e a biblioteca direta
   `cellFs`, além de leitura AIO com preservação do cursor/callback existente.
@@ -37,7 +44,9 @@ A versão 2 inspeciona primeiro os descritores ISO9660/UDF e as âncoras UDF,
 mesmo quando a montagem falha. Uma falha do leitor UDF **não comprova** que a
 imagem está criptografada ou danificada. Se identificar ISO9660 sem UDF, registra
 essa limitação do backend atual. Essa inspeção não adiciona suporte ISO9660 ao
-runtime nem verifica criptografia de todos os assets.
+runtime nem verifica criptografia de todos os assets. **A versão 3 adiciona o
+backend ISO9660** e registra `Mounted backend=UDF` ou `Mounted backend=ISO9660`
+no relatório, antes de ler o SFO e verificar os arquivos base.
 
 ## Compilar e testar o módulo (desenvolvimento)
 
@@ -65,9 +74,10 @@ montagens atuais de HDD/firmware continuam necessárias nesta fase.
 
 ## Limites desta etapa
 
-- Suporte inicial: imagens UDF **descriptografadas**, compatíveis com o leitor.
-  ISO9660 sem UDF não está implementado. UDF legível não garante que todos os
-  setores de assets estejam descriptografados.
+- Suporte inicial: imagens UDF/ISO9660 **descriptografadas**, compatíveis com os
+  perfis implementados. O backend ISO9660 não interpreta nomes Joliet/Rock Ridge,
+  arquivos intercalados ou volumes divididos em vários discos. Metadados legíveis
+  não garantem que todos os setores de assets estejam descriptografados.
 - Descriptografia de disco em tempo real, chaves fornecidas pelo usuário e
   importação nativa de PKG não estão implementadas neste módulo.
 - AIO é integrado ao scaffold atual; serviços de streaming adicionais e
@@ -82,7 +92,7 @@ montagens atuais de HDD/firmware continuam necessárias nesta fase.
 
 ## English
 
-This opt-in C++20 module reads assets directly from decrypted UDF images using
+This opt-in C++20 module reads assets directly from decrypted UDF/ISO9660 images using
 native positioned I/O. It includes persistent handles, bounded whole-file
 reads, directory access and a validated TITLE_ID parser. Generated adapters
 connect the pinned SDK's PPU, LV2 and direct-library filesystem paths; AIO
@@ -90,7 +100,12 @@ preserves the existing callback behavior. HDD paths keep their existing backend.
 
 The standalone Windows checker diagnoses an ISO and does **not** launch the
 game. The current launcher release and preparation flow remain unchanged.
-Disc decryption, ISO9660-only images, native PKG import, additional streaming
+The version 3 checker includes a primary-descriptor ISO9660 fallback with
+bounded directory caching, multi-extent streaming, endian/bounds validation
+and ASCII case-insensitive lookup. It does not interpret Joliet/Rock Ridge,
+interleaved files or multi-volume sets. The original UDF backend remains first.
+
+Disc decryption, native PKG import, additional streaming
 services and the final single-EXE product are not implemented by this milestone.
 The game still requires matching locally generated code and its ELF. No game
 data, firmware or lifted game code is distributed here.
@@ -102,3 +117,7 @@ The vendored libudfread is LGPL-2.1-or-later. Its original source files and
 official source archive and checksum. The Windows diagnostic artifact retains
 object files and static libraries for relinking. Final runtime distribution
 must preserve the applicable source, notices and relinking materials.
+
+The in-project ISO9660 reader follows the primary descriptor and directory
+record layouts in ECMA-119 (2019 edition, clauses 8 and 9):
+https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf

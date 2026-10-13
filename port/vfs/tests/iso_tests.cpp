@@ -105,6 +105,28 @@ int main(int count, char** args) {
         for (auto& worker : workers) worker.join();
         check(parallelOk, "800 concurrent positioned reads");
 
+        for (const auto* filename : {"iso9660-complete.iso", "hybrid-fallback.iso"}) {
+            IsoVfs iso(root / filename);
+            check(iso.BackendName() == "ISO9660", "ISO9660 backend selected after UDF fallback");
+            check(iso.TitleId() == "BLUS31313", "ISO9660 SFO parser");
+            check(iso.GetFileBytes("/ps3_game/usrdir/Data/fragment.bin") == expected, "ISO9660 case folding and multi-extent content");
+            check(iso.GetFileBytes("/PS3_GAME/USRDIR/Data/EMPTY.BIN").empty(), "ISO9660 zero-length file");
+            check(iso.GetFileBytes("/PS3_GAME/USRDIR/Data/VERS.BIN")[0] == std::byte{'N'}, "highest ISO9660 file version selected");
+            auto fragmented = iso.Open("/PS3_GAME/USRDIR/Data/fragment.bin");
+            check(fragmented->ReadAt(4000, range) == range.size() && std::equal(range.begin(), range.end(), expected.begin() + 4000), "ISO9660 cross-section read");
+            check(fragmented->ReadAt(4800, range) == 65, "ISO9660 partial EOF");
+            expect(ErrorCode::IsDirectory, [&]{ iso.Open("/PS3_GAME"); }, "ISO9660 file type");
+            expect(ErrorCode::NotFound, [&]{ iso.Open("/missing"); }, "ISO9660 missing file");
+            expect(ErrorCode::InvalidPath, [&]{ iso.Open("/PS3_GAME/../PARAM.SFO"); }, "ISO9660 traversal denied");
+        }
+        IsoVfs isoLarge(root / "iso9660-large.iso");
+        auto big = isoLarge.Open("/PS3_GAME/USRDIR/Data/BIG.BIN");
+        check(big->Size() == UINT64_C(0x100000800), "ISO9660 multi-extent file length >4GiB");
+        check(big->ReadAt(UINT64_C(0x100000000), range) == range.size() && range[0] == std::byte{5}, "ISO9660 logical/physical offset >4GiB");
+        expect(ErrorCode::TooLarge, [&]{ isoLarge.GetFileBytes("/PS3_GAME/USRDIR/Data/BIG.BIN"); }, "large ISO9660 file is streamed");
+        expect(ErrorCode::InvalidImage, [&]{ IsoVfs invalid(root / "iso9660-bad-endian.iso"); }, "ISO9660 both-endian fields checked");
+        expect(ErrorCode::InvalidImage, [&]{ IsoVfs invalid(root / "iso9660-bad-record.iso"); }, "ISO9660 malformed records checked");
+
         d2_iso_bind_memory(vm.data(), vm.size());
         std::array<std::uint64_t, 6> noMount{}; std::int64_t result = 99;
         check(d2_iso_request(D2_ISO_STAT, noMount.data(), &result) == 0 && result == 99, "unmounted backend unchanged");
@@ -153,6 +175,12 @@ int main(int count, char** args) {
         check(code(request(D2_ISO_UNLINK, {64}), 0x80010026), "disc removal rejected");
         check(request(D2_ISO_PATH_BLOCK_SIZE, {64, 1000, 1008}) == 0 && be(1000, 8) == 2048, "disc block size");
         check(d2_iso_mount(utf8(image).c_str()) == 0, "remount after all handles close");
+        check(d2_iso_mount(utf8(root / "hybrid-fallback.iso").c_str()) == 0, "guest mount ISO9660 fallback");
+        putPath("/dev_bdvd/PS3_GAME/USRDIR/Data/fragment.bin");
+        check(request(D2_ISO_OPEN, {64, 0, 512}) == 0, "guest open from hybrid fallback");
+        fd = be(512, 4);
+        check(request(D2_ISO_READ, {fd, 2048, 200, 520}) == 0 && be(520, 8) == 200, "guest ISO9660 read");
+        check(request(D2_ISO_CLOSE, {fd}) == 0, "guest ISO9660 close");
         std::cout << checks << " checks passed; 800 concurrent reads; >4GiB physical offsets.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

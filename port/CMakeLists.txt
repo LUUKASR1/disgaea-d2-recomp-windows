@@ -13,7 +13,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(D2_ENABLE_ISO_VFS "Experimental direct UDF ISO assets (decrypted images)" OFF)
+option(D2_ENABLE_ISO_VFS "Experimental direct UDF/ISO9660 ISO assets (decrypted images)" OFF)
 
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})

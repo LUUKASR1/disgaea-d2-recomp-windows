@@ -14,8 +14,8 @@
 struct ProbeResult { int status; std::string report; };
 static ProbeResult probe(const std::filesystem::path& image) {
     std::ostringstream report;
-    report << "Disgaea D2 - ISO VFS check v2 (experimental)\n"
-           << "Checks native UDF reads only; does not launch the game.\n";
+    report << "Disgaea D2 - ISO VFS check v3 (experimental)\n"
+           << "Checks native UDF/ISO9660 reads only; does not launch the game.\n";
     auto name = image.u8string();
     report << "ISO: " << std::string(reinterpret_cast<const char*>(name.data()), name.size()) << "\n";
     try {
@@ -26,9 +26,10 @@ static ProbeResult probe(const std::filesystem::path& image) {
         for (const auto& descriptor : layout.descriptors) report << descriptor << '\n';
         report << "Inspection: " << layout.Description() << '\n';
         d2::vfs::IsoVfs disc(image);
+        report << "Mounted backend=" << disc.BackendName() << '\n';
         const auto title = disc.TitleId();
         if (title != "BLUS31313") throw std::runtime_error("Este port requer BLUS31313; ISO selecionada: " + title);
-        report << "UDF OK; TITLE_ID=" << title << '\n';
+        report << "ISO filesystem OK; TITLE_ID=" << title << '\n';
         const auto check = [&](const std::string& path) {
             auto file = disc.Open(path);
             if (!file->Size()) throw std::runtime_error("Arquivo vazio: " + path);
@@ -45,7 +46,7 @@ static ProbeResult probe(const std::filesystem::path& image) {
         check("/PS3_GAME/USRDIR/Data/NisAnmShadow.txf");
         check("/PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak");
         report << "18 required base files checked. Update/DLC files are separate.\n"
-               << "PASS: required base files readable through UDF.\n"
+               << "PASS: required base files readable through " << disc.BackendName() << ".\n"
                << "Full game/asset decryption and runtime behavior still require validation.\n";
         return {0, report.str()};
     } catch (const std::exception& error) {
@@ -79,7 +80,7 @@ int main() {
         OPENFILENAMEW dialog{}; dialog.lStructSize = sizeof(dialog);
         dialog.lpstrFilter = L"ISO do PS3 descriptografada (*.iso)\0*.iso\0Todos os arquivos\0*.*\0";
         dialog.lpstrFile = selected.data(); dialog.nMaxFile = static_cast<DWORD>(selected.size());
-        dialog.lpstrTitle = L"Disgaea D2 - verificar ISO UDF descriptografada";
+        dialog.lpstrTitle = L"Disgaea D2 - verificar ISO UDF / ISO9660";
         dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
         if (!GetOpenFileNameW(&dialog)) { LocalFree(args); return CommDlgExtendedError() ? 2 : 0; }
         image = selected.data();
@@ -91,8 +92,8 @@ int main() {
     try {
         const auto report = saveReport(result.report);
         std::wstring message = result.status == 0
-            ? L"Leitura UDF dos arquivos base aprovada.\nEste diagnostico ainda nao executa o jogo.\n\nRelatorio: "
-            : L"A ISO nao passou na verificacao UDF.\nIsso nao confirma criptografia ou arquivo danificado.\nConfira o formato e os descritores no relatorio.\n\nRelatorio: ";
+            ? L"Leitura dos arquivos base aprovada.\nEste diagnostico ainda nao executa o jogo.\n\nRelatorio: "
+            : L"A ISO nao passou na verificacao de arquivos.\nConfira o backend utilizado e o motivo no relatorio.\n\nRelatorio: ";
         message += report.wstring();
         if (interactive) MessageBoxW(nullptr, message.c_str(), L"Disgaea D2 - ISO Check",
             MB_OK | (result.status ? MB_ICONWARNING : MB_ICONINFORMATION));

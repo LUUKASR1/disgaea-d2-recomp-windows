@@ -76,9 +76,10 @@ static std::uint32_t call(const char* name, std::initializer_list<std::uint64_t>
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 2) return 2;
+        if (argc != 2 && argc != 3) return 2;
         std::filesystem::path root(argv[1]);
-        auto image = (root / std::filesystem::path(u8"RETRÔ-ação") / "D2.iso").u8string();
+        auto imagePath = argc == 3 ? root / argv[2] : root / std::filesystem::path(u8"RETRÔ-ação") / "D2.iso";
+        auto image = imagePath.u8string();
         std::string imageUtf8(reinterpret_cast<const char*>(image.data()), image.size());
         d2_iso_bind_memory(ram.data(), ram.size());
         check(d2_iso_mount(imageUtf8.c_str()) == 0, "mount");
