@@ -10,8 +10,9 @@ add_library(d2_udfread STATIC
     vendor/libudfread/src/ecma167.c
     vendor/libudfread/src/default_blockinput.c)
 target_include_directories(d2_udfread PUBLIC vendor/libudfread/src)
+target_compile_definitions(d2_udfread PRIVATE HAVE_FCNTL_H=1)
 if(NOT WIN32)
-    target_compile_definitions(d2_udfread PRIVATE HAVE_UNISTD_H=1 HAVE_FCNTL_H=1 _FILE_OFFSET_BITS=64)
+    target_compile_definitions(d2_udfread PRIVATE HAVE_UNISTD_H=1 _FILE_OFFSET_BITS=64)
 endif()
 if(MSVC)
     target_compile_definitions(d2_udfread PRIVATE _CRT_SECURE_NO_WARNINGS)

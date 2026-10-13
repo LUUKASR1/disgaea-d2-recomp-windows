@@ -17,6 +17,7 @@
 namespace d2::vfs {
 namespace {
 constexpr std::uint64_t BlockSize = UDF_BLOCK_SIZE;
+static_assert(sizeof(std::size_t) >= 8, "ISO VFS requires a 64-bit host.");
 
 // Callback wrapper is standard-layout; API is its first member.
 struct Input {
@@ -110,7 +111,7 @@ struct IsoVfs::State {
         input.api.read = [](udfread_block_input* p, std::uint32_t lba,
                             void* buffer, std::uint32_t blocks, int) -> int {
             auto& source = *static_cast<NativeImage*>(reinterpret_cast<Input*>(p)->owner);
-            if (blocks > INT_MAX || blocks > SIZE_MAX / BlockSize) return -1;
+            if (blocks > INT_MAX) return -1;
             return source.ReadExact(std::uint64_t(lba) * BlockSize, buffer,
                 static_cast<std::size_t>(blocks) * BlockSize) ? static_cast<int>(blocks) : -1;
         };
