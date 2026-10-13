@@ -340,13 +340,12 @@ class Backend:
             return None
 
     def helper(self):
-        from portable_tools import ensure_helper_runtime
         directory = self.home / 'auxiliar-rpcs3'
         exe = directory / 'rpcs3.exe'
         if exe.is_file():
             # Headless RPCS3 opens log files before it creates its data folders.
             (directory / 'log').mkdir(parents=True, exist_ok=True)
-            ensure_helper_runtime(self.home, directory, download, self.notify)
+            self.helper_support(directory)
             return exe
         self.notify('Baixando auxiliar RPCS3 oficial; usado somente na preparacao.')
         archive = self.home / 'rpcs3.7z'
@@ -370,8 +369,21 @@ class Backend:
         staging.rename(directory)
         (directory / 'log').mkdir(parents=True, exist_ok=True)
         archive.unlink()
-        ensure_helper_runtime(self.home, directory, download, self.notify)
+        self.helper_support(directory)
         return exe
+
+    def helper_support(self, directory):
+        from portable_tools import ensure_helper_runtime
+        ensure_helper_runtime(self.home, directory, download, self.notify)
+        source = ROOT / 'vendor/vulkan/vulkan-1.dll'
+        sha = (ROOT / 'vendor/vulkan/sha256.txt').read_text().strip()
+        if digest(source) != sha:
+            raise RuntimeError('Loader Vulkan empacotado falhou na verificação SHA-256.')
+        target = directory / 'vulkan-1.dll'
+        if not target.is_file() or digest(target) != sha:
+            part = target.with_suffix('.dll.part')
+            shutil.copy2(source, part)
+            part.replace(target)
 
     def prepare(self, folder, packages, firmware=None):
         game = self.check_game_files(folder)
@@ -592,6 +604,8 @@ def main():
         for asset in ('logo-winport.png', 'launcher-icon.png', 'launcher.ico'):
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
+        if digest(ROOT / 'vendor/vulkan/vulkan-1.dll') != (ROOT / 'vendor/vulkan/sha256.txt').read_text().strip():
+            raise RuntimeError('Bundled Vulkan loader missing or corrupted')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
     elif '--toolchain-test' in sys.argv:
@@ -617,7 +631,7 @@ int main(int argc, char** argv) {
         MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, directory.data(), length);
         directory.pop_back(); SetDllDirectoryW(directory.c_str());
         const wchar_t* names[] = {L"msvcp140.dll", L"msvcp140_1.dll", L"msvcp140_2.dll",
-            L"vcruntime140.dll", L"vcruntime140_1.dll", L"concrt140.dll"};
+            L"vcruntime140.dll", L"vcruntime140_1.dll", L"concrt140.dll", L"vulkan-1.dll"};
         for (auto name : names) {
             auto library = LoadLibraryW((directory + L"/" + name).c_str());
             if (!library) return 6;

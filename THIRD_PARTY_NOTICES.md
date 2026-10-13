@@ -65,3 +65,10 @@ no development tools or debug DLLs are installed. Package and individual DLL
 SHA-256 checks are mandatory. The DLLs stay beside the local preparation helper.
 
 Microsoft deployment guidance: https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp
+
+The bundled Vulkan loader is built from KhronosGroup/Vulkan-Loader v1.4.350
+using its official sources, with a static C runtime. Its LICENSE.txt is retained
+in vendor/vulkan. It is copied only beside the local preparation helper; no
+Vulkan SDK or graphics driver is installed.
+
+https://github.com/KhronosGroup/Vulkan-Loader
