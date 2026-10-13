@@ -29,10 +29,8 @@ static u32 d2_hud_find_boundary(u32 count)
     return scene?start:count;
 }
 
-static int d2_hud_replay(u32 start,u32 count,unsigned pass)
+static int d2_hud_draws(ID3D12GraphicsCommandList* list,u32 start,u32 count,u32 frame,int post)
 {
-    for(u32 d=start;d<count;d++) if(!s_d3d.draws[d].d2_hud_pso) return -1;
-    ID3D12GraphicsCommandList* list=d2_hud_begin(pass);
     if(!list) return -1;
     const u32 parity=(u32)(s_d3d.vp_parity^1);
     list->lpVtbl->SetGraphicsRootSignature(list,s_d3d.vp_root_sig);
@@ -47,10 +45,13 @@ static int d2_hud_replay(u32 start,u32 count,unsigned pass)
     s_d3d.srv_heap->lpVtbl->GetGPUDescriptorHandleForHeapStart(s_d3d.srv_heap,&base);
     for(u32 d=start;d<count;d++) {
         const D3D12DrawRecord* r=&s_d3d.draws[d];
-        list->lpVtbl->SetPipelineState(list,r->d2_hud_pso);
+        ID3D12PipelineState* pso=post?d2_posthud_pipeline(frame,d-start):r->d2_hud_pso;
+        if(!pso)return -1;
+        list->lpVtbl->SetPipelineState(list,pso);
         list->lpVtbl->OMSetStencilRef(list,r->d2_stencil_ref);
         /* Same viewport/scissor calculation as the adapted original main target. */
-        float tw=(float)s_d3d.width,th=(float)s_d3d.height;
+        float tw=post?(float)d2_graphics_output_width():(float)s_d3d.width;
+        float th=post?(float)d2_graphics_output_height():(float)s_d3d.height;
         float gw=(float)d2_graphics_guest_width(),gh=(float)d2_graphics_guest_height();
         D3D12_VIEWPORT viewport={0,0,tw,th,0,1};
         if(r->vp_w>=2 && r->vp_h>=2 && (float)(r->vp_x+r->vp_w)<=gw+0.5f && (float)(r->vp_y+r->vp_h)<=gh+0.5f) {
@@ -68,7 +69,32 @@ static int d2_hud_replay(u32 start,u32 count,unsigned pass)
             s_d3d.vp_fpcb->lpVtbl->GetGPUVirtualAddress(s_d3d.vp_fpcb)+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_FPCB_STRIDE);
         list->lpVtbl->DrawInstanced(list,r->vertex_count,1,r->vb_byte_offset/256u,0);
     }
+    return 0;
+}
+
+static int d2_hud_replay(u32 start,u32 count,unsigned pass)
+{
+    for(u32 d=start;d<count;d++)if(!s_d3d.draws[d].d2_hud_pso)return -1;
+    ID3D12GraphicsCommandList* list=d2_hud_begin(pass);
+    if(d2_hud_draws(list,start,count,0,0)!=0)return -1;
     return d2_hud_end();
+}
+
+static int d2_posthud_supported(u32 start,u32 count)
+{
+    if(start>=count)return 0;
+    /* Stencil-dependent HUD requires a separate stencil reconstruction path. */
+    for(u32 d=start;d<count;d++)if(s_d3d.draws[d].d2_zs.stencil ||
+        s_d3d.draws[d].d2_zs.front || s_d3d.draws[d].d2_zs.back)return 0;
+    return 1;
+}
+
+static int d2_posthud_present(u32 frame,u32 start,u32 count)
+{
+    for(u32 d=start;d<count;d++)if(!d2_posthud_pipeline(frame,d-start))return -1;
+    ID3D12GraphicsCommandList* list=d2_posthud_begin(frame,d2_graphics_output(frame));
+    if(d2_hud_draws(list,start,count,frame,1)!=0)return -1;
+    return d2_posthud_end(frame);
 }
 
 static int d2_hud_bmp_complete(const char* path)
@@ -119,5 +145,32 @@ static void d2_hud_dump(u32 fi,u32 count,u32 start,u32 index,int snapshotted)
         if(s_d3d.draws[d].d2_hud_pso) s_d3d.draws[d].d2_hud_pso->lpVtbl->Release(s_d3d.draws[d].d2_hud_pso);
         s_d3d.draws[d].d2_hud_pso=NULL;
     }
+}
+
+static void d2_capture_output(u32 frame,u32 count,u32 index,int post)
+{
+    const char* base=d2_capture_directory();char dir[300],path[512];
+    snprintf(dir,sizeof(dir),"%s/frame_%02u",base?base:"rsxcap",index);
+    ID3D12Resource* output=d2_graphics_output(frame);
+    if(!output)output=s_d3d.render_targets[frame];
+    snprintf(path,sizeof(path),"%s/output.bmp",dir);
+    cap_readback_write(output,d2_graphics_output_width(),d2_graphics_output_height(),DXGI_FORMAT_R8G8B8A8_UNORM,
+        D3D12_RESOURCE_STATE_PRESENT,frame,path);
+    const char* upscaler=getenv("D2_UPSCALER");
+    int native_comparison=post && (!upscaler || strcmp(upscaler,"native")==0) &&
+        s_d3d.width==d2_graphics_output_width() && s_d3d.height==d2_graphics_output_height();
+    uint64_t rgb=0,alpha=0;uint32_t maximum=0;
+    int compared=native_comparison && d2_hud_compare_pair(s_d3d.render_targets[frame],output,&rgb,&alpha,&maximum)==0;
+    snprintf(path,sizeof(path),"%s/presentation.json",dir);FILE* file=d2_capture_fopen(path,"wb");
+    if(file){
+        fprintf(file,"{\"schema\":1,\"hud_after_upscale\":%s,\"render_width\":%u,\"render_height\":%u,"
+            "\"output_width\":%u,\"output_height\":%u,\"native_comparison_available\":%s,"
+            "\"status\":\"%s\",\"different_rgb_pixels\":%llu,\"different_alpha_pixels\":%llu,\"maximum_rgb_error\":%u}\n",
+            post?"true":"false",s_d3d.width,s_d3d.height,d2_graphics_output_width(),d2_graphics_output_height(),
+            compared?"true":"false",!post?"fallback":!native_comparison?"scaled-output":!compared?"comparison-failed":rgb||alpha?"mismatch":"exact-match",
+            (unsigned long long)rgb,(unsigned long long)alpha,maximum);fclose(file);
+    }
+    fprintf(stderr,"[D2POSTHUD] capture mode=%s native-compare=%d RGB=%llu alpha=%llu max=%u\n",post?"separate":"fallback",compared,
+        (unsigned long long)rgb,(unsigned long long)alpha,maximum);
     d2_capture_finish(dir,s_d3d.frame_count,count);
 }

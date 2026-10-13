@@ -87,7 +87,7 @@ extern "C" int d2_hud_prepare(void* device,void* queue,void* color,void* depth){
         auto c=static_cast<ID3D12Resource*>(color)->GetDesc(),d=static_cast<ID3D12Resource*>(depth)->GetDesc();
         if(c.Dimension!=D3D12_RESOURCE_DIMENSION_TEXTURE2D||c.Format!=DXGI_FORMAT_R8G8B8A8_UNORM||
            c.SampleDesc.Count!=1||c.MipLevels!=1||c.DepthOrArraySize!=1||c.Width>4096||c.Height>4096||
-           d.Format!=DXGI_FORMAT_D24_UNORM_S8_UINT||d.SampleDesc.Count!=1||d.Width<c.Width||d.Height<c.Height)
+           (d.Format!=DXGI_FORMAT_D24_UNORM_S8_UINT && d.Format!=DXGI_FORMAT_R24G8_TYPELESS)||d.SampleDesc.Count!=1||d.Width<c.Width||d.Height<c.Height)
             throw std::runtime_error("Unsupported HUD diagnostic surface");
         auto state=std::make_unique<State>();state->device=static_cast<ID3D12Device*>(device);state->queue=static_cast<ID3D12CommandQueue*>(queue);
         state->width=static_cast<UINT>(c.Width);state->height=c.Height;
@@ -101,7 +101,8 @@ extern "C" int d2_hud_prepare(void* device,void* queue,void* color,void* depth){
         for(auto& r:state->color){state->device->CreateRenderTargetView(r.p,nullptr,handle);handle.ptr+=state->stride;}
         h.Type=D3D12_DESCRIPTOR_HEAP_TYPE_DSV;h.NumDescriptors=1;
         check(state->device->CreateDescriptorHeap(&h,IID_ID3D12DescriptorHeap,reinterpret_cast<void**>(state->dsv.put())),"HUD DSV heap");
-        state->device->CreateDepthStencilView(state->replay_depth.p,nullptr,state->dsv->GetCPUDescriptorHandleForHeapStart());
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsv{};dsv.Format=DXGI_FORMAT_D24_UNORM_S8_UINT;dsv.ViewDimension=D3D12_DSV_DIMENSION_TEXTURE2D;
+        state->device->CreateDepthStencilView(state->replay_depth.p,&dsv,state->dsv->GetCPUDescriptorHandleForHeapStart());
         check(state->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_ID3D12CommandAllocator,
             reinterpret_cast<void**>(state->allocator.put())),"HUD allocator");
         check(state->device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,state->allocator.p,nullptr,
@@ -158,16 +159,21 @@ extern "C" int d2_hud_end(void){
     }catch(const std::exception& error){return failure(error);}
 }
 extern "C" void* d2_hud_resource(uint32_t kind){return !gpu||kind>2?nullptr:kind==0?gpu->scene.p:gpu->color[kind-1].p;}
-extern "C" int d2_hud_compare(void* reference,uint64_t* rgb,uint64_t* alpha,uint32_t* maximum){
+extern "C" int d2_hud_compare_pair(void* reference,void* actual,uint64_t* rgb,uint64_t* alpha,uint32_t* maximum){
     try{
-        if(!gpu||gpu->recording||!reference||!rgb||!alpha||!maximum)throw std::runtime_error("Invalid HUD comparison");
+        if(!gpu||gpu->recording||!reference||!actual||!rgb||!alpha||!maximum)throw std::runtime_error("Invalid HUD comparison");
         auto* original=static_cast<ID3D12Resource*>(reference);auto desc=original->GetDesc();
         if(desc.Width!=gpu->width||desc.Height!=gpu->height||desc.Format!=DXGI_FORMAT_R8G8B8A8_UNORM)throw std::runtime_error("HUD comparison dimensions differ");
-        auto a=read(original),b=read(gpu->color[1].p);*rgb=0;*alpha=0;*maximum=0;
+        auto* comparison=static_cast<ID3D12Resource*>(actual);auto other=comparison->GetDesc();
+        if(other.Width!=desc.Width||other.Height!=desc.Height||other.Format!=desc.Format)throw std::runtime_error("Comparison target dimensions differ");
+        auto a=read(original),b=read(comparison);*rgb=0;*alpha=0;*maximum=0;
         for(size_t i=0;i<a.size();i+=4){bool changed=false;for(size_t c=0;c<3;c++){
             uint32_t delta=static_cast<uint32_t>(std::abs(static_cast<int>(a[i+c])-static_cast<int>(b[i+c])));
             *maximum=std::max(*maximum,delta);changed|=delta!=0;
         }*rgb+=changed;*alpha+=a[i+3]!=b[i+3];}return 0;
     }catch(const std::exception& error){return failure(error);}
+}
+extern "C" int d2_hud_compare(void* reference,uint64_t* rgb,uint64_t* alpha,uint32_t* maximum){
+    return d2_hud_compare_pair(reference,gpu?gpu->color[1].p:nullptr,rgb,alpha,maximum);
 }
 extern "C" void d2_hud_shutdown(void){gpu.reset();}

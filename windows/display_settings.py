@@ -7,7 +7,8 @@ import math
 RESOLUTIONS = ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')
 RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
 DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
-            'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False}
+            'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
+            'hud_after_upscale': False}
 
 
 def validate_settings(value):
@@ -29,6 +30,8 @@ def validate_settings(value):
         raise ValueError('Nitidez FSR deve estar entre 0 e 1.')
     if result['frame_generation'] is not False:
         raise ValueError('Frame generation ainda indisponível nesta versão.')
+    if type(result['hud_after_upscale']) is not bool:
+        raise ValueError('HUD após upscaling deve estar ligada ou desligada.')
     rw, rh = map(int, ('1280x720' if result['render_resolution'] == 'native' else result['render_resolution']).split('x'))
     ow, oh = map(int, result['resolution'].split('x'))
     if result['upscaler'] == 'fsr1' and (rw > ow or rh > oh):
@@ -64,7 +67,8 @@ def display_environment(inherited, settings):
     rw, rh = ('1280x720' if value['render_resolution'] == 'native' else value['render_resolution']).split('x')
     ow, oh = value['resolution'].split('x')
     env.update(D2_RENDER_WIDTH=rw, D2_RENDER_HEIGHT=rh, D2_OUTPUT_WIDTH=ow, D2_OUTPUT_HEIGHT=oh,
-               D2_UPSCALER=value['upscaler'], D2_FSR_SHARPNESS=str(value['fsr_sharpness']))
+               D2_UPSCALER=value['upscaler'], D2_FSR_SHARPNESS=str(value['fsr_sharpness']),
+               D2_HUD_AFTER_UPSCALE='1' if value['hud_after_upscale'] else '0')
     return env
 
 

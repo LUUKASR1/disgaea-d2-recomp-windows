@@ -38,6 +38,8 @@ def generate(source, output):
         'depth_desc.Width              = width > 2048 ? width : 2048;')
     text = replace(text, 'depth_desc.Height             = 2048;',
         'depth_desc.Height             = height > 2048 ? height : 2048;')
+    text = replace(text, 'depth_desc.Format             = DXGI_FORMAT_D24_UNORM_S8_UINT;',
+        'depth_desc.Format             = d2_posthud_enabled()?DXGI_FORMAT_R24G8_TYPELESS:DXGI_FORMAT_D24_UNORM_S8_UINT;')
     # Classify original guest surfaces using guest dimensions, not host raster sizes.
     for old,new in [
         ('st->surface_clip_w == s_d3d.width && st->surface_clip_h == s_d3d.height',
@@ -66,15 +68,20 @@ def generate(source, output):
                         dvp.Height   = (float)dr->vp_h * th / gh;
                     }''')
     text = replace(text, '        s_d3d.swap_chain->lpVtbl->Present(s_d3d.swap_chain, (UINT)d2_interval, 0);',
-        '        if (d2_graphics_present(fi, s_d3d.render_targets[fi]) != 0) {\n'
+        '        if (d2_graphics_present(fi, d2_post_snapshotted?d2_posthud_scene(fi):s_d3d.render_targets[fi]) != 0 ||\n'
+        '            (d2_post_snapshotted && d2_posthud_present(fi,d2_hud_start,s_dbg_last_draws)!=0)) {\n'
         '            s_d3d.window_closed = 1; return;\n        }\n'
+        '        if(d2_capture_requested)d2_capture_output(fi,s_dbg_last_draws,d2_capture_index,d2_post_snapshotted);\n'
+        '        if(d2_posthud_enabled()){static int previous=-1;\n'
+        '            if(previous!=d2_post_snapshotted){previous=d2_post_snapshotted;\n'
+        '                fprintf(stderr,"[D2POSTHUD] presentation=%s\\n",previous?"HUD-after-upscale":"fallback");}}\n'
         '        s_d3d.swap_chain->lpVtbl->Present(s_d3d.swap_chain, (UINT)d2_interval, 0);')
     text = replace(text, '    /* Release D3D12 resources */',
-        '    d2_hud_shutdown();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
+        '    d2_posthud_shutdown();\n    d2_hud_shutdown();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
     text = replace(text, '    u32 d2_diag_valid;',
         '    ID3D12PipelineState* d2_hud_pso;\n    u32 d2_capture_vs_hash;\n    u32 d2_diag_valid;')
     text = replace(text, '        r->d2_diag_valid = enabled ? 1u : 0u;',
-        '        r->d2_capture_vs_hash = enabled && vs_idx >= 0 && vs_idx < s_d3d.vp_vs_n\n'
+        '        r->d2_capture_vs_hash = (enabled || d2_posthud_enabled()) && vs_idx >= 0 && vs_idx < s_d3d.vp_vs_n\n'
         '            ? s_d3d.vp_vs[vs_idx].hash : 0;\n'
         '        r->d2_diag_valid = enabled ? 1u : 0u;')
     # Existing readbacks execute only upon request and restore each resource state.
@@ -94,17 +101,23 @@ def generate(source, output):
     text = text[:start] + capture + text[end:]
     text = replace(text, 'static void render_frame(void)\n{',
         '#include "hud_adapter.inc"\n\nstatic void render_frame(void)\n{')
+    text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
+        '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',
         '    u32 d2_capture_index=0,d2_hud_start=s_d3d.draw_count;\n'
         '    int d2_hud_snapshotted=0;\n'
+        '    int d2_post_ready=0,d2_post_snapshotted=0;\n'
         '    int d2_capture_requested=s_present_this_frame && s_d3d.draw_count>0 &&\n'
         '        d2_capture_next(&d2_capture_index,s_d3d.hwnd);\n'
-        '    if(d2_capture_requested) {\n'
+        '    if(d2_capture_requested || (d2_posthud_enabled() && s_present_this_frame)) {\n'
         '        for(u32 d=0;d<s_d3d.draw_count && d<MAX_DRAWS;d++) s_d3d.draws[d].d2_hud_pso=NULL;\n'
         '        d2_hud_start=d2_hud_find_boundary(s_d3d.draw_count);\n'
-        '        if(d2_hud_start<s_d3d.draw_count &&\n'
+        '        if(d2_capture_requested && d2_hud_start<s_d3d.draw_count &&\n'
         '           d2_hud_prepare(s_d3d.device,s_d3d.cmd_queue,s_d3d.render_targets[fi],s_d3d.depth_buffer)!=0)\n'
         '            d2_hud_start=s_d3d.draw_count;\n'
+        '        if(d2_posthud_enabled() && d2_posthud_supported(d2_hud_start,s_d3d.draw_count) &&\n'
+        '           d2_posthud_prepare(s_d3d.device,s_d3d.cmd_queue,s_d3d.render_targets[fi],s_d3d.depth_buffer,d2_graphics_output(fi))==0)\n'
+        '            d2_post_ready=1;\n'
         '    }\n\n    /* Transition render target to RENDER_TARGET state */')
     text = replace(text, '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
@@ -112,6 +125,8 @@ def generate(source, output):
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if(d2_capture_requested && d==d2_hud_start)
                     d2_hud_snapshotted=d2_hud_snapshot(s_d3d.cmd_list,s_d3d.render_targets[fi],s_d3d.depth_buffer)==0;
+                if(d2_post_ready && d==d2_hud_start)
+                    d2_post_snapshotted=d2_posthud_snapshot(fi,s_d3d.cmd_list,s_d3d.render_targets[fi],s_d3d.depth_buffer)==0;
                 if (!dr->is_vp) continue;''')
     text = replace(text, '''                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
                     dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);''',
@@ -119,6 +134,7 @@ def generate(source, output):
                     s_d3d.draws[d].d2_hud_pso=dpso?dpso:vpso;
                     s_d3d.draws[d].d2_hud_pso->lpVtbl->AddRef(s_d3d.draws[d].d2_hud_pso);
                 }
+                if(d2_post_ready && d>=d2_hud_start)d2_posthud_keep(fi,d-d2_hud_start,dpso?dpso:vpso);
                 s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
                     dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);''')
     text = replace(text, '''        u32 index;
@@ -133,7 +149,7 @@ def generate(source, output):
         return '#include "'+path.resolve().as_posix()+'"' if path.is_file() else match[0]
     text = re.sub(r'#\s*include\s*"([^"\n]+)"', includes, text)
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text('#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n'+text, encoding='utf-8', newline='\n')
+    output.write_text('#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n#include "hud_present.h"\n'+text, encoding='utf-8', newline='\n')
 
 
 if __name__ == '__main__': generate(sys.argv[1], sys.argv[2])

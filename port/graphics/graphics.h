@@ -13,6 +13,7 @@ uint32_t d2_graphics_guest_height(void);
 int d2_graphics_start(void* device, void* queue, void* swapchain);
 int d2_graphics_scene(uint32_t frame, void** resource);
 int d2_graphics_present(uint32_t frame, void* scene);
+void* d2_graphics_output(uint32_t frame);
 void d2_graphics_shutdown(void);
 #ifdef __cplusplus
 }

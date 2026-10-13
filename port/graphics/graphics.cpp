@@ -89,7 +89,8 @@ extern "C" int d2_graphics_configure(UINT w,UINT h){
         if(cfg.fsr&&(cfg.rw>cfg.ow||cfg.rh>cfg.oh))throw std::runtime_error("FSR 1 requires render size <= output size");
         const char* sharp=std::getenv("D2_FSR_SHARPNESS");
         if(sharp){char* end=nullptr;cfg.sharpness=std::strtof(sharp,&end);if(*end||!std::isfinite(cfg.sharpness)||cfg.sharpness<0||cfg.sharpness>1)throw std::runtime_error("Invalid FSR sharpness");}
-        cfg.active=cfg.fsr||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h;
+        const char* hud=std::getenv("D2_HUD_AFTER_UPSCALE");
+        cfg.active=cfg.fsr||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h||(hud && !std::strcmp(hud,"1"));
         if(cfg.active&&(std::getenv("GCM_GUEST_FB")||std::getenv("SUBVP_RTT")||std::getenv("GCM_COMPOSITE_RT")))throw std::runtime_error("Experimental framebuffer override incompatible with graphics scaling");
         std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s DLSS=unavailable FG=unavailable\n",cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native");
         return 0;
@@ -138,6 +139,7 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
     if(!cfg.active)return 0;
     try{if(!gpu||frame>=2)throw std::runtime_error("Invalid graphics present");
         auto* input=static_cast<ID3D12Resource*>(scene);auto* output=gpu->output[frame].p;
+        if(gpu->heap.p){if(cfg.fsr)descriptors(frame*6,input,gpu->middle.p);else descriptors(frame*6+4,input,gpu->final.p);}
         checked(gpu->allocator[frame]->Reset(),"Graphics allocator reset");
         checked(gpu->commands->Reset(gpu->allocator[frame].p,nullptr),"Graphics list reset");
         transition(output,D3D12_RESOURCE_STATE_PRESENT,D3D12_RESOURCE_STATE_COPY_DEST);
@@ -166,4 +168,5 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
         checked(gpu->commands->Close(),"Graphics close");ID3D12CommandList* lists[]={gpu->commands.p};gpu->queue->ExecuteCommandLists(1,lists);return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] present: %s\n",e.what());return -1;}
 }
+extern "C" void* d2_graphics_output(UINT frame){return gpu && frame<2?gpu->output[frame].p:nullptr;}
 extern "C" void d2_graphics_shutdown(){delete gpu;gpu=nullptr;}

@@ -75,6 +75,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     render_resolution = tk.StringVar(value=settings['render_resolution'])
     upscaler = tk.StringVar(value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
+    hud_after_upscale = tk.BooleanVar(value=settings['hud_after_upscale'])
     capture_enabled = tk.BooleanVar(value=False)
     capture_status = tk.StringVar(value='Captura desativada.')
     status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
@@ -152,7 +153,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     def get_settings():
         return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'render_resolution': render_resolution.get(),
                 'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
-                'fsr_sharpness': sharpness.get(), 'frame_generation': False}
+                'fsr_sharpness': sharpness.get(), 'frame_generation': False,
+                'hud_after_upscale': hud_after_upscale.get()}
 
     def update_summary(*unused):
         display = resolution.get().replace('x', ' × ') if mode.get() == 'Janela' else 'Resolução do monitor'
@@ -271,6 +273,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     slider = tk.Scale(graphics, variable=sharpness, from_=0, to=1, resolution=0.05, orient='horizontal',
                       bg=CARD, fg=TEXT, troughcolor=PANEL, highlightthickness=0, length=280)
     slider.pack(anchor='w'); entries.append(slider)
+    hud_toggle = tk.Checkbutton(graphics, text='HUD após upscaling — experimental', variable=hud_after_upscale,
+        bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI',11))
+    hud_toggle.pack(anchor='w',pady=8);entries.append(hud_toggle)
+    label(graphics, 'Desenha a interface na resolução de saída nas cenas reconhecidas. Cenas sem suporte usam o caminho atual. Requer reiniciar o jogo.', 10, MUTED)
     label(graphics, 'DLSS e Frame Generation: ainda indisponíveis nesta versão.', 10, MUTED)
     label(graphics, 'FSR 1 é espacial. FSR 3, DLSS e geração de frames exigem outra etapa de integração.', 10, MUTED)
     label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
@@ -283,6 +289,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     def reset():
         resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync'])
         render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
+        hud_after_upscale.set(False)
         save_video()
     button(page, 'Restaurar padrão', reset)
 

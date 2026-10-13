@@ -14,6 +14,13 @@ import launcher
 
 
 class DisplayTests(unittest.TestCase):
+    def test_hud_output_migrates_off_and_overrides_inherited_flag(self):
+        self.assertFalse(display.validate_settings({'resolution':'1920x1080'})['hud_after_upscale'])
+        self.assertEqual(display.display_environment({'D2_HUD_AFTER_UPSCALE':'1'},display.DEFAULTS)['D2_HUD_AFTER_UPSCALE'],'0')
+        enabled=dict(display.DEFAULTS,hud_after_upscale=True)
+        self.assertEqual(display.display_environment({},enabled)['D2_HUD_AFTER_UPSCALE'],'1')
+        for value in (1,'true',None):
+            with self.assertRaises(ValueError):display.validate_settings(dict(enabled,hud_after_upscale=value))
     def test_defaults_keep_existing_profile(self):
         with tempfile.TemporaryDirectory() as home:
             self.assertEqual(display.load_settings(home), display.DEFAULTS)
