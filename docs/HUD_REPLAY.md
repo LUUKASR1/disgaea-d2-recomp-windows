@@ -67,3 +67,31 @@ sintéticos não substitui a comparação das capturas reais de gameplay.
 
 Ainda não são produzidos motion vectors, camera jitter/histórico ou profundidade
 linear para DLSS/FSR temporal/frame generation.
+
+## Validação em gameplay recebida em 13/10/2026
+
+A sessão 0.1.16 foi executada em 1280×720 interno e de saída, janela, sem
+upscaler. As quatro capturas terminaram como `exact-match`. Cada uma registrou
+zero pixels RGB diferentes, zero pixels alpha diferentes e erro RGB máximo
+zero. Uma comparação independente dos pixels dos BMPs de referência e
+recomposição confirmou igualdade RGB nas quatro imagens. O log terminou com
+encerramento solicitado, savedata quiescent e código de saída 0.
+
+| Captura | Cena inspecionada | Fronteira | Draws isolados | Resultado |
+| --- | --- | ---: | ---: | --- |
+| 00 | Castle Hallway com painel de personagem | 816 | 41 | Idêntico |
+| 01 | Menu de ações e informações da batalha | 285 | 49 | Idêntico |
+| 02 | Ataque de Laharl com indicadores de dano/crítico | 351 | 26 | Idêntico |
+| 03 | Ataque do Mothman com indicador de Miss | 435 | 17 | Idêntico |
+
+A inspeção das imagens isoladas confirmou os elementos da camada final de
+interface e preservou personagens e partículas nas imagens da cena. Barras
+de vida e outros indicadores ligados aos objetos do mundo ainda aparecem
+na cena; a prova não representa remoção de toda interface possível do jogo.
+Nenhuma captura ou imagem do usuário foi adicionada ao repositório.
+
+Esta validação autoriza avançar tecnicamente para a experiência de HUD depois
+do upscaling, mas não demonstra equivalência em outras resoluções, cobertura
+de todos os menus ou integração de upscaling temporal. A próxima implementação
+deve validar a composição em resolução nativa e depois em resoluções interna
+e de saída diferentes, incluindo os estados de depth/stencil da HUD.
