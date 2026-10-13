@@ -212,11 +212,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     logo_item = hero.create_image(0, 0, image=logo_image, anchor='n')
     hero.bind('<Configure>', lambda event: hero.coords(logo_item, event.width // 2, 0))
     button(page, '▶  JOGAR DISGAEA D2', play, True)
+    button(page, 'Jogar pela ISO (experimental)', play_iso)
     info = card(page)
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
     button(page, 'Configurar vídeo', lambda: show('Vídeo'))
-    button(page, 'Jogar pela ISO (experimental)', play_iso)
     button(page, 'Preparar ou importar meu jogo', lambda: show('Preparação'))
 
     page = bodies['Vídeo']
