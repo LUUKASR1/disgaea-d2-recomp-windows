@@ -35,6 +35,7 @@ int main() {
         d2_capture_finish(path.c_str(),42,12);
         std::ifstream failed(dir/"complete.json"); std::string first((std::istreambuf_iterator<char>(failed)),{});
         require(first.find("failed") != std::string::npos, "missing payload must be reported");
+        failed.close();
         for (const char* name : {"manifest.txt", "backbuffer.bmp"}) {
             FILE* f = d2_capture_fopen((path+"/"+name).c_str(), "wb");
             require(f != nullptr, "Unicode path"); std::fputs("data",f); std::fclose(f);
@@ -42,6 +43,7 @@ int main() {
         d2_capture_finish(path.c_str(),42,12);
         std::ifstream complete(dir/"complete.json"); std::string second((std::istreambuf_iterator<char>(complete)),{});
         require(second.find("complete") != std::string::npos && second.find("1280") != std::string::npos,"completion marker");
+        complete.close();
         std::filesystem::remove_all(dir);
         SetEnvironmentVariableW(L"RSX_CAP_DIR",nullptr); d2_capture_shutdown();
         std::puts("Capture disabled/event/one-shot/limit/Unicode/completion checks passed");
