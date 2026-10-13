@@ -90,7 +90,7 @@ extern "C" int d2_graphics_configure(UINT w,UINT h){
         const char* sharp=std::getenv("D2_FSR_SHARPNESS");
         if(sharp){char* end=nullptr;cfg.sharpness=std::strtof(sharp,&end);if(*end||!std::isfinite(cfg.sharpness)||cfg.sharpness<0||cfg.sharpness>1)throw std::runtime_error("Invalid FSR sharpness");}
         cfg.active=cfg.fsr||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h;
-        if(cfg.active&&(std::getenv("GCM_GUEST_FB")||std::getenv("SUBVP_RTT")||std::getenv("RT_COMPOSITE")))throw std::runtime_error("Experimental framebuffer override incompatible with graphics scaling");
+        if(cfg.active&&(std::getenv("GCM_GUEST_FB")||std::getenv("SUBVP_RTT")||std::getenv("GCM_COMPOSITE_RT")))throw std::runtime_error("Experimental framebuffer override incompatible with graphics scaling");
         std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s DLSS=unavailable FG=unavailable\n",cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native");
         return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] %s\n",e.what());return -1;}

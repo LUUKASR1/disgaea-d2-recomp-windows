@@ -91,6 +91,9 @@ int main(){try{
             if(bad)std::fprintf(stderr,"%s\n",message->pDescription);std::free(message);require(!bad,"D3D12 validation error");
         }
     }
+    _putenv_s("D2_UPSCALER","native");_putenv_s("GCM_COMPOSITE_RT","1");
+    require(d2_graphics_configure(1280,720)!=0,"Debug compositor cannot bypass scaling contracts");
+    _putenv_s("GCM_COMPOSITE_RT","");
     _putenv_s("D2_UPSCALER","dlss");require(d2_graphics_configure(1280,720)!=0,"Unsupported DLSS cannot masquerade as active");
     DestroyWindow(window);CloseHandle(event);return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"FAIL: %s\n",e.what());d2_graphics_shutdown();return 1;}}
