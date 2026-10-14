@@ -542,10 +542,11 @@ fence; frozen data is retained through the next-frame dump. Frame and draw guard
 prevent the next frame from replacing a selected snapshot.
 
 `depth-timeline.json` compares original shader survivor depth with after-draw,
-before-HUD and final depth. It counts changes on those same survivor pixels
+middle-stage and final depth. The middle stage is before-HUD when recognized,
+otherwise end-of-command-list. It counts changes on those same survivor pixels
 between the three moments. Comparisons are explicitly unavailable when candidate
-selection does not match, a copy/read fails, or a final HUD boundary cannot be
-recognized. A difference is not automatically labeled a HUD defect or alpha
+selection does not match or a copy/read fails. An unrecognized HUD boundary
+uses the separately labeled command-list-end snapshot. A difference is not automatically labeled a HUD defect or alpha
 failure: depth can already be closer at the instant the selected draw executes.
 
 This remains capture-only diagnostics. It does not change normal rendering,

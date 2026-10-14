@@ -4,6 +4,7 @@ static ID3D12Resource* d2_steps_source;
 static u64 d2_steps_frame;
 static u32 d2_steps_draw[2],d2_steps_hud_boundary;
 static unsigned d2_steps_count;
+static int d2_steps_before_hud;
 static int d2_steps_active,d2_steps_recorded[3],d2_steps_result[3],d2_steps_available[3];
 static float* d2_steps_pixels[3];
 static void d2_depth_timeline_free_pixels(void){
@@ -24,7 +25,7 @@ static void d2_depth_timeline_prepare(void){
     }
     d2_depth_steps_reset_after_gpu_idle(d2_depth_steps);
     memset(d2_steps_recorded,0,sizeof(d2_steps_recorded));memset(d2_steps_result,0,sizeof(d2_steps_result));
-    d2_steps_frame=s_d3d.frame_count;d2_steps_count=0;
+    d2_steps_frame=s_d3d.frame_count;d2_steps_count=0;d2_steps_before_hud=0;
     const char* old_reason=d2_hud_boundary_reason;
     d2_steps_hud_boundary=d2_hud_find_boundary(s_d3d.draw_count);d2_hud_boundary_reason=old_reason;
     u32 parity=(u32)s_d3d.vp_parity;
@@ -46,7 +47,7 @@ static void d2_depth_timeline_prepare(void){
 static void d2_depth_timeline_before_draw(u32 draw){
     if(d2_steps_active && d2_steps_frame==s_d3d.frame_count && draw==d2_steps_hud_boundary && draw<s_d3d.draw_count){
         d2_steps_result[2]=d2_depth_steps_record(d2_depth_steps,s_d3d.cmd_list,2);
-        d2_steps_recorded[2]=d2_steps_result[2]==0;
+        d2_steps_recorded[2]=d2_steps_result[2]==0;d2_steps_before_hud=d2_steps_recorded[2];
     }
 }
 static void d2_depth_timeline_after_draw(u32 draw){
@@ -54,6 +55,12 @@ static void d2_depth_timeline_after_draw(u32 draw){
     for(unsigned i=0;i<d2_steps_count;i++)if(draw==d2_steps_draw[i]){
         d2_steps_result[i]=d2_depth_steps_record(d2_depth_steps,s_d3d.cmd_list,i);
         d2_steps_recorded[i]=d2_steps_result[i]==0;
+    }
+}
+static void d2_depth_timeline_end_commands(void){
+    if(d2_steps_active && d2_steps_frame==s_d3d.frame_count && !d2_steps_recorded[2]){
+        d2_steps_result[2]=d2_depth_steps_record(d2_depth_steps,s_d3d.cmd_list,2);
+        d2_steps_recorded[2]=d2_steps_result[2]==0;d2_steps_before_hud=0;
     }
 }
 static void d2_depth_timeline_read_selected(void){
@@ -77,11 +84,12 @@ static void d2_depth_timeline_dump(u32 index,const D2TemporalFrame* current){
         "\"current_frame\":%llu,\"render_width\":%u,\"render_height\":%u,"
         "\"reference_matches_frame\":%s,\"timeline_matches_frame\":%s,"
         "\"before_hud_boundary_verified\":%s,\"hud_boundary_draw\":%u,\"before_hud_depth_available\":%s,"
-        "\"before_hud_gpu_result\":%d,\"final_depth_available\":%s,\"depth_epsilon\":%.9g,"
+        "\"middle_stage\":\"%s\",\"middle_depth_available\":%s,\"middle_gpu_result\":%d,\"final_depth_available\":%s,\"depth_epsilon\":%.9g,"
         "\"normal_rendering_changed\":false,\"full_scene_visibility_validated\":false,\"motion_vectors_available\":false,\"samples\":[",
         index,(unsigned long long)current->frame,s_d3d.width,s_d3d.height,
         d2_reference_available && d2_reference_frame==current->frame?"true":"false",frame_match?"true":"false",
-        frame_match && d2_steps_recorded[2]?"true":"false",d2_steps_hud_boundary,before_available?"true":"false",
+        frame_match && d2_steps_before_hud?"true":"false",d2_steps_hud_boundary,before_available && d2_steps_before_hud?"true":"false",
+        !frame_match?"unavailable":d2_steps_before_hud?"before-recognized-hud":"end-of-render-command-list",before_available?"true":"false",
         d2_steps_result[2],final_available?"true":"false",(double)epsilon);
     unsigned shown=0;
     for(unsigned i=0;i<current->count;i++){
@@ -103,10 +111,10 @@ static void d2_depth_timeline_dump(u32 index,const D2TemporalFrame* current){
         fprintf(json,"%s{\"draw\":%u,\"original_shader_available\":%s,\"original_shader_pixels\":%llu,"
             "\"after_draw_depth_available\":%s,\"after_draw_gpu_result\":%d,"
             "\"original_vs_after_draw\":{\"invalid\":%llu,\"equal\":%llu,\"deeper\":%llu,\"nearer\":%llu},"
-            "\"original_vs_before_hud\":{\"invalid\":%llu,\"equal\":%llu,\"deeper\":%llu,\"nearer\":%llu},"
+            "\"original_vs_middle_stage\":{\"invalid\":%llu,\"equal\":%llu,\"deeper\":%llu,\"nearer\":%llu},"
             "\"original_vs_final\":{\"invalid\":%llu,\"equal\":%llu,\"deeper\":%llu,\"nearer\":%llu},"
-            "\"after_draw_to_before_hud_comparison_available\":%s,\"after_draw_to_before_hud_changed_pixels\":%llu,"
-            "\"before_hud_to_final_comparison_available\":%s,\"before_hud_to_final_changed_pixels\":%llu,"
+            "\"after_draw_to_middle_stage_comparison_available\":%s,\"after_draw_to_middle_stage_changed_pixels\":%llu,"
+            "\"middle_stage_to_final_comparison_available\":%s,\"middle_stage_to_final_changed_pixels\":%llu,"
             "\"after_draw_to_final_comparison_available\":%s,\"after_draw_to_final_changed_pixels\":%llu}",
             shown++?",":"",sample->draw,original_available?"true":"false",pixels,after_available?"true":"false",
             slot>=0?d2_steps_result[slot]:-1,after[0],after[1],after[2],after[3],before[0],before[1],before[2],before[3],

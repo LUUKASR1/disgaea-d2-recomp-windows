@@ -153,6 +153,8 @@ def generate(source, output):
                 s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
                     dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);
                 d2_depth_timeline_after_draw(d);''')
+    text = replace(text, '    /* Close and execute */',
+        '    d2_depth_timeline_end_commands();\n    /* Close and execute */')
     text = replace(text, '''        u32 index;
         if(s_present_this_frame && s_dbg_last_draws>0 && d2_capture_f8_next(&index))
             rsx_capture_frame(fi,s_dbg_last_draws,index);''',
