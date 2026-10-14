@@ -371,3 +371,47 @@ câmera em dez segundos. Aguarde concluir e envie motion-raster-check.json,
 selected-reference.bmp e motion-coverage.bmp. Falha da referência é explícita;
 o diagnóstico geométrico pode continuar disponível. Readbacks podem pausar o
 jogo. Alpha/blend, oclusões completas, identidade, DLSS e FG seguem pendentes.
+
+## 0.1.31 — profundidade final do mesmo frame
+
+O usuário confirmou referência alinhada no frame 1409, dois draws e 1575
+vértices, 16.141 pixels cobertos/em movimento e zero inválidos. Máscara e
+vetores correspondem às mesmas pequenas regiões nas bordas. A captura do
+mesmo frame está funcional; direção temporal e visibilidade completa não
+foram comprovadas por uma imagem.
+
+Ao selecionar o frame, o diagnóstico agora lê o plano 0 do depth D24/R24G8
+do jogo na mesma fila. Usa GetCopyableFootprints e copia a subresource inteira,
+conforme exigido para depth/stencil. O buffer D24X8 tem profundidade nos bits
+0–23; normaliza esses bits para float, sem confundir stencil com depth.
+A CPU recorta apenas após o readback para as dimensões internas, no canto
+superior esquerdo do depth maior do SDK. As barreiras restauram DEPTH_WRITE
+do plano 0. Não cria SRV nem altera formato ou conteúdo da profundidade.
+
+Fontes primárias consultadas em 14/10/2026:
+- https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12graphicscommandlist-copytextureregion
+- https://microsoft.github.io/DirectX-Specs/d3d/PlanarDepthStencilDDISpec.html
+
+Compara depth do candidato ao depth FINAL do mesmo frame, tolerância de oito
+níveis D24 (aproximadamente 4,77e-7). O JSON informa captura/frame/resultado,
+contagens de depth coincidente, candidato mais distante, candidato mais próximo
+e valores inválidos. motion-depth-classification.bmp usa verde=coincidente,
+vermelho=mais distante, azul=mais próximo, magenta=inválido e preto=fora da máscara.
+
+Essas classes NÃO comprovam visibilidade. Blend, alpha/discard, escrita de
+depth desligada, depth bias, estados de comparação e HUD podem afetar a leitura
+final. Coincidência pode pertencer a outra superfície; um candidato próximo
+pode não ter contribuído para depth. depth_visibility_validated e visibilidade
+completa continuam false. O alpha/discard original ainda não é reproduzido.
+As imagens/vetores geométricos anteriores ficam preservados sem filtragem.
+
+Testes WARP cobrem D24 typed/typeless, source maior que o recorte, row pitch
+alinhado, stencil A5, profundidades .25/.5/1 e restauração para outro clear.
+Também cobrem tolerância/categorias/NaN. Executa somente em captura solicitada,
+pode pausar e reporta falhas; em falha após submissão mantém recursos e uma
+referência ao depth para não liberar memória em voo.
+
+Repita o F8 em 720p e envie motion-raster-check.json e
+motion-depth-classification.bmp com selected-reference.bmp. Primeiro validar
+a comparação de depth; depois reproduzir alpha/discard dos shaders reais.
+DLSS SR e Frame Generation continuam indisponíveis.

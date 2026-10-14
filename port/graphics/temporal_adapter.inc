@@ -5,6 +5,7 @@
 #include "motion_probe.h"
 #include "motion_raster.h"
 #include "motion_visibility.h"
+#include "scene_depth.h"
 #define D2_GEOMETRY_LIMIT 4096
 #define D2_TEMP_SAMPLES 4
 typedef struct {
@@ -24,6 +25,10 @@ static char d2_temporal_directory[512];
 static int d2_reference_attempted,d2_reference_available;
 static u64 d2_reference_frame;
 static char d2_reference_frame_text[32]="null";
+static float* d2_scene_depth_data;
+static int d2_scene_depth_available,d2_scene_depth_result;
+static u64 d2_scene_depth_frame;
+static char d2_scene_depth_frame_text[32]="null";
 static int d2_temporal_enabled(void){
     static int enabled=-1;
     if(enabled<0){const char* e=getenv("D2_CAPTURE_MASK_STATE");enabled=e && strcmp(e,"1")==0;}
@@ -35,6 +40,9 @@ static int d2_temporal_request(u32* index,HWND window){
     if(!d2_capture_next(index,window))return 0;
     d2_auto_arm(&d2_auto_probe,*index,GetTickCount64());d2_temporal_next=0;
     d2_reference_attempted=d2_reference_available=0;d2_reference_frame=0;
+    free(d2_scene_depth_data);d2_scene_depth_data=NULL;
+    d2_scene_depth_available=0;d2_scene_depth_result=0;d2_scene_depth_frame=0;
+    snprintf(d2_scene_depth_frame_text,sizeof(d2_scene_depth_frame_text),"null");
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
     fprintf(stderr,"[D2TEMP] armed capture=%u; rotate camera within 10 seconds\n",*index);
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
@@ -149,6 +157,14 @@ static void d2_temporal_reference(u32 fi){
     d2_reference_attempted=1;
     const D2TemporalFrame* current=&d2_temporal_frames[d2_temporal_next^1];
     if(!current->valid || current->frame!=s_d3d.frame_count || !s_d3d.render_targets[fi])return;
+    size_t depth_pixels=(size_t)s_d3d.width*s_d3d.height;
+    d2_scene_depth_data=depth_pixels<=8388608?(float*)calloc(depth_pixels,sizeof(float)):NULL;
+    d2_scene_depth_result=d2_scene_depth_data?
+        d2_scene_depth_read(s_d3d.device,s_d3d.cmd_queue,s_d3d.depth_buffer,s_d3d.width,s_d3d.height,d2_scene_depth_data):(int)E_OUTOFMEMORY;
+    if(d2_scene_depth_result==0){
+        d2_scene_depth_available=1;d2_scene_depth_frame=current->frame;
+        snprintf(d2_scene_depth_frame_text,sizeof(d2_scene_depth_frame_text),"%llu",(unsigned long long)d2_scene_depth_frame);
+    }
     const char* base=d2_capture_directory();char path[600];
     if(!base || !*base)base="rsxcap";
     d2_capture_mkdir(base);
@@ -398,7 +414,31 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             }
         }
     }
-    char path[600];
+    const float depth_epsilon=8.0f/16777215.0f;
+    unsigned long long depth_equal=0,depth_deeper=0,depth_nearer=0,depth_invalid=0;
+    int depth_compared=result==0 && count && d2_scene_depth_available && d2_scene_depth_data &&
+        d2_scene_depth_frame==current->frame;
+    if(depth_compared)for(size_t p=0;p<pixels_count;p++)if(pixels[p].coverage>.5f){
+        int relation=d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon);
+        if(relation==1)depth_equal++;else if(relation==2)depth_deeper++;else if(relation==3)depth_nearer++;else depth_invalid++;
+    }
+    int depth_image=0;char path[600];
+    if(depth_compared){
+        u8* classification=(u8*)calloc(pixels_count,4);
+        if(classification){
+            for(size_t p=0;p<pixels_count;p++)if(pixels[p].coverage>.5f){
+                int relation=d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon);
+                if(relation==1)classification[p*4+1]=255;
+                else if(relation==2)classification[p*4]=255;
+                else if(relation==3)classification[p*4+2]=255;
+                else {classification[p*4]=255;classification[p*4+2]=255;}
+                classification[p*4+3]=255;
+            }
+            snprintf(path,sizeof(path),"%s/motion-depth-classification.bmp",d2_temporal_directory);
+            cap_write_bmp(path,classification,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
+            depth_image=d2_hud_bmp_complete(path);free(classification);
+        }
+    }
     if(result==0 && count){
         u8* image=(u8*)calloc(pixels_count,4);
         if(image){
@@ -428,6 +468,11 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             "\"reference_image\":\"selected-reference.bmp\",\"reference_image_frame\":%s,"
             "\"reference_image_available\":%s,\"reference_matches_current_frame\":%s,"
             "\"reference_space\":\"internal-full-frame\","
+            "\"scene_depth_available\":%s,\"scene_depth_frame\":%s,\"scene_depth_gpu_result\":%d,"
+            "\"scene_depth_compared\":%s,\"depth_epsilon\":%.9g,"
+            "\"candidate_depth_equal_pixels\":%llu,\"candidate_deeper_pixels\":%llu,"
+            "\"candidate_nearer_pixels\":%llu,\"depth_comparison_invalid_pixels\":%llu,"
+            "\"depth_classification_image_written\":%s,\"depth_visibility_validated\":false,"
             "\"render_width\":%u,\"render_height\":%u,\"draw_count\":%u,\"vertices\":%u,\"rejected_samples\":%u,"
             "\"status\":\"%s\",\"gpu_result\":%d,\"covered_pixels\":%llu,\"moving_pixels\":%llu,\"invalid_pixels\":%llu,"
             "\"maximum_absolute_delta_pixels\":[%.9g,%.9g],\"images_written\":%s,"
@@ -441,7 +486,9 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             index,(unsigned long long)current->frame,(unsigned long long)previous->frame,
             (unsigned long long)s_d3d.frame_count,d2_reference_frame_text,d2_reference_available?"true":"false",
             d2_reference_available && d2_reference_frame==current->frame?"true":"false",
-            s_d3d.width,s_d3d.height,count,total_vertices,rejected,
+            d2_scene_depth_available?"true":"false",d2_scene_depth_frame_text,d2_scene_depth_result,
+            depth_compared?"true":"false",(double)depth_epsilon,depth_equal,depth_deeper,depth_nearer,depth_invalid,
+            depth_image?"true":"false",s_d3d.width,s_d3d.height,count,total_vertices,rejected,
             result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
             result,covered,moving,invalid,max_x,max_y,images?"true":"false",
             result==0 && count && covered && !invalid?"true":"false",unreplayed_draws,no_cull_ran?"true":"false",no_cull_result,no_cull_covered);
@@ -464,6 +511,7 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
     }
     fprintf(stderr,"[D2MOTION] candidate raster draws=%u covered=%llu moving=%llu; full scene visibility pending\n",count,covered,moving);
     free(pixels);free(vertices);
+    free(d2_scene_depth_data);d2_scene_depth_data=NULL;
 }
 
 static void d2_temporal_dump(u32 index){
