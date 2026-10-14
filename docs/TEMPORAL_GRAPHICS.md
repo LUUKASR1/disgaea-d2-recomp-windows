@@ -52,3 +52,31 @@ indisponíveis até o pipeline fornecer entradas válidas e executar a tecnologi
 Para o desejo de letras mais suaves, comparar HUD na saída e HUD já ampliada;
 a integração temporal deve preservar UI e não assumir que o caminho separado
 já tem a melhor filtragem visual para todos os menus.
+
+## 0.1.21 — seleção de Hz e apresentação sem cap
+
+Vídeo oferece Nativo, 60, 75, 120, 144, 165 e 180 Hz. Nativo mantém o modo atual
+do Windows. Uma frequência numérica só é aplicada quando o driver a enumera
+para a mesma resolução/orientação/cor e CDS_TEST a aceita; caso contrário,
+mantém a atual e registra o motivo. A antiga opção maximum_refresh é descartada
+na migração para Nativo. A restauração continua limitada ao encerramento normal.
+
+Sem limite de FPS é habilitado por padrão nesta preview, como solicitado pelo
+usuário. D2_GCM_UNLIMITED remove o requisito de esperar um novo vblank antes de
+apresentar um flip concluído e o recheck usa a mesma regra antes de dormir.
+O relógio monotônico de 60 Hz, os contadores e notificações vblank não são
+alterados. FIFO completo, posse do ticket e aposentadoria do frame continuam
+obrigatórios. O modo antigo pode ser restaurado desligando Sem limite de FPS.
+
+O SDK original e seu lock ficam intactos. adapt_pacing.py audita o SHA-256 do
+cellGcmSys.c conhecido e gera uma cópia de build. Nenhum limite de FPS adicional
+é criado pelo launcher. VSync ainda pode limitar a apresentação à taxa do monitor.
+
+Callbacks de flip podem afetar jogos que usam tempo fixo por frame. Preservar
+o relógio de vblank não prova que todas as animações/lógica do jogo são independentes
+dos flips. Por isso, validar movimentação, animações, áudio, batalha, save/load e
+fechamento; se acelerar, restaurar o modo antigo. A preview não promete FPS acima
+de 60 se o próprio jogo ou a carga de CPU/GPU limitarem a produção dos frames.
+
+A integração de DLSS/FG segue a próxima etapa: validar câmera e movimento reais,
+depois Streamline DLSS SR, depois Reflex/swapchain FG. Não são habilitados nessa versão.

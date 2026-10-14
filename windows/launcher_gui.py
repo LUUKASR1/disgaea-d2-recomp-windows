@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import webbrowser
 
-from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, load_settings, save_settings
+from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_RATES, load_settings, save_settings
 
 BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
 TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
@@ -72,7 +72,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     resolution = tk.StringVar(value=settings['resolution'])
     mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
-    maximum_refresh = tk.BooleanVar(value=settings['maximum_refresh'])
+    refresh_rate = tk.StringVar(value='Nativo' if settings['refresh_rate']=='native' else settings['refresh_rate']+' Hz')
+    fps_unlimited = tk.BooleanVar(value=settings['fps_unlimited'])
     vrr = tk.BooleanVar(value=settings['vrr'])
     render_resolution = tk.StringVar(value=settings['render_resolution'])
     upscaler = tk.StringVar(value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
@@ -153,7 +154,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • Experimental', 9, MUTED)
 
     def get_settings():
-        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'maximum_refresh': maximum_refresh.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
+        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
                 'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
                 'fsr_sharpness': sharpness.get(), 'frame_generation': False,
                 'hud_after_upscale': hud_after_upscale.get()}
@@ -261,13 +262,17 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                            selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
     check.pack(anchor='w', pady=8); entries.append(check)
     label(video, 'Padrão: VSync desligado, como na build que você já utiliza. Ligar pode alterar o ritmo dos quadros.', 10, MUTED)
+    label(video, 'Taxa de atualização do monitor', bold=True)
+    refresh_combo = ttk.Combobox(video, textvariable=refresh_rate, values=('Nativo', *(rate+' Hz' for rate in REFRESH_RATES if rate!='native')),
+        state='readonly', style='D2.TCombobox', width=32)
+    refresh_combo.pack(anchor='w', pady=(0,10)); entries.append(refresh_combo)
     for text, variable in (
-        ('Usar maior taxa de Hz na resolução atual do monitor', maximum_refresh),
+        ('Sem limite de FPS — experimental', fps_unlimited),
         ('Permitir VRR / G-SYNC / FreeSync quando suportado', vrr)):
         toggle = tk.Checkbutton(video, text=text, variable=variable, bg=CARD, fg=TEXT,
             selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
         toggle.pack(anchor='w', pady=8); entries.append(toggle)
-    label(video, 'Hz máximo: pode piscar ao trocar de modo; restaura ao fechar normalmente. VRR requer VSync desligado e suporte do monitor/Windows. Isso não aumenta o FPS da lógica do jogo.', 10, MUTED)
+    label(video, 'Nativo mantém os Hz atuais do Windows. Uma taxa indisponível mantém o modo atual. A troca pode piscar e é restaurada ao fechar normalmente. Sem limite remove a espera de apresentação de 60 Hz; se alterar a velocidade do jogo, desligue. VRR requer VSync desligado.', 10, MUTED)
     graphics = card(page)
     label(graphics, 'Resolução interna de renderização', bold=True)
     render_combo = ttk.Combobox(graphics, textvariable=render_resolution, values=RENDER_RESOLUTIONS,
@@ -296,7 +301,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             messagebox.showerror('Configurações', str(error))
     button(page, 'Salvar configurações', save_video, True)
     def reset():
-        resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync']); maximum_refresh.set(DEFAULTS['maximum_refresh']); vrr.set(DEFAULTS['vrr'])
+        resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync']); refresh_rate.set('Nativo'); fps_unlimited.set(DEFAULTS['fps_unlimited']); vrr.set(DEFAULTS['vrr'])
         render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
         hud_after_upscale.set(False)
         save_video()

@@ -100,24 +100,34 @@ extern "C" void d2_display_start(void* handle){
     DEVMODEW current{};current.dmSize=sizeof(current);
     if(!EnumDisplaySettingsExW(info.szDevice,ENUM_CURRENT_SETTINGS,&current,0))return;
     DWORD maximum=current.dmDisplayFrequency;
+    const char* request=std::getenv("D2_REFRESH_RATE");
+    DWORD desired=0;bool found=false;
+    if(request && std::strcmp(request,"native")){
+        for(const char* rate:{"60","75","120","144","165","180"})if(!std::strcmp(request,rate))desired=static_cast<DWORD>(std::strtoul(rate,nullptr,10));
+        if(!desired){std::fprintf(stderr,"[D2DISPLAY] invalid requested Hz; keeping current\n");return;}
+    }
+    found=desired==current.dmDisplayFrequency;
     for(DWORD index=0;;index++){
         DEVMODEW mode{};mode.dmSize=sizeof(mode);
         if(!EnumDisplaySettingsExW(info.szDevice,index,&mode,0))break;
         if(mode.dmPelsWidth==current.dmPelsWidth && mode.dmPelsHeight==current.dmPelsHeight &&
            mode.dmBitsPerPel==current.dmBitsPerPel && mode.dmDisplayOrientation==current.dmDisplayOrientation &&
-           mode.dmDisplayFlags==current.dmDisplayFlags && mode.dmDisplayFrequency>maximum)
-            maximum=mode.dmDisplayFrequency;
+           mode.dmDisplayFlags==current.dmDisplayFlags){
+            if(mode.dmDisplayFrequency>maximum)maximum=mode.dmDisplayFrequency;
+            if(mode.dmDisplayFrequency==desired)found=true;
+        }
     }
     std::fprintf(stderr,"[D2DISPLAY] desktop=%lux%lu active=%luHz maximum-same-mode=%luHz request=%s\n",
-        current.dmPelsWidth,current.dmPelsHeight,current.dmDisplayFrequency,maximum,flag("D2_MAX_REFRESH")?"maximum":"current");
-    if(flag("D2_MAX_REFRESH") && maximum>current.dmDisplayFrequency){
-        auto mode=current;mode.dmDisplayFrequency=maximum;mode.dmFields=DM_DISPLAYFREQUENCY;
+        current.dmPelsWidth,current.dmPelsHeight,current.dmDisplayFrequency,maximum,request?request:"native");
+    if(desired && !found){std::fprintf(stderr,"[D2DISPLAY] requested=%luHz unsupported; keeping %luHz\n",desired,current.dmDisplayFrequency);return;}
+    if(desired && desired!=current.dmDisplayFrequency){
+        auto mode=current;mode.dmDisplayFrequency=desired;mode.dmFields=DM_DISPLAYFREQUENCY;
         LONG result=ChangeDisplaySettingsExW(info.szDevice,&mode,nullptr,CDS_TEST,nullptr);
         if(result==DISP_CHANGE_SUCCESSFUL)result=ChangeDisplaySettingsExW(info.szDevice,&mode,nullptr,CDS_FULLSCREEN,nullptr);
         if(result==DISP_CHANGE_SUCCESSFUL){
             std::wcscpy(display_state.name,info.szDevice);display_state.original=current;display_state.applied=mode;display_state.changed=true;
         }
-        std::fprintf(stderr,"[D2DISPLAY] apply-maximum=%ld refresh=%luHz\n",result,maximum);
+        std::fprintf(stderr,"[D2DISPLAY] apply-requested=%ld refresh=%luHz\n",result,desired);
     }
 }
 extern "C" UINT d2_display_swap_flags(void* object){

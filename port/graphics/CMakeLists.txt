@@ -17,6 +17,9 @@ target_include_directories(d2_graphics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIV
 target_compile_definitions(d2_graphics PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(d2_graphics PUBLIC d3d12 dxgi d3dcompiler dxguid uuid)
 if(BUILD_TESTING)
+    add_executable(d2_flip_tests tests/flip_tests.cpp)
+    target_include_directories(d2_flip_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME flip_pacing COMMAND d2_flip_tests)
     add_executable(d2_graphics_tests tests/graphics_tests.cpp)
     target_link_libraries(d2_graphics_tests PRIVATE d2_graphics)
     target_compile_definitions(d2_graphics_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -43,7 +46,10 @@ if(D2_GRAPHICS_SDK_DIR)
     set(adapted "${CMAKE_CURRENT_BINARY_DIR}/rsx_d3d12_backend.c")
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/adapt_graphics.py"
         "${D2_GRAPHICS_SDK_DIR}/libs/video/rsx_d3d12_backend.c" "${adapted}" COMMAND_ERROR_IS_FATAL ANY)
-    add_library(d2_graphics_sdk_check OBJECT "${adapted}")
+    set(gcm_adapted "${CMAKE_CURRENT_BINARY_DIR}/cellGcmSys.c")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/adapt_pacing.py"
+        "${D2_GRAPHICS_SDK_DIR}/libs/video/cellGcmSys.c" "${gcm_adapted}" COMMAND_ERROR_IS_FATAL ANY)
+    add_library(d2_graphics_sdk_check OBJECT "${adapted}" "${gcm_adapted}")
     target_include_directories(d2_graphics_sdk_check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
         "${D2_GRAPHICS_SDK_DIR}/include" "${D2_GRAPHICS_SDK_DIR}/libs/video"
         "${D2_GRAPHICS_SDK_DIR}/libs/system" "${D2_GRAPHICS_SDK_DIR}/runtime/ppu")
