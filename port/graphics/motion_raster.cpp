@@ -19,12 +19,13 @@ struct Context{
 const char shader[]=R"(
 cbuffer Size:register(b0){float2 dimensions;}
 struct Vertex {float4 current:POSITION;float4 previous:TEXCOORD0;};
-struct Varying {float4 position:SV_Position;float4 previous:TEXCOORD0;};
-Varying vs(Vertex v){Varying o;o.position=v.current;o.previous=v.previous;return o;}
+struct Varying {float4 position:SV_Position;float4 previous:TEXCOORD0;float4 current:TEXCOORD1;};
+Varying vs(Vertex v){Varying o;o.position=v.current;o.previous=v.previous;o.current=v.current;return o;}
 float4 ps(Varying v):SV_Target{
-    if(!all(isfinite(v.previous)) || v.previous.w<=1e-8)discard;
+    if(!all(isfinite(v.previous)) || !all(isfinite(v.current)) || v.previous.w<=1e-8 || v.current.w<=1e-8)discard;
     float2 previous_uv=float2(v.previous.x/v.previous.w*.5+.5,.5-v.previous.y/v.previous.w*.5);
-    float2 delta=(previous_uv-v.position.xy/dimensions)*dimensions;
+    float2 current_uv=float2(v.current.x/v.current.w*.5+.5,.5-v.current.y/v.current.w*.5);
+    float2 delta=(previous_uv-current_uv)*dimensions;
     if(!all(isfinite(delta)))discard;
     return float4(delta,1,v.position.z);
 })";

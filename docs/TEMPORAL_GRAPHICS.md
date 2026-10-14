@@ -237,7 +237,7 @@ não fornece identidade persistente de objeto.
 
 As posições são transformadas pela regra CPU validada. Um VS/PS D3D12 próprio
 rasteriza esses candidatos num alvo RGBA32_FLOAT com depth D32 e comparação
-LESS_EQUAL. O shader interpola a posição homogênea anterior em perspectiva
+LESS_EQUAL. O shader interpola as posições homogêneas atual e anterior em perspectiva
 e calcula UV anterior menos atual por pixel. Z do alvo sinaliza cobertura
 e W registra profundidade. O teste de profundidade resolve somente oclusões
 ENTRE OS CANDIDATOS, com culling equivalente aos bits registrados.
