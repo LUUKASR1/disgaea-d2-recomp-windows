@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <array>
 template<class T> struct Ref{T* p=nullptr;~Ref(){if(p)p->Release();}T** put(){return &p;}T* operator->(){return p;}};
 void check(HRESULT h){if(FAILED(h))throw std::runtime_error("Projection GPU HRESULT="+std::to_string((unsigned long)h));}
