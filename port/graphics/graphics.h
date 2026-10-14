@@ -3,6 +3,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+void d2_display_start(void* hwnd);
+uint32_t d2_display_swap_flags(void* factory);
+int d2_display_present(void* swapchain,uint32_t interval);
 int d2_graphics_configure(uint32_t guest_width, uint32_t guest_height);
 uint32_t d2_graphics_render_width(void);
 uint32_t d2_graphics_render_height(void);

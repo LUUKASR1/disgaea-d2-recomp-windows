@@ -1,7 +1,7 @@
 #include "graphics.h"
 #include <windows.h>
 #include <d3d12.h>
-#include <dxgi1_4.h>
+#include <dxgi1_6.h>
 #include <d3dcompiler.h>
 #include <array>
 #include <algorithm>
@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <stdexcept>
 #include <string>
 #define A_CPU 1
@@ -72,6 +73,70 @@ void dispatch(ID3D12PipelineState* p,UINT index,const UINT constants[20]){
     gpu->commands->SetPipelineState(p);gpu->commands->SetComputeRoot32BitConstants(0,20,constants,0);
     gpu->commands->SetComputeRootDescriptorTable(1,h);gpu->commands->Dispatch((cfg.ow+7)/8,(cfg.oh+7)/8,1);
 }
+}
+
+namespace {
+struct DisplayState { wchar_t name[CCHDEVICENAME]{}; DEVMODEW original{},applied{};bool changed=false; } display_state;
+bool flag(const char* name){const char* s=std::getenv(name);return s && std::strcmp(s,"1")==0;}
+void restore_display(){
+    if(!display_state.changed)return;
+    DEVMODEW now{};now.dmSize=sizeof(now);
+    if(EnumDisplaySettingsExW(display_state.name,ENUM_CURRENT_SETTINGS,&now,0) &&
+       now.dmPelsWidth==display_state.applied.dmPelsWidth && now.dmPelsHeight==display_state.applied.dmPelsHeight &&
+       now.dmBitsPerPel==display_state.applied.dmBitsPerPel && now.dmDisplayOrientation==display_state.applied.dmDisplayOrientation &&
+       now.dmDisplayFlags==display_state.applied.dmDisplayFlags && now.dmDisplayFrequency==display_state.applied.dmDisplayFrequency){
+        auto original=display_state.original;original.dmFields=DM_DISPLAYFREQUENCY;
+        LONG result=ChangeDisplaySettingsExW(display_state.name,&original,nullptr,0,nullptr);
+        std::fprintf(stderr,"[D2DISPLAY] restore=%ld refresh=%luHz\n",result,original.dmDisplayFrequency);
+    }
+    display_state.changed=false;
+}
+}
+extern "C" void d2_display_start(void* handle){
+    static bool registered=false;if(!registered){std::atexit(restore_display);registered=true;}
+    if(display_state.changed)return;
+    MONITORINFOEXW info{};info.cbSize=sizeof(info);
+    if(!GetMonitorInfoW(MonitorFromWindow(static_cast<HWND>(handle),MONITOR_DEFAULTTONEAREST),reinterpret_cast<MONITORINFO*>(&info)))return;
+    DEVMODEW current{};current.dmSize=sizeof(current);
+    if(!EnumDisplaySettingsExW(info.szDevice,ENUM_CURRENT_SETTINGS,&current,0))return;
+    DWORD maximum=current.dmDisplayFrequency;
+    for(DWORD index=0;;index++){
+        DEVMODEW mode{};mode.dmSize=sizeof(mode);
+        if(!EnumDisplaySettingsExW(info.szDevice,index,&mode,0))break;
+        if(mode.dmPelsWidth==current.dmPelsWidth && mode.dmPelsHeight==current.dmPelsHeight &&
+           mode.dmBitsPerPel==current.dmBitsPerPel && mode.dmDisplayOrientation==current.dmDisplayOrientation &&
+           mode.dmDisplayFlags==current.dmDisplayFlags && mode.dmDisplayFrequency>maximum)
+            maximum=mode.dmDisplayFrequency;
+    }
+    std::fprintf(stderr,"[D2DISPLAY] desktop=%lux%lu active=%luHz maximum-same-mode=%luHz request=%s\n",
+        current.dmPelsWidth,current.dmPelsHeight,current.dmDisplayFrequency,maximum,flag("D2_MAX_REFRESH")?"maximum":"current");
+    if(flag("D2_MAX_REFRESH") && maximum>current.dmDisplayFrequency){
+        auto mode=current;mode.dmDisplayFrequency=maximum;mode.dmFields=DM_DISPLAYFREQUENCY;
+        LONG result=ChangeDisplaySettingsExW(info.szDevice,&mode,nullptr,CDS_TEST,nullptr);
+        if(result==DISP_CHANGE_SUCCESSFUL)result=ChangeDisplaySettingsExW(info.szDevice,&mode,nullptr,CDS_FULLSCREEN,nullptr);
+        if(result==DISP_CHANGE_SUCCESSFUL){
+            std::wcscpy(display_state.name,info.szDevice);display_state.original=current;display_state.applied=mode;display_state.changed=true;
+        }
+        std::fprintf(stderr,"[D2DISPLAY] apply-maximum=%ld refresh=%luHz\n",result,maximum);
+    }
+}
+extern "C" UINT d2_display_swap_flags(void* object){
+    if(!flag("D2_VRR")||!object)return 0;
+    auto* factory=static_cast<IDXGIFactory4*>(object);Ref<IDXGIFactory5> newer;BOOL supported=FALSE;
+    if(SUCCEEDED(factory->QueryInterface(IID_IDXGIFactory5,reinterpret_cast<void**>(newer.put()))))
+        newer->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING,&supported,sizeof(supported));
+    std::fprintf(stderr,"[D2DISPLAY] tearing-supported=%d\n",supported);
+    return supported?DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING:0;
+}
+extern "C" int d2_display_present(void* object,UINT interval){
+    if(!object)return -1;auto* swap=static_cast<IDXGISwapChain3*>(object);
+    UINT flags=0;DXGI_SWAP_CHAIN_DESC1 desc{};BOOL fullscreen=TRUE;
+    if(flag("D2_VRR") && interval==0 && SUCCEEDED(swap->GetDesc1(&desc)) &&
+       (desc.Flags&DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) && SUCCEEDED(swap->GetFullscreenState(&fullscreen,nullptr)) && !fullscreen)
+        flags=DXGI_PRESENT_ALLOW_TEARING;
+    HRESULT result=swap->Present(interval,flags);
+    if(FAILED(result))std::fprintf(stderr,"[D2DISPLAY] present failed HRESULT=%lu\n",static_cast<unsigned long>(result));
+    return FAILED(result)?-1:0;
 }
 extern "C" UINT d2_graphics_render_width(){return cfg.rw;}
 extern "C" UINT d2_graphics_render_height(){return cfg.rh;}
@@ -169,4 +234,4 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] present: %s\n",e.what());return -1;}
 }
 extern "C" void* d2_graphics_output(UINT frame){return gpu && frame<2?gpu->output[frame].p:nullptr;}
-extern "C" void d2_graphics_shutdown(){delete gpu;gpu=nullptr;}
+extern "C" void d2_graphics_shutdown(){delete gpu;gpu=nullptr;restore_display();}

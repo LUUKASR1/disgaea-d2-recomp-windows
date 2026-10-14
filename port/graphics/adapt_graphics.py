@@ -22,6 +22,12 @@ def generate(source, output):
         '    s_d3d.width = width;\n    s_d3d.height = height;')
     text = replace(text, 's_d3d.hwnd = create_window(width, height, title);',
         's_d3d.hwnd = create_window(d2_graphics_output_width(), d2_graphics_output_height(), title);')
+    text = replace(text, '    sc_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;',
+        '    sc_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;\n'
+        '    sc_desc.Flags |= d2_display_swap_flags(factory);')
+    text = replace(text, 's_d3d.hwnd = create_window(d2_graphics_output_width(), d2_graphics_output_height(), title);',
+        's_d3d.hwnd = create_window(d2_graphics_output_width(), d2_graphics_output_height(), title);\n'
+        '    d2_display_start(s_d3d.hwnd);')
     text = replace(text, '    sc_desc.Width = width;', '    sc_desc.Width = d2_graphics_output_width();')
     text = replace(text, '    sc_desc.Height = height;', '    sc_desc.Height = d2_graphics_output_height();')
     text = replace(text, '    /* Create RTV descriptor heap */',
@@ -76,7 +82,7 @@ def generate(source, output):
         '            const char* reason=d2_post_snapshotted?"separate":d2_post_reason;\n'
         '            if(!previous || strcmp(previous,reason)!=0){previous=reason;\n'
         '                fprintf(stderr,"[D2POSTHUD] presentation=%s reason=%s\\n",d2_post_snapshotted?"HUD-after-upscale":"fallback",reason);}}\n'
-        '        s_d3d.swap_chain->lpVtbl->Present(s_d3d.swap_chain, (UINT)d2_interval, 0);')
+        '        if(d2_display_present(s_d3d.swap_chain,(UINT)d2_interval)!=0){s_d3d.window_closed=1;return;}')
     text = replace(text, '    /* Release D3D12 resources */',
         '    d2_posthud_shutdown();\n    d2_hud_shutdown();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
     text = replace(text, '    u32 d2_diag_valid;',

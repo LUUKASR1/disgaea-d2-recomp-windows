@@ -14,6 +14,18 @@ import launcher
 
 
 class DisplayTests(unittest.TestCase):
+    def test_refresh_settings_migrate_and_override_environment(self):
+        migrated=display.validate_settings({})
+        self.assertFalse(migrated['maximum_refresh']); self.assertFalse(migrated['vrr'])
+        env=display.display_environment({'D2_MAX_REFRESH':'1','D2_VRR':'1'},migrated)
+        self.assertEqual((env['D2_MAX_REFRESH'],env['D2_VRR']),('0','0'))
+        enabled=dict(migrated,maximum_refresh=True,vrr=True)
+        env=display.display_environment({},enabled)
+        self.assertEqual((env['D2_MAX_REFRESH'],env['D2_VRR']),('1','1'))
+        for name in ('maximum_refresh','vrr'):
+            for invalid in (1,'true',None):
+                with self.assertRaises(ValueError):display.validate_settings(dict(migrated,**{name:invalid}))
+
     def test_hud_output_migrates_off_and_overrides_inherited_flag(self):
         self.assertFalse(display.validate_settings({'resolution':'1920x1080'})['hud_after_upscale'])
         self.assertEqual(display.display_environment({'D2_HUD_AFTER_UPSCALE':'1'},display.DEFAULTS)['D2_HUD_AFTER_UPSCALE'],'0')

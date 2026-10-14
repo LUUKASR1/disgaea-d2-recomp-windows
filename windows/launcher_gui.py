@@ -72,6 +72,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     resolution = tk.StringVar(value=settings['resolution'])
     mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
+    maximum_refresh = tk.BooleanVar(value=settings['maximum_refresh'])
+    vrr = tk.BooleanVar(value=settings['vrr'])
     render_resolution = tk.StringVar(value=settings['render_resolution'])
     upscaler = tk.StringVar(value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
@@ -151,7 +153,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • Experimental', 9, MUTED)
 
     def get_settings():
-        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'render_resolution': render_resolution.get(),
+        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'maximum_refresh': maximum_refresh.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
                 'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
                 'fsr_sharpness': sharpness.get(), 'frame_generation': False,
                 'hud_after_upscale': hud_after_upscale.get()}
@@ -259,6 +261,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                            selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
     check.pack(anchor='w', pady=8); entries.append(check)
     label(video, 'Padrão: VSync desligado, como na build que você já utiliza. Ligar pode alterar o ritmo dos quadros.', 10, MUTED)
+    for text, variable in (
+        ('Usar maior taxa de Hz na resolução atual do monitor', maximum_refresh),
+        ('Permitir VRR / G-SYNC / FreeSync quando suportado', vrr)):
+        toggle = tk.Checkbutton(video, text=text, variable=variable, bg=CARD, fg=TEXT,
+            selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
+        toggle.pack(anchor='w', pady=8); entries.append(toggle)
+    label(video, 'Hz máximo: pode piscar ao trocar de modo; restaura ao fechar normalmente. VRR requer VSync desligado e suporte do monitor/Windows. Isso não aumenta o FPS da lógica do jogo.', 10, MUTED)
     graphics = card(page)
     label(graphics, 'Resolução interna de renderização', bold=True)
     render_combo = ttk.Combobox(graphics, textvariable=render_resolution, values=RENDER_RESOLUTIONS,
@@ -287,7 +296,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             messagebox.showerror('Configurações', str(error))
     button(page, 'Salvar configurações', save_video, True)
     def reset():
-        resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync'])
+        resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync']); maximum_refresh.set(DEFAULTS['maximum_refresh']); vrr.set(DEFAULTS['vrr'])
         render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
         hud_after_upscale.set(False)
         save_video()

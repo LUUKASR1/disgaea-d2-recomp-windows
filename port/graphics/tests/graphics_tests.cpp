@@ -28,6 +28,7 @@ int main(){try{
     auto wait=[&](){ok(queue->Signal(fence.p,++tick));ok(fence->SetEventOnCompletion(tick,event));require(WaitForSingleObject(event,30000)==WAIT_OBJECT_0,"GPU fence timed out");};
     HWND window=CreateWindowExW(0,L"STATIC",L"D2 graphics test",WS_OVERLAPPEDWINDOW,0,0,1280,720,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
     require(window!=nullptr,"Hidden test window");
+    _putenv_s("D2_MAX_REFRESH","0");d2_display_start(window);
     const struct {const char* rw;const char* rh;const char* ow;const char* oh;const char* mode;} cases[]={
         {"1280","720","1280","720","native"},
         {"1600","900","1600","900","native"},
@@ -41,6 +42,8 @@ int main(){try{
                 d2_graphics_output_width()==(UINT)atoi(c.ow)&&d2_graphics_output_height()==(UINT)atoi(c.oh),"Requested dimensions actually active");
         DXGI_SWAP_CHAIN_DESC1 sd{};sd.Width=d2_graphics_output_width();sd.Height=d2_graphics_output_height();sd.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
         sd.SampleDesc.Count=1;sd.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;sd.BufferCount=2;sd.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        _putenv_s("D2_VRR","0");require(d2_display_swap_flags(factory.p)==0,"Disabled VRR must preserve swap flags");
+        _putenv_s("D2_VRR","1");sd.Flags=d2_display_swap_flags(factory.p);
         Ref<IDXGISwapChain1> s1;ok(factory->CreateSwapChainForHwnd(queue.p,window,&sd,nullptr,nullptr,s1.put()));
         Ref<IDXGISwapChain3> swap;ok(s1->QueryInterface(IID_IDXGISwapChain3,reinterpret_cast<void**>(swap.put())));
         require(d2_graphics_start(device.p,queue.p,swap.p)==0,"Graphics GPU initialization/shaders");
@@ -79,6 +82,9 @@ int main(){try{
             }
             readback->Unmap(0,nullptr);
         }
+        require(d2_display_present(swap.p,0)==0,"VRR-capable presentation");
+        require(d2_display_present(swap.p,1)==0,"VSync must suppress tearing flag");
+        _putenv_s("D2_VRR","0");require(d2_display_present(swap.p,0)==0,"Disabled VRR presentation");
         wait();d2_graphics_shutdown();std::printf("PASS raster=%sx%s output=%sx%s mode=%s, 3 GPU frames\n",c.rw,c.rh,c.ow,c.oh,c.mode);
         // A flip-model chain must be destroyed before creating another on this HWND.
         DestroyWindow(window);window=CreateWindowExW(0,L"STATIC",L"D2 graphics test",WS_OVERLAPPEDWINDOW,0,0,1280,720,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);

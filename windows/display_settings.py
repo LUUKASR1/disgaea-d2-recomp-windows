@@ -8,7 +8,7 @@ RESOLUTIONS = ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')
 RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
 DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
             'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
-            'hud_after_upscale': False}
+            'hud_after_upscale': False, 'maximum_refresh': False, 'vrr': False}
 
 
 def validate_settings(value):
@@ -21,6 +21,9 @@ def validate_settings(value):
         raise ValueError('Modo de exibição inválido.')
     if type(result['vsync']) is not bool:
         raise ValueError('VSync deve estar ligado ou desligado.')
+    for name in ('maximum_refresh', 'vrr'):
+        if type(result[name]) is not bool:
+            raise ValueError('Taxa máxima e VRR devem estar ligados ou desligados.')
     if result['render_resolution'] not in RENDER_RESOLUTIONS:
         raise ValueError('Resolução interna inválida.')
     if result['upscaler'] not in ('native', 'fsr1'):
@@ -68,7 +71,8 @@ def display_environment(inherited, settings):
     ow, oh = value['resolution'].split('x')
     env.update(D2_RENDER_WIDTH=rw, D2_RENDER_HEIGHT=rh, D2_OUTPUT_WIDTH=ow, D2_OUTPUT_HEIGHT=oh,
                D2_UPSCALER=value['upscaler'], D2_FSR_SHARPNESS=str(value['fsr_sharpness']),
-               D2_HUD_AFTER_UPSCALE='1' if value['hud_after_upscale'] else '0')
+               D2_HUD_AFTER_UPSCALE='1' if value['hud_after_upscale'] else '0',
+               D2_MAX_REFRESH='1' if value['maximum_refresh'] else '0', D2_VRR='1' if value['vrr'] else '0')
     return env
 
 
