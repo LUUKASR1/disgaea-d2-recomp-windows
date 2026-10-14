@@ -187,3 +187,36 @@ Testes cobrem espera estática, seleção/congelamento, emissão única, prazo
 exato de dez segundos e rejeição de ruído/NaN. A seleção e seu desempenho
 no jogo real continuam pendentes. F8 ainda pode causar pausa pelos readbacks
 posteriores. DLSS e Frame Generation continuam indisponíveis.
+
+## 0.1.25 — validação de amostras na GPU
+
+O usuário confirmou a seleção automática na 0.1.24: um par consecutivo com
+transformações alteradas, primeiros pontos inalterados e deslocamentos não
+nulos nas duas amostras. Isso não comprova câmera suave, ausência de cortes
+ou correspondência de todos os vértices; pontos podem estar fora da tela.
+
+A captura agora executa um compute shader no dispositivo e fila D3D12 do jogo.
+Ele transforma o mesmo ponto com os dois bancos congelados e calcula o delta
+em pixels, com UV anterior menos atual. motion-gpu-check.json compara o
+resultado com a referência CPU, tolerância de 0,25 pixel, e identifica os
+frames observados. Uma assinatura ambígua de primeiro ponto é rejeitada.
+O diagnóstico não altera os recursos, command list ou apresentação do jogo.
+
+Compilação, dispatch e readback só ocorrem após uma captura selecionada.
+Não há execução contínua, textura de vetores, cobertura rasterizada ou
+identidade de personagens nessa versão. Uma pausa na captura é esperada.
+Falhas de GPU ficam registradas e não mudam o render normal. Em timeout de
+30 segundos ou falha de sinalização após submissão, os recursos do diagnóstico
+são retidos até o fim do processo para evitar liberar memória em uso pela GPU.
+
+Testes D3D12 WARP usam lotes de 65 amostras para conferir o limite de dispatch,
+posição estática, translação, rotação, bias, sinal dos vetores e rejeição de
+w singular/negativo, NaN e dimensão zero. São testes da matemática do
+diagnóstico; não equivalem a medir a saída do shader original do jogo.
+
+Para testar, mantenha 720p interno e saída e upscaling desligado. Habilite
+capturas, pressione F8 e gire a câmera em até dez segundos. Após concluir,
+envie motion-gpu-check.json. Desabilite capturas para jogar normalmente.
+DLSS e Frame Generation permanecem indisponíveis. O próximo passo é rasterizar
+candidatos de cenário com máscara de cobertura e comparar profundidade, direção
+e oclusões; o movimento de sprites/personagens exige correspondência própria.

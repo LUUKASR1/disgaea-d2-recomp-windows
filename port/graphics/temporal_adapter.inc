@@ -2,6 +2,7 @@
 #include "temporal_probe.h"
 #include "projection.h"
 #include "auto_probe.h"
+#include "motion_probe.h"
 #define D2_TEMP_SAMPLES 4
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
@@ -168,6 +169,77 @@ static void d2_projection_dump(u32 index,const D2TemporalFrame* current,const D2
     }
     fprintf(file,"]}\n");fclose(file);
 }
+
+/* Compute validation of the frozen pair; never feeds gameplay or DLSS. */
+static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
+    D2MotionProbeInput inputs[D2_TEMP_SAMPLES]={0};D2MotionProbeOutput outputs[D2_TEMP_SAMPLES]={0};
+    float cpu_delta[D2_TEMP_SAMPLES][2]={{0}};u32 draws[D2_TEMP_SAMPLES]={0};unsigned count=0;
+    if(current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
+        const D2TemporalSample* sample=&current->samples[i];
+        if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
+        const D2TemporalSample* old=NULL;unsigned matches=0;
+        for(u32 j=0;j<previous->count;j++){
+            const D2TemporalSample* candidate=&previous->samples[j];
+            if(candidate->shader==sample->shader && candidate->fp==sample->fp &&
+               candidate->vertices==sample->vertices && candidate->texture==sample->texture &&
+               candidate->has_vertex && !memcmp(candidate->attributes,sample->attributes,4*sizeof(float))){
+                old=candidate;matches++;
+            }
+        }
+        /* Ambiguous first-point signatures are rejected, not used as identities. */
+        if(matches!=1)continue;
+        float now[4],before[4],delta[2];
+        if(!d2_project_world(sample->constants+256*4,sample->constants+512*4,sample->constants+513*4,
+               sample->constants[466*4+2],sample->attributes,now) ||
+           !d2_project_world(old->constants+256*4,old->constants+512*4,old->constants+513*4,
+               old->constants[466*4+2],sample->attributes,before) ||
+           !d2_same_point_delta(before,now,s_d3d.width,s_d3d.height,delta))continue;
+        D2MotionProbeInput* input=&inputs[count];
+        memcpy(input->previous_rows,old->constants+256*4,16*sizeof(float));
+        memcpy(input->current_rows,sample->constants+256*4,16*sizeof(float));
+        memcpy(input->previous_scale,old->constants+512*4,4*sizeof(float));
+        memcpy(input->current_scale,sample->constants+512*4,4*sizeof(float));
+        memcpy(input->previous_offset,old->constants+513*4,4*sizeof(float));
+        memcpy(input->current_offset,sample->constants+513*4,4*sizeof(float));
+        input->previous_bias[2]=old->constants[466*4+2];input->current_bias[2]=sample->constants[466*4+2];
+        memcpy(input->point,sample->attributes,4*sizeof(float));
+        input->dimensions[0]=(float)s_d3d.width;input->dimensions[1]=(float)s_d3d.height;
+        memcpy(cpu_delta[count],delta,sizeof(delta));draws[count]=sample->draw;count++;
+    }
+    int result=count?d2_motion_probe_gpu(s_d3d.device,s_d3d.cmd_queue,inputs,count,outputs):0;
+    double maximum_error=0;int agreed=count>0 && result==0;
+    for(unsigned i=0;i<count && result==0;i++){
+        if(outputs[i].delta_valid[2]!=1){agreed=0;continue;}
+        for(unsigned axis=0;axis<2;axis++){
+            double error=fabs((double)outputs[i].delta_valid[axis]-cpu_delta[i][axis]);
+            if(!isfinite(error)){agreed=0;continue;}
+            if(error>maximum_error)maximum_error=error;
+            if(error>.25)agreed=0;
+        }
+    }
+    char path[600];snprintf(path,sizeof(path),"%s/motion-gpu-check.json",d2_temporal_directory);
+    FILE* file=d2_capture_fopen(path,"wb");if(!file)return;
+    fprintf(file,"{\"schema\":1,\"purpose\":\"gpu-same-point-validation\",\"capture_index\":%u,"
+        "\"current_frame\":%llu,\"previous_frame\":%llu,\"sample_count\":%u,"
+        "\"motion_vectors_available\":false,\"raster_coverage_available\":false,\"object_identity_available\":false,"
+        "\"units\":\"render-pixels\",\"direction\":\"previous-minus-current-uv\",\"tolerance_pixels\":0.25,"
+        "\"status\":\"%s\",\"gpu_result\":%d,\"maximum_delta_error_pixels\":%.9g,\"samples\":[",
+        index,(unsigned long long)current->frame,(unsigned long long)previous->frame,count,
+        !count?"no-valid-pairs":result?"gpu-error":agreed?"cpu-gpu-match":"cpu-gpu-mismatch",result,maximum_error);
+    for(unsigned i=0;i<count;i++){
+        int valid=result==0 && outputs[i].delta_valid[2]==1 &&
+            isfinite(outputs[i].delta_valid[0]) && isfinite(outputs[i].delta_valid[1]);
+        fprintf(file,"%s{\"draw\":%u,\"gpu_valid\":%s,\"cpu_delta_pixels\":[%.9g,%.9g],\"gpu_delta_pixels\":",
+            i?",":"",draws[i],valid?"true":"false",(double)cpu_delta[i][0],(double)cpu_delta[i][1]);
+        if(valid)fprintf(file,"[%.9g,%.9g]",(double)outputs[i].delta_valid[0],(double)outputs[i].delta_valid[1]);
+        else fprintf(file,"null");
+        fprintf(file,"}");
+    }
+    fprintf(file,"]}\n");fclose(file);
+    fprintf(stderr,"[D2MOTION] GPU samples=%u status=%s error=%.6g pixels; raster field unavailable\n",
+        count,!count?"no-valid-pairs":result?"gpu-error":agreed?"cpu-gpu-match":"cpu-gpu-mismatch",maximum_error);
+}
+
 static void d2_temporal_dump(u32 index){
     const D2TemporalFrame* current=&d2_temporal_frames[d2_temporal_next^1];
     const D2TemporalFrame* previous=&d2_temporal_frames[d2_temporal_next];
@@ -183,6 +255,7 @@ static void d2_temporal_dump(u32 index){
     d2_temporal_json_frame(file,current);fprintf(file,",\"previous\":");d2_temporal_json_frame(file,previous);
     fprintf(file,"}\n");fclose(file);
     d2_projection_dump(index,current,previous);
+    d2_motion_dump(index,current,previous);
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);
 }
