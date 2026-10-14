@@ -71,10 +71,11 @@ def generate(source, output):
         '        if (d2_graphics_present(fi, d2_post_snapshotted?d2_posthud_scene(fi):s_d3d.render_targets[fi]) != 0 ||\n'
         '            (d2_post_snapshotted && d2_posthud_present(fi,d2_hud_start,s_dbg_last_draws)!=0)) {\n'
         '            s_d3d.window_closed = 1; return;\n        }\n'
-        '        if(d2_capture_requested)d2_capture_output(fi,s_dbg_last_draws,d2_capture_index,d2_post_snapshotted);\n'
-        '        if(d2_posthud_enabled()){static int previous=-1;\n'
-        '            if(previous!=d2_post_snapshotted){previous=d2_post_snapshotted;\n'
-        '                fprintf(stderr,"[D2POSTHUD] presentation=%s\\n",previous?"HUD-after-upscale":"fallback");}}\n'
+        '        if(d2_capture_requested)d2_capture_output(fi,s_dbg_last_draws,d2_capture_index,d2_post_snapshotted,d2_post_reason);\n'
+        '        if(d2_posthud_enabled()){static const char* previous=NULL;\n'
+        '            const char* reason=d2_post_snapshotted?"separate":d2_post_reason;\n'
+        '            if(!previous || strcmp(previous,reason)!=0){previous=reason;\n'
+        '                fprintf(stderr,"[D2POSTHUD] presentation=%s reason=%s\\n",d2_post_snapshotted?"HUD-after-upscale":"fallback",reason);}}\n'
         '        s_d3d.swap_chain->lpVtbl->Present(s_d3d.swap_chain, (UINT)d2_interval, 0);')
     text = replace(text, '    /* Release D3D12 resources */',
         '    d2_posthud_shutdown();\n    d2_hud_shutdown();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
@@ -107,6 +108,7 @@ def generate(source, output):
         '    u32 d2_capture_index=0,d2_hud_start=s_d3d.draw_count;\n'
         '    int d2_hud_snapshotted=0;\n'
         '    int d2_post_ready=0,d2_post_snapshotted=0;\n'
+        '    const char* d2_post_reason=d2_posthud_enabled()?"not-evaluated":"option-disabled";\n'
         '    int d2_capture_requested=s_present_this_frame && s_d3d.draw_count>0 &&\n'
         '        d2_capture_next(&d2_capture_index,s_d3d.hwnd);\n'
         '    if(d2_capture_requested || (d2_posthud_enabled() && s_present_this_frame)) {\n'
@@ -114,10 +116,12 @@ def generate(source, output):
         '        d2_hud_start=d2_hud_find_boundary(s_d3d.draw_count);\n'
         '        if(d2_capture_requested && d2_hud_start<s_d3d.draw_count &&\n'
         '           d2_hud_prepare(s_d3d.device,s_d3d.cmd_queue,s_d3d.render_targets[fi],s_d3d.depth_buffer)!=0)\n'
-        '            d2_hud_start=s_d3d.draw_count;\n'
-        '        if(d2_posthud_enabled() && d2_posthud_supported(d2_hud_start,s_d3d.draw_count) &&\n'
-        '           d2_posthud_prepare(s_d3d.device,s_d3d.cmd_queue,s_d3d.render_targets[fi],s_d3d.depth_buffer,d2_graphics_output(fi))==0)\n'
-        '            d2_post_ready=1;\n'
+        '            {d2_hud_start=s_d3d.draw_count;d2_hud_boundary_reason="capture-prepare-failed";}\n'
+        '        if(d2_posthud_enabled() && d2_posthud_supported(d2_hud_start,s_d3d.draw_count,&d2_post_reason)){\n'
+        '            if(d2_posthud_prepare(s_d3d.device,s_d3d.cmd_queue,s_d3d.render_targets[fi],s_d3d.depth_buffer,d2_graphics_output(fi))==0){\n'
+        '                d2_post_ready=1;d2_post_reason="snapshot-not-reached";\n'
+        '            }else d2_post_reason="resource-prepare-failed";\n'
+        '        }\n'
         '    }\n\n    /* Transition render target to RENDER_TARGET state */')
     text = replace(text, '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
@@ -125,8 +129,10 @@ def generate(source, output):
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if(d2_capture_requested && d==d2_hud_start)
                     d2_hud_snapshotted=d2_hud_snapshot(s_d3d.cmd_list,s_d3d.render_targets[fi],s_d3d.depth_buffer)==0;
-                if(d2_post_ready && d==d2_hud_start)
+                if(d2_post_ready && d==d2_hud_start){
                     d2_post_snapshotted=d2_posthud_snapshot(fi,s_d3d.cmd_list,s_d3d.render_targets[fi],s_d3d.depth_buffer)==0;
+                    d2_post_reason=d2_post_snapshotted?"separate":"snapshot-failed";
+                }
                 if (!dr->is_vp) continue;''')
     text = replace(text, '''                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
                     dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);''',

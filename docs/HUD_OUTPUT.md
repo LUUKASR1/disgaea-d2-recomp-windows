@@ -1,4 +1,4 @@
-# Preview 0.1.17 — HUD após o upscaling
+# Preview 0.1.18 — HUD após o upscaling
 
 Em **Vídeo**, a opção **HUD após upscaling — experimental** habilita a
 apresentação da camada final de interface na resolução de saída. Ela é
@@ -51,3 +51,26 @@ continua sendo pontual e faz os readbacks necessários à comparação.
 
 DLSS, FSR temporal, motion vectors/camera history e frame generation continuam
 pendentes. Esta etapa trata apresentação da HUD com upscaling espacial.
+
+## Diagnóstico de fallback (0.1.18)
+
+Cada captura registra `hud_after_upscale_requested`, `fallback_reason` e o
+upscaler selecionado em `presentation.json`. O log registra o motivo apenas
+quando ele muda, além da mensagem pontual de captura; não há trace por draw.
+A renderização e as regras de aceitação permanecem iguais às de 0.1.17.
+
+Motivos: `option-disabled`, `draw-count`, `vertex-pipeline-unavailable`,
+`alternate-render-path`, `unsupported-scene-draw`, `no-final-hud-block`,
+`interleaved-hud`, `world-shader-not-recognized`, `hud-stencil-enabled`,
+`hud-stencil-state`, `capture-prepare-failed`, `resource-prepare-failed`,
+`snapshot-not-reached` ou `snapshot-failed`. HUD separada usa motivo `none`
+no JSON e `separate` no log.
+
+## Validação recebida do usuário
+
+Em 13/10/2026, um JSON colado pelo usuário confirmou apresentação separada
+em 1280×720 com comparação nativa disponível e diferenças RGB/alpha iguais
+a zero. Outro confirmou apresentação separada de 1280×720 para 1920×1080.
+Durante o golpe de Laharl houve alternância com fallback, sem defeitos visuais
+percebidos pelo usuário. Esses dados validam os frames relatados; não constituem
+inspeção independente das imagens nem identificação do motivo daquele fallback.

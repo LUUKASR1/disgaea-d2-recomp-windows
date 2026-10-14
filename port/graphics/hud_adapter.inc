@@ -10,22 +10,30 @@ static int d2_hud_record_candidate(const D3D12DrawRecord* r, u32 parity)
     return d2_hud_vertices(vertices,r->vertex_count,256u);
 }
 
+static const char* d2_hud_boundary_reason = "not-evaluated";
+
 static u32 d2_hud_find_boundary(u32 count)
 {
-    if(count>MAX_DRAWS || !count || !s_d3d.vp_ready || !s_d3d.vp_fpcb ||
-       getenv("GCM_GUEST_FB") || getenv("GCM_COMPOSITE_RT") || getenv("SUBVP_RTT")) return count;
+    d2_hud_boundary_reason="separate";
+    if(count>MAX_DRAWS || !count){d2_hud_boundary_reason="draw-count";return count;}
+    if(!s_d3d.vp_ready || !s_d3d.vp_fpcb){d2_hud_boundary_reason="vertex-pipeline-unavailable";return count;}
+    if(getenv("GCM_GUEST_FB") || getenv("GCM_COMPOSITE_RT") || getenv("SUBVP_RTT")){
+        d2_hud_boundary_reason="alternate-render-path";return count;}
     for(u32 d=0;d<count;d++) {
         const D3D12DrawRecord* r=&s_d3d.draws[d];
-        if(!r->is_vp || r->is_clear || r->rt_off || r->rt_mrt[0] || r->rt_mrt[1] || r->rt_mrt[2]) return count;
+        if(!r->is_vp || r->is_clear || r->rt_off || r->rt_mrt[0] || r->rt_mrt[1] || r->rt_mrt[2]){
+            d2_hud_boundary_reason="unsupported-scene-draw";return count;}
     }
     u32 start=count;
     while(start && d2_hud_record_candidate(&s_d3d.draws[start-1],(u32)s_d3d.vp_parity)) start--;
-    if(!start || start==count) return count;
+    if(!start || start==count){d2_hud_boundary_reason="no-final-hud-block";return count;}
     int scene=0;
     for(u32 d=0;d<start;d++) {
-        if(d2_hud_record_candidate(&s_d3d.draws[d],(u32)s_d3d.vp_parity)) return count;
+        if(d2_hud_record_candidate(&s_d3d.draws[d],(u32)s_d3d.vp_parity)){
+            d2_hud_boundary_reason="interleaved-hud";return count;}
         if(s_d3d.draws[d].d2_capture_vs_hash==0x99362655u) scene=1;
     }
+    if(!scene)d2_hud_boundary_reason="world-shader-not-recognized";
     return scene?start:count;
 }
 
@@ -80,12 +88,15 @@ static int d2_hud_replay(u32 start,u32 count,unsigned pass)
     return d2_hud_end();
 }
 
-static int d2_posthud_supported(u32 start,u32 count)
+static int d2_posthud_supported(u32 start,u32 count,const char** reason)
 {
-    if(start>=count)return 0;
+    if(start>=count){*reason=d2_hud_boundary_reason;return 0;}
     /* Stencil-dependent HUD requires a separate stencil reconstruction path. */
     for(u32 d=start;d<count;d++)if(s_d3d.draws[d].d2_zs.stencil ||
-        s_d3d.draws[d].d2_zs.front || s_d3d.draws[d].d2_zs.back)return 0;
+        s_d3d.draws[d].d2_zs.front || s_d3d.draws[d].d2_zs.back){
+        *reason=s_d3d.draws[d].d2_zs.stencil?"hud-stencil-enabled":"hud-stencil-state";
+        return 0;
+    }
     return 1;
 }
 
@@ -147,7 +158,7 @@ static void d2_hud_dump(u32 fi,u32 count,u32 start,u32 index,int snapshotted)
     }
 }
 
-static void d2_capture_output(u32 frame,u32 count,u32 index,int post)
+static void d2_capture_output(u32 frame,u32 count,u32 index,int post,const char* reason)
 {
     const char* base=d2_capture_directory();char dir[300],path[512];
     snprintf(dir,sizeof(dir),"%s/frame_%02u",base?base:"rsxcap",index);
@@ -157,6 +168,7 @@ static void d2_capture_output(u32 frame,u32 count,u32 index,int post)
     cap_readback_write(output,d2_graphics_output_width(),d2_graphics_output_height(),DXGI_FORMAT_R8G8B8A8_UNORM,
         D3D12_RESOURCE_STATE_PRESENT,frame,path);
     const char* upscaler=getenv("D2_UPSCALER");
+    const char* selected_upscaler=upscaler && strcmp(upscaler,"fsr1")==0?"fsr1":"native";
     int native_comparison=post && (!upscaler || strcmp(upscaler,"native")==0) &&
         s_d3d.width==d2_graphics_output_width() && s_d3d.height==d2_graphics_output_height();
     uint64_t rgb=0,alpha=0;uint32_t maximum=0;
@@ -165,12 +177,14 @@ static void d2_capture_output(u32 frame,u32 count,u32 index,int post)
     if(file){
         fprintf(file,"{\"schema\":1,\"hud_after_upscale\":%s,\"render_width\":%u,\"render_height\":%u,"
             "\"output_width\":%u,\"output_height\":%u,\"native_comparison_available\":%s,"
+            "\"hud_after_upscale_requested\":%s,\"fallback_reason\":\"%s\",\"upscaler\":\"%s\","
             "\"status\":\"%s\",\"different_rgb_pixels\":%llu,\"different_alpha_pixels\":%llu,\"maximum_rgb_error\":%u}\n",
             post?"true":"false",s_d3d.width,s_d3d.height,d2_graphics_output_width(),d2_graphics_output_height(),
-            compared?"true":"false",!post?"fallback":!native_comparison?"scaled-output":!compared?"comparison-failed":rgb||alpha?"mismatch":"exact-match",
+            compared?"true":"false",d2_posthud_enabled()?"true":"false",post?"none":reason,selected_upscaler,
+            !post?"fallback":!native_comparison?"scaled-output":!compared?"comparison-failed":rgb||alpha?"mismatch":"exact-match",
             (unsigned long long)rgb,(unsigned long long)alpha,maximum);fclose(file);
     }
-    fprintf(stderr,"[D2POSTHUD] capture mode=%s native-compare=%d RGB=%llu alpha=%llu max=%u\n",post?"separate":"fallback",compared,
+    fprintf(stderr,"[D2POSTHUD] capture mode=%s reason=%s upscaler=%s native-compare=%d RGB=%llu alpha=%llu max=%u\n",post?"separate":"fallback",post?"none":reason,selected_upscaler,compared,
         (unsigned long long)rgb,(unsigned long long)alpha,maximum);
     d2_capture_finish(dir,s_d3d.frame_count,count);
 }
