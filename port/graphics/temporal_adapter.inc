@@ -30,6 +30,14 @@ static float* d2_scene_depth_data;
 static int d2_scene_depth_available,d2_scene_depth_result;
 static u64 d2_scene_depth_frame;
 static char d2_scene_depth_frame_text[32]="null";
+typedef struct {unsigned char* mask;float* depth;u64 frame;u32 draw;int available;} D2AlphaSnapshot;
+static D2AlphaSnapshot d2_alpha_snapshots[D2_TEMP_SAMPLES];
+static void d2_alpha_clear_snapshots(void){
+    for(unsigned i=0;i<D2_TEMP_SAMPLES;i++){
+        free(d2_alpha_snapshots[i].mask);free(d2_alpha_snapshots[i].depth);
+    }
+    memset(d2_alpha_snapshots,0,sizeof(d2_alpha_snapshots));
+}
 static void d2_alpha_clear_pipelines(void);
 static int d2_temporal_enabled(void){
     static int enabled=-1;
@@ -47,7 +55,7 @@ static int d2_temporal_request(u32* index,HWND window){
     snprintf(d2_scene_depth_frame_text,sizeof(d2_scene_depth_frame_text),"null");
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
     fprintf(stderr,"[D2TEMP] armed capture=%u; rotate camera within 10 seconds\n",*index);
-    d2_alpha_clear_pipelines();
+    d2_alpha_clear_pipelines();d2_alpha_clear_snapshots();
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
     return 0; /* Observe until a stable scene sample changes transform or timeout. */
 }
@@ -232,10 +240,11 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
     for(unsigned i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];if(sample->shader!=0x99362655u)continue;
         const char* reason=d2_alpha_unsupported(sample);int result=0,image_written=0;unsigned long long survivors=0;
-        unsigned char* mask=NULL;
+        unsigned char* mask=NULL;float* original_depth=NULL;
         if(!reason){
             mask=size<=8388608?(unsigned char*)calloc(size,1):NULL;
-            if(!mask){reason="allocation-failed";result=(int)E_OUTOFMEMORY;}
+            original_depth=size<=8388608?(float*)calloc(size,sizeof(float)):NULL;
+            if(!mask || !original_depth){reason="allocation-failed";result=(int)E_OUTOFMEMORY;}
             else{
                 D2AlphaBinding binding={&s_d3d.draws[sample->draw],sample->draw,(u32)(s_d3d.vp_parity^1),d2_alpha_pipelines[sample->draw]};
                 void* keep[256];unsigned n=0;
@@ -243,7 +252,7 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
                 keep[n++]=s_d3d.vp_vb;keep[n++]=s_d3d.vp_cb;keep[n++]=s_d3d.vp_fpcb;
                 for(unsigned t=0;t<VP_TEX_SLOTS;t++)if(s_d3d.vp_tex[t].res)keep[n++]=s_d3d.vp_tex[t].res;
                 if(s_d3d.tex_resource)keep[n++]=s_d3d.tex_resource;
-                result=d2_alpha_replay(s_d3d.device,s_d3d.cmd_queue,s_d3d.width,s_d3d.height,d2_alpha_bind,&binding,keep,n,mask);
+                result=d2_alpha_replay_depth(s_d3d.device,s_d3d.cmd_queue,s_d3d.width,s_d3d.height,d2_alpha_bind,&binding,keep,n,mask,original_depth);
                 if(result)reason="gpu-error";
                 else{
                     for(size_t p=0;p<size;p++)survivors+=mask[p]!=0;
@@ -263,7 +272,12 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
             shown++?",":"",sample->draw,reason?reason:"replayed",result,reason?"false":"true",reason?"false":"true",
             survivors,image_written?"true":"false");
         if(image_written)fprintf(json,"\"alpha-draw-%u-coverage.bmp\"",sample->draw);else fprintf(json,"null");
-        fprintf(json,"}");free(mask);
+        fprintf(json,"}");
+        if(!reason){
+            d2_alpha_snapshots[i].mask=mask;d2_alpha_snapshots[i].depth=original_depth;
+            d2_alpha_snapshots[i].frame=current->frame;d2_alpha_snapshots[i].draw=sample->draw;
+            d2_alpha_snapshots[i].available=1;
+        }else{free(mask);free(original_depth);}
     }
     fprintf(json,"]}\n");fclose(json);d2_alpha_clear_pipelines();
 }
@@ -464,12 +478,14 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
 }
 
 
+#include "motion_draw_adapter.inc"
+
 static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
     D2MotionVertex* vertices=(D2MotionVertex*)calloc(D2_TEMP_SAMPLES*D2_GEOMETRY_LIMIT,sizeof(D2MotionVertex));
     D2MotionDraw draws[D2_TEMP_SAMPLES]={0};unsigned count=0,total_vertices=0,rejected=0,unreplayed_draws=0;
     const char* reasons[D2_TEMP_SAMPLES]={"not-world","not-world","not-world","not-world"};
     unsigned geometry_matches[D2_TEMP_SAMPLES]={0},frustum_triangles[D2_TEMP_SAMPLES]={0};
-    float ndc_bounds[D2_TEMP_SAMPLES][6]={{0}};
+    float ndc_bounds[D2_TEMP_SAMPLES][6]={{0}};unsigned draw_samples[D2_TEMP_SAMPLES]={0};
     if(vertices && current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];
         if(sample->shader!=0x99362655u)continue;
@@ -503,12 +519,13 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
         reasons[i]=(sample->geometry_reject & (64u|128u))?"accepted-geometry-only-alpha-blend-unreplayed":"accepted";
         if(sample->geometry_reject & (64u|128u))unreplayed_draws++;
         draws[count].vertices=dst;draws[count].count=sample->geometry_count;draws[count].cull=sample->cull;
-        total_vertices+=sample->geometry_count;count++;
+        draw_samples[count]=i;total_vertices+=sample->geometry_count;count++;
     }
     size_t pixels_count=(size_t)s_d3d.width*s_d3d.height;
     D2MotionPixel* pixels=pixels_count<=8388608?(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel)):NULL;
     int result=!vertices || !pixels?(int)E_OUTOFMEMORY:count?
         d2_motion_raster_gpu(s_d3d.device,s_d3d.cmd_queue,draws,count,s_d3d.width,s_d3d.height,pixels):0;
+    if(vertices && pixels && count)d2_motion_draws_dump(index,current,draws,draw_samples,count,pixels,result);
     unsigned long long covered=0,moving=0,invalid=0;double max_x=0,max_y=0;int images=0;
     if(result==0 && count)for(size_t p=0;p<pixels_count;p++){
         if(pixels[p].coverage<.5f)continue;
@@ -680,7 +697,7 @@ static void d2_temporal_dump(u32 index){
     const char* base=d2_capture_directory();char path[512];
     snprintf(d2_temporal_directory,sizeof(d2_temporal_directory),"%s/frame_%02u",base?base:"rsxcap",index);
     snprintf(path,sizeof(path),"%s/temporal-probe.json",d2_temporal_directory);
-    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;d2_alpha_clear_pipelines();if(!file)return;
+    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;d2_alpha_clear_pipelines();if(!file){d2_alpha_clear_snapshots();return;}
     LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);
     double milliseconds=previous->valid && current->valid && frequency.QuadPart>0
         ?(double)(current->time.QuadPart-previous->time.QuadPart)*1000.0/(double)frequency.QuadPart:0;
@@ -691,6 +708,7 @@ static void d2_temporal_dump(u32 index){
     d2_projection_dump(index,current,previous);
     d2_motion_dump(index,current,previous);
     d2_raster_dump(index,current,previous);
+    d2_alpha_clear_snapshots();
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);
 }

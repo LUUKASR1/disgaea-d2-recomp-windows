@@ -34,7 +34,7 @@ int main(){try{
     require(pixels[0].coverage==0 && pixels[0].delta_x==0 && pixels[0].delta_y==0,"Outside coverage stays invalid zero");
     for(const auto& p:pixels)if(p.coverage>.5f)require(std::isfinite(p.delta_x)&&std::isfinite(p.delta_y),"Covered pixel finite");
     draws[0]={far_vertices,3,0};draws[1]={near_vertices,3,0};raster(2);
-    require(std::abs(pixels[32*64+32].delta_x+8)<1e-4f,"Depth result independent of candidate order");
+    require(pixels[32*64+32].coverage==2 && std::abs(pixels[32*64+32].delta_x+8)<1e-4f,"Depth result retains winning draw owner after candidate reordering");
     for(auto& v:near_vertices)std::memcpy(v.previous_clip,v.current_clip,16);
     draws[0]={near_vertices,3,0};raster(1);
     for(const auto& p:pixels)if(p.coverage>.5f)require(std::abs(p.delta_x)<1e-4f && std::abs(p.delta_y)<1e-4f,"Stationary raster zero");

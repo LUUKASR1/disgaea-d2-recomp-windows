@@ -13,6 +13,11 @@ typedef void (*D2AlphaRecord)(void* command_list,void* user);
 int d2_alpha_replay(void* device,void* queue,uint32_t width,uint32_t height,
     D2AlphaRecord record,void* user,void* const* borrowed,uint32_t borrowed_count,
     unsigned char* mask);
+/* Optional raw D24 depth readback; clear pixels remain 1. Same replay, no
+   additional submission. Useful for comparing original VS depth to projection. */
+int d2_alpha_replay_depth(void* device,void* queue,uint32_t width,uint32_t height,
+    D2AlphaRecord record,void* user,void* const* borrowed,uint32_t borrowed_count,
+    unsigned char* mask,float* depth_output);
 #ifdef __cplusplus
 }
 #endif

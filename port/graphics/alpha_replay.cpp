@@ -15,11 +15,12 @@ struct Context{
     ~Context(){for(auto p:borrowed)p->Release();if(event)CloseHandle(event);}
 };
 }
-extern "C" int d2_alpha_replay(void* dp,void* qp,uint32_t width,uint32_t height,
-    D2AlphaRecord record,void* user,void* const* borrowed,uint32_t borrowed_count,unsigned char* mask){
+extern "C" int d2_alpha_replay_depth(void* dp,void* qp,uint32_t width,uint32_t height,
+    D2AlphaRecord record,void* user,void* const* borrowed,uint32_t borrowed_count,unsigned char* mask,float* depth_output){
     if(!dp||!qp||!record||!mask||!width||!height||width>4096||height>4096||
        (uint64_t)width*height>8388608||borrowed_count>256||(!borrowed&&borrowed_count))return (int)E_INVALIDARG;
     std::memset(mask,0,(size_t)width*height);
+    if(depth_output)for(size_t i=0;i<(size_t)width*height;i++)depth_output[i]=1;
     auto device=static_cast<ID3D12Device*>(dp);auto queue=static_cast<ID3D12CommandQueue*>(qp);
     auto c=std::make_unique<Context>();bool submitted=false,completed=false;
     try{
@@ -60,8 +61,14 @@ extern "C" int d2_alpha_replay(void* dp,void* qp,uint32_t width,uint32_t height,
         completed=true;check(device->GetDeviceRemovedReason());
         std::vector<float> depth((size_t)width*height);
         check((HRESULT)d2_scene_depth_read(dp,qp,c->depth.p,width,height,depth.data()));
+        if(depth_output)std::memcpy(depth_output,depth.data(),depth.size()*sizeof(float));
         for(size_t i=0;i<depth.size();i++)mask[i]=isfinite(depth[i])&&depth[i]>=0&&depth[i]<1?255:0;
         return 0;
     }catch(const Failure& f){if(submitted&&!completed)c.release();return (int)f.hr;}
     catch(...){if(submitted&&!completed)c.release();return (int)E_FAIL;}
+}
+
+extern "C" int d2_alpha_replay(void* device,void* queue,uint32_t width,uint32_t height,
+    D2AlphaRecord record,void* user,void* const* borrowed,uint32_t borrowed_count,unsigned char* mask){
+    return d2_alpha_replay_depth(device,queue,width,height,record,user,borrowed,borrowed_count,mask,nullptr);
 }

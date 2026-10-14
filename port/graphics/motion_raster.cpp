@@ -17,7 +17,7 @@ struct Context{
     HANDLE event=nullptr;~Context(){if(event)CloseHandle(event);}
 };
 const char shader[]=R"(
-cbuffer Size:register(b0){float2 dimensions;}
+cbuffer Size:register(b0){float2 dimensions;uint draw_owner;}
 struct Vertex {float4 current:POSITION;float4 previous:TEXCOORD0;};
 struct Varying {float4 position:SV_Position;float4 previous:TEXCOORD0;float4 current:TEXCOORD1;};
 Varying vs(Vertex v){Varying o;o.position=v.current;o.previous=v.previous;o.current=v.current;return o;}
@@ -27,7 +27,7 @@ float4 ps(Varying v):SV_Target{
     float2 current_uv=float2(v.current.x/v.current.w*.5+.5,.5-v.current.y/v.current.w*.5);
     float2 delta=(previous_uv-current_uv)*dimensions;
     if(!all(isfinite(delta)))discard;
-    return float4(delta,1,v.position.z);
+    return float4(delta,(float)draw_owner,v.position.z);
 })";
 }
 extern "C" int d2_motion_raster_gpu(void* dp,void* qp,const D2MotionDraw* draws,uint32_t count,
@@ -45,7 +45,7 @@ extern "C" int d2_motion_raster_gpu(void* dp,void* qp,const D2MotionDraw* draws,
     try{
         check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_ID3D12CommandAllocator,(void**)c->allocator.put()));
         check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,c->allocator.p,nullptr,IID_ID3D12GraphicsCommandList,(void**)c->list.put()));
-        D3D12_ROOT_PARAMETER parameter{};parameter.ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;parameter.Constants.Num32BitValues=2;
+        D3D12_ROOT_PARAMETER parameter{};parameter.ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;parameter.Constants.Num32BitValues=3;
         D3D12_ROOT_SIGNATURE_DESC rd{};rd.NumParameters=1;rd.pParameters=&parameter;rd.Flags=D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         Ref<ID3DBlob> sig,error,vs,ps;
         check(D3D12SerializeRootSignature(&rd,D3D_ROOT_SIGNATURE_VERSION_1,sig.put(),error.put()));
@@ -126,6 +126,7 @@ extern "C" int d2_motion_raster_gpu(void* dp,void* qp,const D2MotionDraw* draws,
         D3D12_VERTEX_BUFFER_VIEW vb{c->upload->GetGPUVirtualAddress(),(UINT)(vertices*sizeof(D2MotionVertex)),sizeof(D2MotionVertex)};
         c->list->IASetVertexBuffers(0,1,&vb);
         unsigned offset=0;for(unsigned i=0;i<count;i++){
+            unsigned owner=i+1;c->list->SetGraphicsRoot32BitConstant(0,owner,2);
             c->list->SetPipelineState(c->pipelines[draws[i].cull].p);c->list->DrawInstanced(draws[i].count,1,offset,0);offset+=draws[i].count;
         }
         D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;

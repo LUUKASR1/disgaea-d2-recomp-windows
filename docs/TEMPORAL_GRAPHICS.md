@@ -483,3 +483,45 @@ draw. The shader writes black for every survivor, so color-based coverage would
 fail the test. Windows CI also compiles the adapter against the unchanged,
 audited SDK. For the game test, rotate the camera after F8 and inspect the new
 JSON and per-draw images alongside `selected-reference.bmp`.
+
+### 0.1.34 — per-draw coverage and three-way depth comparison
+
+Game capture 4152 in 0.1.33 submitted draws 39/52. Draw 39's original shader
+mask was empty; draw 52 retained 56,304 pixels and matched the central platform's
+outline. The combined geometry also covered 56,304 pixels but only 50 were
+coincident with final scene depth. Matching counts alone cannot establish
+pixel equality or identify the cause of the empty draw.
+
+This preview writes `motion-draws.json` for the frozen frame. Each accepted
+static geometry pair is rasterized separately, with its own coverage image and
+scene-depth classification. The combined raster's coverage channel now holds
+its winning draw index + 1 (zero means uncovered). This tag is scoped to one
+capture/call, never persistent object identity; the existing coverage images
+remain binary, and depth-filtered diagnostic coverage remains normalized to 1.
+
+The selected-frame original shader replay retains both its mask and D24 depth
+until the raster report is written. Exact pixel overlap, geometry-only pixels
+and original-shader-only pixels are counted. On overlapping pixels, projected
+geometry depth is compared to the original shader's depth; each depth is also
+compared independently to final scene depth. This separates projection errors
+from later depth writes without declaring either the cause in advance.
+
+New files per draw N:
+- `geometry-draw-N-coverage.bmp`: binary isolated geometry coverage.
+- `geometry-draw-N-depth-classification.bmp`: green coincident, red deeper,
+  blue nearer than final scene depth.
+- `geometry-alpha-draw-N-difference.bmp`: white overlap, red geometry only,
+  green original shader only. Red is a coverage difference, not proof of alpha
+  discard. Original shader comparison is explicitly unavailable on failure or
+  when the frozen frame/draw identities do not match.
+
+A zero-coverage draw is also rasterized without culling to distinguish a face
+orientation issue from a sample producing no pixels even without culling.
+These diagnostic replays only occur during F8 captures. They do not change
+normal rendering or feed DLSS/FG. Full visibility, blend contribution, dynamic
+object identity and complete scene motion remain pending. The audited SDK patch
+and lock remain unchanged.
+
+GPU validation checks winning draw ownership after overlapping draw reordering,
+original shader D24 depth versus its discard mask, and clear depth on an empty
+draw. The same Windows CI compiles the renderer adapter and packages the preview.

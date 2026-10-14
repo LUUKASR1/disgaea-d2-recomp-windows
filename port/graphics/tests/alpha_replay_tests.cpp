@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <cstring>
+#include <cmath>
 template<class T>struct Ref{T* p=nullptr;~Ref(){if(p)p->Release();}T** put(){return &p;}T* operator->(){return p;}};
 void check(HRESULT h){if(FAILED(h))throw std::runtime_error("D3D12 setup failed");}
 void require(bool b,const char* s){if(!b)throw std::runtime_error(s);}
@@ -61,11 +62,12 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_ID3D12Resource,(void**)vb.put()));
     float vertices[6][4]={{-1,-1,.4f,1},{-1,1,.4f,1},{1,1,.4f,1},{-1,-1,.4f,1},{1,1,.4f,1},{1,-1,.4f,1}};
     void* mapped=nullptr;D3D12_RANGE none{0,0};check(vb->Map(0,&none,&mapped));std::memcpy(mapped,vertices,sizeof(vertices));vb->Unmap(0,nullptr);
-    Binding binding{pso.p,root.p,vb.p};void* borrowed[]={pso.p,root.p,vb.p};std::vector<unsigned char> mask(32*16);
-    auto replay=[&]{require(d2_alpha_replay(device.p,queue.p,32,16,record,&binding,borrowed,3,mask.data())==0,"Alpha replay succeeds");};
+    Binding binding{pso.p,root.p,vb.p};void* borrowed[]={pso.p,root.p,vb.p};std::vector<unsigned char> mask(32*16);std::vector<float> depth(32*16);
+    auto replay=[&]{require(d2_alpha_replay_depth(device.p,queue.p,32,16,record,&binding,borrowed,3,mask.data(),depth.data())==0,"Alpha replay succeeds");};
     replay();for(unsigned y=0;y<16;y++)for(unsigned x=0;x<32;x++)require((mask[y*32+x]!=0)==((x>=8&&x<16)||x>=24),"Discard leaves only surviving quarters despite all-black shader color");
+    for(size_t i=0;i<mask.size();i++)require(mask[i]?std::abs(depth[i]-.4f)<1e-6f:depth[i]==1,"Original shader D24 depth agrees with survivor mask; discarded pixels retain clear depth");
     binding.alpha=false;replay();for(auto p:mask)require(p==255,"Disabling alpha test retains full quad");
-    binding.draw=false;replay();for(auto p:mask)require(p==0,"No draw does not fabricate coverage");
+    binding.draw=false;replay();for(size_t i=0;i<mask.size();i++)require(mask[i]==0 && depth[i]==1,"No draw does not fabricate coverage or depth");
     require(d2_alpha_replay(device.p,queue.p,0,16,record,&binding,borrowed,3,mask.data())<0,"Invalid size rejected");
     puts("PASS original shader alpha/discard depth mask: zero color, uniform toggle, empty draw");return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
