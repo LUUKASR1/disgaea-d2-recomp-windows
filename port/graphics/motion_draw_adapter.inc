@@ -1,8 +1,10 @@
 /* Per-draw diagnostics only. Owner indices exist only inside one raster call. */
 static void d2_motion_draws_dump(u32 index,const D2TemporalFrame* current,const D2MotionDraw* draws,
-    const unsigned* sample_indices,unsigned count,const D2MotionPixel* combined,int combined_result){
+    const unsigned* sample_indices,unsigned count,const D2MotionPixel* combined,int combined_result,D2MotionLayer* layers,int* layers_complete){
     char path[600];snprintf(path,sizeof(path),"%s/motion-draws.json",d2_temporal_directory);
     FILE* json=d2_capture_fopen(path,"wb");if(!json)return;
+    const float* pre_hud=d2_depth_timeline_pre_hud(current);
+    *layers_complete=layers && pre_hud && count && combined_result==0;
     const size_t size=(size_t)s_d3d.width*s_d3d.height;const float epsilon=8.0f/16777215.0f;
     const int scene_available=d2_scene_depth_available && d2_scene_depth_data && d2_scene_depth_frame==current->frame;
     fprintf(json,"{\"schema\":1,\"purpose\":\"per-draw-geometry-alpha-depth-comparison\","
@@ -21,9 +23,15 @@ static void d2_motion_draws_dump(u32 index,const D2TemporalFrame* current,const 
         const unsigned slot=sample_indices[d];const D2TemporalSample* sample=&current->samples[slot];
         const D2AlphaSnapshot* alpha=&d2_alpha_snapshots[slot];
         const int alpha_available=alpha->available && alpha->mask && alpha->depth &&
-            alpha->frame==current->frame && alpha->draw==sample->draw;
+            alpha->frame==current->frame && alpha->draw==sample->draw && alpha->width==s_d3d.width && alpha->height==s_d3d.height;
         int result=isolated?d2_motion_raster_gpu(s_d3d.device,s_d3d.cmd_queue,draws+d,1,
             s_d3d.width,s_d3d.height,isolated):(int)E_OUTOFMEMORY;
+        if(result || !alpha_available)*layers_complete=0;
+        if(layers && pre_hud && !result && alpha_available){
+            D2MotionMask own={alpha->mask,alpha->depth,size};
+            for(size_t p=0;p<size;p++)if(isolated[p].coverage>.5f)
+                d2_motion_layer_add(&layers[p],&isolated[p],&own,p,pre_hud[p],epsilon,sample->draw);
+        }
         unsigned long long geometry=0,owners=0,original=0,overlap=0,geometry_only=0,original_only=0;
         unsigned long long geometry_scene[4]={0},original_scene[4]={0},projected_original[4]={0};
         double maximum_error=0,original_scene_max_error=0;

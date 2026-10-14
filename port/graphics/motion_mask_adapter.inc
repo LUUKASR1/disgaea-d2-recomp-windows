@@ -1,8 +1,9 @@
 #include "motion_gap_adapter.inc"
+#include "motion_layers_adapter.inc"
 /* Original shader masks are selected by exact frozen draw/frame/size, and then
    by the winning raster draw owner at each pixel. Never union candidate masks. */
 static void d2_alpha_depth_dump(u32 index,const D2TemporalFrame* current,const D2MotionPixel* pixels,
-    const D2MotionPixel* depth_filtered,const unsigned* draw_samples,unsigned count,size_t size,float epsilon){
+    const D2MotionPixel* depth_filtered,const unsigned* draw_samples,unsigned count,size_t size,float epsilon,const D2MotionLayer* layers,int layers_complete){
     D2MotionMask masks[D2_TEMP_SAMPLES]={0};unsigned matched=0,world_captured=0;
     for(unsigned i=0;i<current->count;i++)world_captured+=current->samples[i].shader==0x99362655u;
     for(unsigned d=0;d<count;d++){
@@ -129,5 +130,6 @@ static void d2_alpha_depth_dump(u32 index,const D2TemporalFrame* current,const D
         fprintf(json,"]}\n");fclose(json);
     }
     d2_motion_gap_dump(index,current,pixels,depth_filtered,masks,draw_samples,count,size,epsilon);
+    d2_motion_layers_dump(index,current,layers,layers_complete,pixels,output,masks,count,size);
     free(output);
 }

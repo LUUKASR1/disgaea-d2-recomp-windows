@@ -724,3 +724,34 @@ owned by blend-enabled draws; blend contribution remains unvalidated even where
 alpha and depth agree. This diagnostic adds no new motion acceptance and changes
 neither sample selection nor normal rendering. It runs only during explicit
 capture. The new classification test joins the previous 17 graphics suites.
+
+
+### 0.1.41 — conservative recovery across selected static draws
+
+Capture 1125 retained 83.00%, with 10.11% without a selected candidate and 6.89%
+rejected by pre-HUD depth. Battle capture 4850 retained 84.89%, with 12.00% depth
+rejection and 3.11% absent owning-shader coverage. Both loaded the history cache
+and had no unavailable masks, original depth mismatch or invalid motion evidence.
+All retained candidates had blending enabled; blend contribution is still pending.
+
+The existing per-draw GPU raster diagnostics now accumulate candidates that pass
+their own original shader mask/depth and the same frozen pre-HUD scene depth.
+The experiment can fill a baseline hole only when the original combined owner
+has a matched mask with zero surviving shader coverage there. Missing masks,
+no original owner, surviving occluded front geometry and invalid evidence cannot
+permit recovery. Multiple surviving selected draws must agree within 0.25 render
+pixels against a fixed vector anchor; conflicts remain unknown. All selected
+layer rasters/masks and pre-HUD depth must be available or recovery fails closed.
+No additional GPU replay is needed; one bounded per-pixel accumulator is added
+and freed after the explicit capture.
+
+`motion-layer-recovery-check.json` reports eligibility, recovery, disagreement,
+baseline and combined candidate coverage. In `motion-layer-recovery-coverage.bmp`,
+green is the unchanged baseline and cyan is recovered coverage.
+`motion-layer-recovery-vectors.bmp` shows the diagnostic recomposed vectors. The original
+field/feedback is unchanged. This does not resolve alpha layers inside a single
+draw, dynamic object motion or blend contribution and is not applied to the game
+or DLSS. This is not a union of unvalidated masks: every admitted alternative
+passes its own shader/depth and scene depth tests. The new suite tests rejected
+front recovery, stationary vectors, occluded rear rejection, unavailable masks,
+conflicting motion and baseline preservation, joining the prior 18 graphics suites.

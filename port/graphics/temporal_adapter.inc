@@ -8,6 +8,7 @@
 #include "scene_depth.h"
 #include "motion_mask.h"
 #include "motion_gap.h"
+#include "motion_layers.h"
 #include "static_pair.h"
 #include "scenery_survey.h"
 #include "scenery_feedback.h"
@@ -571,7 +572,9 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
     int result=!vertices || !pixels?(int)E_OUTOFMEMORY:count?
         d2_motion_raster_gpu(s_d3d.device,s_d3d.cmd_queue,draws,count,s_d3d.width,s_d3d.height,pixels):0;
     d2_depth_timeline_dump(index,current);
-    if(vertices && pixels && count)d2_motion_draws_dump(index,current,draws,draw_samples,count,pixels,result);
+    D2MotionLayer* layers=pixels_count<=8388608?(D2MotionLayer*)calloc(pixels_count,sizeof(D2MotionLayer)):NULL;
+    int layers_complete=0;
+    if(vertices && pixels && count)d2_motion_draws_dump(index,current,draws,draw_samples,count,pixels,result,layers,&layers_complete);
     unsigned long long covered=0,moving=0,invalid=0;double max_x=0,max_y=0;int images=0;
     if(result==0 && count)for(size_t p=0;p<pixels_count;p++){
         if(pixels[p].coverage<.5f)continue;
@@ -618,7 +621,7 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             if(depth_compared && d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon)!=1)kept_but_final_rejected++;
         }else if(pixels[p].coverage>.5f)filtered_rejected++;
     }
-    d2_alpha_depth_dump(index,current,pixels,filtered,draw_samples,count,pixels_count,depth_epsilon);
+    d2_alpha_depth_dump(index,current,pixels,filtered,draw_samples,count,pixels_count,depth_epsilon,layers,layers_complete);
     int depth_image=0,pre_hud_image=0;char path[600];
     if(filtered){
         u8* image=(u8*)calloc(pixels_count,4);
@@ -767,7 +770,7 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
         fprintf(file,"]}\n");fclose(file);
     }
     fprintf(stderr,"[D2MOTION] candidate raster draws=%u covered=%llu moving=%llu; full scene visibility pending\n",count,covered,moving);
-    free(filtered);free(pixels);free(vertices);
+    free(layers);free(filtered);free(pixels);free(vertices);
     free(d2_scene_depth_data);d2_scene_depth_data=NULL;
 }
 
