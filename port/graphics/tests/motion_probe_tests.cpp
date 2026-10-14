@@ -33,7 +33,8 @@ int main(){try{
     input[60].current_rows[15]=0;input[61].current_rows[15]=-1;
     input[62].previous_rows[0]=std::numeric_limits<float>::quiet_NaN();
     input[63].dimensions[0]=0;
-    require(d2_motion_probe_gpu(d.p,q.p,input.data(),(uint32_t)input.size(),output.data())==0,"Compute batch succeeds");
+    int result=d2_motion_probe_gpu(d.p,q.p,input.data(),(uint32_t)input.size(),output.data());
+    if(result)throw std::runtime_error("Compute HRESULT="+std::to_string((unsigned)result));
     for(unsigned i=0;i<input.size();i++){
         const auto& v=input[i];const auto& o=output[i];float previous[4],current[4],delta[2];
         bool valid=d2_project_world(v.previous_rows,v.previous_scale,v.previous_offset,v.previous_bias[2],v.point,previous)&&

@@ -3,6 +3,7 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <cstring>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 namespace {
@@ -17,15 +18,15 @@ struct Context {
 };
 const char shader[]=R"(
 struct Input {float4 previous_rows[4];float4 previous_scale;float4 previous_offset;float4 previous_bias;
-float4 current_rows[4];float4 current_scale;float4 current_offset;float4 current_bias;float4 point;float4 dimensions;};
+float4 current_rows[4];float4 current_scale;float4 current_offset;float4 current_bias;float4 position;float4 dimensions;};
 struct Output {float4 previous_clip;float4 current_clip;float4 delta_valid;};
 StructuredBuffer<Input> inputs:register(t0);RWStructuredBuffer<Output> outputs:register(u0);
 cbuffer Count:register(b0){uint count;}
-bool project(float4 rows[4],float4 scale,float4 offset,float bias,float4 point,out float4 clip){
+bool project(float4 rows[4],float4 scale,float4 offset,float bias,float4 position,out float4 clip){
     float4 q;
     [unroll]for(uint i=0;i<4;i++){
-        precise float sum=rows[i].x*point.x+rows[i].y*point.y;
-        sum+=rows[i].z*point.z;sum+=rows[i].w*point.w;q[i]=sum;
+        precise float sum=rows[i].x*position.x+rows[i].y*position.y;
+        sum+=rows[i].z*position.z;sum+=rows[i].w*position.w;q[i]=sum;
     }
     clip=0;
     if(!all(isfinite(q)) || !isfinite(bias) || q.w<=1e-8 || q.w+bias<=1e-8)return false;
@@ -37,8 +38,8 @@ bool project(float4 rows[4],float4 scale,float4 offset,float bias,float4 point,o
 [numthreads(64,1,1)]void main(uint3 tid:SV_DispatchThreadID){
     if(tid.x>=count)return;
     Input i=inputs[tid.x];Output o;o.previous_clip=0;o.current_clip=0;o.delta_valid=0;
-    bool before=project(i.previous_rows,i.previous_scale,i.previous_offset,i.previous_bias.z,i.point,o.previous_clip);
-    bool now=project(i.current_rows,i.current_scale,i.current_offset,i.current_bias.z,i.point,o.current_clip);
+    bool before=project(i.previous_rows,i.previous_scale,i.previous_offset,i.previous_bias.z,i.position,o.previous_clip);
+    bool now=project(i.current_rows,i.current_scale,i.current_offset,i.current_bias.z,i.position,o.current_clip);
     if(before && now && all(isfinite(i.dimensions.xy)) && all(i.dimensions.xy>0)){
         float2 delta=float2(o.previous_clip.x/o.previous_clip.w-o.current_clip.x/o.current_clip.w,
             o.current_clip.y/o.current_clip.w-o.previous_clip.y/o.previous_clip.w)*.5*i.dimensions.xy;
@@ -66,8 +67,11 @@ extern "C" int d2_motion_probe_gpu(void* device_ptr,void* queue_ptr,const D2Moti
         Ref<ID3DBlob> sig,errors,code;
         check(D3D12SerializeRootSignature(&rd,D3D_ROOT_SIGNATURE_VERSION_1,sig.put(),errors.put()));
         check(device->CreateRootSignature(0,sig->GetBufferPointer(),sig->GetBufferSize(),IID_ID3D12RootSignature,(void**)c->root.put()));
-        check(D3DCompile(shader,sizeof(shader)-1,"D2 motion sample diagnostic",nullptr,nullptr,"main","cs_5_0",
-            D3DCOMPILE_ENABLE_STRICTNESS,0,code.put(),errors.put()));
+        HRESULT compiled=D3DCompile(shader,sizeof(shader)-1,"D2 motion sample diagnostic",nullptr,nullptr,"main","cs_5_0",
+            D3DCOMPILE_ENABLE_STRICTNESS,0,code.put(),errors.put());
+        if(FAILED(compiled) && errors.p)std::fprintf(stderr,"[D2MOTION] shader compile: %.*s\n",
+            (int)errors->GetBufferSize(),(const char*)errors->GetBufferPointer());
+        check(compiled);
         D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};pd.pRootSignature=c->root.p;pd.CS={code->GetBufferPointer(),code->GetBufferSize()};
         check(device->CreateComputePipelineState(&pd,IID_ID3D12PipelineState,(void**)c->pipeline.put()));
         auto buffer=[&](Ref<ID3D12Resource>& out,UINT64 bytes,D3D12_HEAP_TYPE type,D3D12_RESOURCE_FLAGS flags,D3D12_RESOURCE_STATES state){
