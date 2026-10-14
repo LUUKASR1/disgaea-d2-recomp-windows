@@ -267,3 +267,26 @@ Teste com 720p interno/saída e upscaling desligado. Habilite capturas, F8,
 gire a câmera em dez segundos e aguarde finalizar. Envie motion-raster-check.json;
 as duas BMPs ajudam a verificar cobertura e direção visual. Desabilite
 capturas para jogar normalmente. Nenhum recurso derivado do jogo é publicado.
+
+## 0.1.27 — prioridade de geometria elegível e motivos de rejeição
+
+O relatório real 0.1.26 rejeitou ambas as amostras antes do raster; zero draws
+não foi falha da GPU. A versão anterior escolhia os primeiros draws do shader
+mesmo quando não eram elegíveis para esse diagnóstico. O motivo exato naquele
+par não está disponível e não deve ser inferido.
+
+A observação agora prioriza até duas amostras com geometria elegível, depois
+completa as demais amostras do diagnóstico de pontos. Todos os filtros continuam
+ativos. Se nenhuma geometria for elegível, conserva amostras rejeitadas para
+explicar o motivo. Não garante encontrar geometria estática ou cobertura.
+
+motion-raster-check.json inclui sample_rejections por draw: motivo, quantidade
+de vértices copiados, número de correspondências completas, estado de blend,
+alpha test, stencil, topologia e viewport. eligibility_mask soma os bits:
+1 shader, 2 entrada ausente/offset inválido, 4 viewport parcial, 8 topologia,
+16 limite de 4096 vértices, 32 intervalo de memória, 64 blend, 128 alpha test,
+256 stencil, 512 override de culling. Zero permite copiar geometria; o pareamento
+completo e a projeção ainda precisam passar. O JSON distingue geometria
+inelegível, correspondência não única/alterada e projeção inválida.
+
+Use o mesmo teste F8 em 720p e envie o novo JSON. DLSS/FG permanecem pendentes.
