@@ -3,11 +3,14 @@
 #include "projection.h"
 #include "auto_probe.h"
 #include "motion_probe.h"
+#include "motion_raster.h"
+#define D2_GEOMETRY_LIMIT 4096
 #define D2_TEMP_SAMPLES 4
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
     int has_vertex;float attributes[64];unsigned char copied[D2_TEMP_ROWS];unsigned copied_rows;
     float constants[D2_TEMP_ROWS*4];
+    unsigned geometry_count,cull;float positions[D2_GEOMETRY_LIMIT][4];
 } D2TemporalSample;
 typedef struct {
     u64 frame;LARGE_INTEGER time;u32 count;int valid;
@@ -46,6 +49,7 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             for(u32 i=0;i<frame->count;i++)if(frame->samples[i].shader==r->d2_capture_vs_hash)same++;
             if(same>=2)continue;
             D2TemporalSample* sample=&frame->samples[frame->count++];
+            sample->geometry_count=0;sample->cull=r->cull;
             sample->draw=d;sample->shader=r->d2_capture_vs_hash;sample->fp=r->fp_addr;
             sample->vertices=r->vertex_count;sample->texture=r->tex[0].raw;sample->cb_slot=r->cb_slot;
             const void* bank=(const char*)s_d3d.vp_cb_mapped+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE;
@@ -62,6 +66,17 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             if(sample->has_vertex){
                 const void* vertex=(const char*)s_d3d.vp_vb_mapped+(u64)parity*MAX_VERTICES*256u+r->vb_byte_offset;
                 memcpy(sample->attributes,vertex,sizeof(sample->attributes));
+                int full_view=r->vp_w<2 || r->vp_h<2 ||
+                    (!r->vp_x && !r->vp_y && r->vp_w==d2_graphics_guest_width() && r->vp_h==d2_graphics_guest_height());
+                if(sample->shader==0x99362655u && full_view && r->topology==RSX_TOPOLOGY_TRIANGLES &&
+                   r->vertex_count%3u==0 && r->vertex_count<=D2_GEOMETRY_LIMIT &&
+                   r->vertex_count<=MAX_VERTICES-r->vb_byte_offset/256u &&
+                   !r->blend && !(r->alpha_ctl>>16) && !r->d2_zs.stencil &&
+                   !getenv("CULL_OFF") && !getenv("CULL_FLIP")){
+                    sample->geometry_count=r->vertex_count;
+                    for(unsigned v=0;v<sample->geometry_count;v++)
+                        memcpy(sample->positions[v],(const char*)vertex+(size_t)v*256u,4*sizeof(float));
+                }
             }
         }
         frame->valid=1;
@@ -240,6 +255,91 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
         count,!count?"no-valid-pairs":result?"gpu-error":agreed?"cpu-gpu-match":"cpu-gpu-mismatch",maximum_error);
 }
 
+
+static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
+    D2MotionVertex* vertices=(D2MotionVertex*)calloc(D2_TEMP_SAMPLES*D2_GEOMETRY_LIMIT,sizeof(D2MotionVertex));
+    D2MotionDraw draws[D2_TEMP_SAMPLES]={0};unsigned count=0,total_vertices=0,rejected=0;
+    if(vertices && current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
+        const D2TemporalSample* sample=&current->samples[i];
+        if(sample->shader!=0x99362655u)continue;
+        if(!sample->geometry_count){rejected++;continue;}
+        const D2TemporalSample* old=NULL;unsigned matches=0;
+        for(u32 j=0;j<previous->count;j++){
+            const D2TemporalSample* p=&previous->samples[j];
+            if(p->shader==sample->shader && p->fp==sample->fp && p->texture==sample->texture &&
+               p->geometry_count==sample->geometry_count && p->cull==sample->cull &&
+               !memcmp(p->positions,sample->positions,sample->geometry_count*4*sizeof(float))){old=p;matches++;}
+        }
+        if(matches!=1){rejected++;continue;}
+        D2MotionVertex* dst=vertices+count*D2_GEOMETRY_LIMIT;int valid=1;
+        for(unsigned v=0;v<sample->geometry_count;v++){
+            if(!d2_project_world(sample->constants+256*4,sample->constants+512*4,sample->constants+513*4,
+                   sample->constants[466*4+2],sample->positions[v],dst[v].current_clip) ||
+               !d2_project_world(old->constants+256*4,old->constants+512*4,old->constants+513*4,
+                   old->constants[466*4+2],sample->positions[v],dst[v].previous_clip)){valid=0;break;}
+        }
+        if(!valid){rejected++;continue;}
+        draws[count].vertices=dst;draws[count].count=sample->geometry_count;draws[count].cull=sample->cull;
+        total_vertices+=sample->geometry_count;count++;
+    }
+    size_t pixels_count=(size_t)s_d3d.width*s_d3d.height;
+    D2MotionPixel* pixels=pixels_count<=8388608?(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel)):NULL;
+    int result=!vertices || !pixels?(int)E_OUTOFMEMORY:count?
+        d2_motion_raster_gpu(s_d3d.device,s_d3d.cmd_queue,draws,count,s_d3d.width,s_d3d.height,pixels):0;
+    unsigned long long covered=0,moving=0,invalid=0;double max_x=0,max_y=0;int images=0;
+    if(result==0 && count)for(size_t p=0;p<pixels_count;p++){
+        if(pixels[p].coverage<.5f)continue;
+        if(!isfinite(pixels[p].delta_x) || !isfinite(pixels[p].delta_y) ||
+           !isfinite(pixels[p].depth) || pixels[p].depth<0 || pixels[p].depth>1){invalid++;continue;}
+        covered++;
+        double x=fabs((double)pixels[p].delta_x),y=fabs((double)pixels[p].delta_y);
+        if(x>.01 || y>.01)moving++;if(x>max_x)max_x=x;if(y>max_y)max_y=y;
+    }
+    char path[600];
+    if(result==0 && count){
+        u8* image=(u8*)calloc(pixels_count,4);
+        if(image){
+            for(size_t p=0;p<pixels_count;p++){
+                u8 value=pixels[p].coverage>.5f?255:0;image[p*4]=image[p*4+1]=image[p*4+2]=value;image[p*4+3]=255;
+            }
+            snprintf(path,sizeof(path),"%s/motion-coverage.bmp",d2_temporal_directory);
+            cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
+            images=d2_hud_bmp_complete(path);
+            memset(image,0,pixels_count*4);
+            for(size_t p=0;p<pixels_count;p++)if(pixels[p].coverage>.5f &&
+                isfinite(pixels[p].delta_x) && isfinite(pixels[p].delta_y)){
+                double x=.5+(double)pixels[p].delta_x/512.0,y=.5+(double)pixels[p].delta_y/512.0;
+                image[p*4]=(u8)(255*(x<0?0:x>1?1:x));image[p*4+1]=(u8)(255*(y<0?0:y>1?1:y));
+                image[p*4+2]=128;image[p*4+3]=255;
+            }
+            snprintf(path,sizeof(path),"%s/motion-vectors.bmp",d2_temporal_directory);
+            cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
+            images=images && d2_hud_bmp_complete(path);free(image);
+        }
+    }
+    snprintf(path,sizeof(path),"%s/motion-raster-check.json",d2_temporal_directory);
+    FILE* file=d2_capture_fopen(path,"wb");
+    if(file){
+        fprintf(file,"{\"schema\":1,\"purpose\":\"candidate-scenery-motion-raster\",\"capture_index\":%u,"
+            "\"current_frame\":%llu,\"previous_frame\":%llu,\"capture_image_frame\":%llu,"
+            "\"render_width\":%u,\"render_height\":%u,\"draw_count\":%u,\"vertices\":%u,\"rejected_samples\":%u,"
+            "\"status\":\"%s\",\"gpu_result\":%d,\"covered_pixels\":%llu,\"moving_pixels\":%llu,\"invalid_pixels\":%llu,"
+            "\"maximum_absolute_delta_pixels\":[%.9g,%.9g],\"images_written\":%s,"
+            "\"candidate_raster_coverage_available\":%s,\"full_scene_visibility_validated\":false,"
+            "\"motion_vectors_available\":false,\"object_identity_available\":false,"
+            "\"depth_test\":\"less-equal-among-candidates\",\"alpha_stencil_scene_occlusion_validated\":false,"
+            "\"units\":\"render-pixels\",\"direction\":\"previous-minus-current-uv\",\"normal_rendering_changed\":false}\n",
+            index,(unsigned long long)current->frame,(unsigned long long)previous->frame,
+            (unsigned long long)s_d3d.frame_count,s_d3d.width,s_d3d.height,count,total_vertices,rejected,
+            result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
+            result,covered,moving,invalid,max_x,max_y,images?"true":"false",
+            result==0 && count && covered && !invalid?"true":"false");
+        fclose(file);
+    }
+    fprintf(stderr,"[D2MOTION] candidate raster draws=%u covered=%llu moving=%llu; full scene visibility pending\n",count,covered,moving);
+    free(pixels);free(vertices);
+}
+
 static void d2_temporal_dump(u32 index){
     const D2TemporalFrame* current=&d2_temporal_frames[d2_temporal_next^1];
     const D2TemporalFrame* previous=&d2_temporal_frames[d2_temporal_next];
@@ -256,6 +356,7 @@ static void d2_temporal_dump(u32 index){
     fprintf(file,"}\n");fclose(file);
     d2_projection_dump(index,current,previous);
     d2_motion_dump(index,current,previous);
+    d2_raster_dump(index,current,previous);
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);
 }

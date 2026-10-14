@@ -220,3 +220,50 @@ envie motion-gpu-check.json. Desabilite capturas para jogar normalmente.
 DLSS e Frame Generation permanecem indisponíveis. O próximo passo é rasterizar
 candidatos de cenário com máscara de cobertura e comparar profundidade, direção
 e oclusões; o movimento de sprites/personagens exige correspondência própria.
+
+## 0.1.26 — raster de candidatos estáticos do cenário
+
+A captura 0.1.25 enviada pelo usuário confirmou cpu-gpu-match nas duas amostras,
+com erro máximo aproximado de 0,000057 pixel. Isso valida os pontos medidos
+na GPU do usuário, não o campo completo, a identidade ou os cortes de câmera.
+
+Enquanto F8 aguarda a seleção, guarda posições completas de até duas amostras
+99362655, com limite de 4096 vértices por amostra. Aceita somente listas de
+triângulos com viewport completo, sem blend, alpha test ou stencil. Overrides
+CULL_OFF/CULL_FLIP são rejeitados. A cópia permanece limitada à janela armada.
+Para rasterizar, exige geometria inteira idêntica, assinatura/cull coincidentes
+e correspondência única no par. Isso é uma hipótese estática conservadora;
+não fornece identidade persistente de objeto.
+
+As posições são transformadas pela regra CPU validada. Um VS/PS D3D12 próprio
+rasteriza esses candidatos num alvo RGBA32_FLOAT com depth D32 e comparação
+LESS_EQUAL. O shader interpola a posição homogênea anterior em perspectiva
+e calcula UV anterior menos atual por pixel. Z do alvo sinaliza cobertura
+e W registra profundidade. O teste de profundidade resolve somente oclusões
+ENTRE OS CANDIDATOS, com culling equivalente aos bits registrados.
+
+Não lê nem modifica depth/cor/texturas da cena. Não reproduz alpha discard do
+fragment shader, stencil, depth bias ou estados de profundidade originais.
+Personagens e draws não amostrados podem ocultar essa geometria no jogo;
+por isso full_scene_visibility_validated e motion_vectors_available são false.
+É um diagnóstico parcial, sem integração com DLSS/FG. Cortes, disoclusões
+entre frames e histórico de sprites permanecem pendentes.
+
+motion-raster-check.json informa frames do par, frame separado das imagens
+normais, candidatos rejeitados, cobertura, pixels com movimento e valores
+máximos. motion-coverage.bmp mostra a máscara em branco; motion-vectors.bmp
+codifica X em vermelho e Y em verde, zero próximo de 128, faixa visual
+de -256 a +256 pixels com saturação. As imagens vêm do par congelado,
+não necessariamente do frame que gerou output.bmp. A faixa visual não
+limita nem clampa os valores calculados ou reportados no JSON.
+
+Não há raster ou readback contínuo: cria/compila/dispatch/readback somente
+no dump da captura. Pode causar pausa. Testes WARP cobrem interpolação
+perspectiva, sinal/escala, máscara fora dos triângulos, posição estática,
+profundidade independente da ordem e culling/front-face. Falhas após
+submissão retêm recursos até o fim do processo, como o diagnóstico anterior.
+
+Teste com 720p interno/saída e upscaling desligado. Habilite capturas, F8,
+gire a câmera em dez segundos e aguarde finalizar. Envie motion-raster-check.json;
+as duas BMPs ajudam a verificar cobertura e direção visual. Desabilite
+capturas para jogar normalmente. Nenhum recurso derivado do jogo é publicado.
