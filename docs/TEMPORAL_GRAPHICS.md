@@ -415,3 +415,38 @@ Repita o F8 em 720p e envie motion-raster-check.json e
 motion-depth-classification.bmp com selected-reference.bmp. Primeiro validar
 a comparação de depth; depois reproduzir alpha/discard dos shaders reais.
 DLSS SR e Frame Generation continuam indisponíveis.
+
+## 0.1.32 — máscara diagnóstica de depth coincidente
+
+O caso real 0.1.31 no frame 2922 teve 7749 pixels: 2268 coincidentes e 5481
+mais distantes, sem inválidos ou candidatos mais próximos. As regiões verdes
+coincidem visualmente com trechos de pequenas muretas na referência alinhada.
+Isso suporta a comparação nesses candidatos, não prova visibilidade completa.
+
+O diagnóstico produz agora motion-depth-filtered-coverage.bmp e
+motion-depth-filtered-vectors.bmp, preservando somente candidatos com vetores
+finitos e depth coincidente dentro da mesma tolerância D24. Mais próximos,
+mais distantes e inválidos ficam sem cobertura. Vetor zero estacionário continua
+válido quando a máscara é 1; pixels rejeitados têm máscara zero e NÃO devem
+ser interpretados como vetores zero válidos.
+
+O JSON informa aplicação, política coincident-only, contagens mantidas/rejeitadas
+e escrita das imagens. A falta de depth/alocação não gera imagens filtradas.
+A máscara coincidente não comprova alpha, blend, identidade ou temporalidade:
+depth_filter_is_visibility_proof e motion_vectors_available permanecem false.
+Os arquivos originais de geometria e a classificação continuam disponíveis.
+
+Para preparar a reprodução de alpha, cada amostra registra também o float4
+real da linha 4 do banco FP (b1), no cb_slot e parity selecionados.
+Não infere o alpha dos texels a partir do alpha_ctl. O replay ainda precisa
+usar o shader e seus atributos, texturas, constantes e operações discard
+originais. Esses estados não estão implementados no raster simplificado.
+
+O teste de depth foi ampliado para garantir preservação do vetor coincidente,
+rejeição de candidatos mais distantes/próximos e NaN, cobertura desconhecida,
+vetor estacionário zero válido e operação in-place. Tudo continua restrito a F8.
+O render normal e os controles DLSS/FG não mudam.
+
+Para testar: mesmo F8 em 720p. Enviar motion-raster-check.json,
+motion-depth-filtered-coverage.bmp e selected-reference.bmp.
+Verificar contagens e sobreposição antes do replay de alpha/discard original.

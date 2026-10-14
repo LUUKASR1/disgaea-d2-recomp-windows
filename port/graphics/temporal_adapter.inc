@@ -10,7 +10,7 @@
 #define D2_TEMP_SAMPLES 4
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
-    int has_vertex;float attributes[64];unsigned char copied[D2_TEMP_ROWS];unsigned copied_rows;
+    int has_vertex,has_fp_alpha;float fp_alpha[4];float attributes[64];unsigned char copied[D2_TEMP_ROWS];unsigned copied_rows;
     float constants[D2_TEMP_ROWS*4];
     unsigned geometry_count,cull,geometry_reject,topology,blend,alpha_ctl,stencil,viewport[4];float positions[D2_GEOMETRY_LIMIT][4];
 } D2TemporalSample;
@@ -104,6 +104,13 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             if((pass==0 && structural_reject) || (pass==1 && !structural_reject))continue;
             D2TemporalSample* sample=&frame->samples[frame->count++];
             sample->geometry_count=0;sample->cull=r->cull;
+            sample->has_fp_alpha=s_d3d.vp_fpcb_mapped!=NULL;
+            memset(sample->fp_alpha,0,sizeof(sample->fp_alpha));
+            if(sample->has_fp_alpha){
+                const float* fp_bank=(const float*)((const char*)s_d3d.vp_fpcb_mapped+
+                    ((u64)parity*MAX_DRAWS+r->cb_slot)*VP_FPCB_STRIDE);
+                memcpy(sample->fp_alpha,fp_bank+16,4*sizeof(float));
+            }
             sample->geometry_reject=geometry_reject;sample->topology=r->topology;
             sample->blend=(unsigned)r->blend;sample->alpha_ctl=r->alpha_ctl;sample->stencil=(unsigned)r->d2_zs.stencil;
             sample->viewport[0]=r->vp_x;sample->viewport[1]=r->vp_y;
@@ -422,7 +429,34 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
         int relation=d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon);
         if(relation==1)depth_equal++;else if(relation==2)depth_deeper++;else if(relation==3)depth_nearer++;else depth_invalid++;
     }
+    unsigned long long filtered_kept=0,filtered_rejected=0;int filtered_images=0;
+    D2MotionPixel* filtered=depth_compared?(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel)):NULL;
+    if(filtered)for(size_t p=0;p<pixels_count;p++){
+        if(d2_depth_filter_pixel(&pixels[p],d2_scene_depth_data[p],depth_epsilon,&filtered[p]))filtered_kept++;
+        else if(pixels[p].coverage>.5f)filtered_rejected++;
+    }
     int depth_image=0;char path[600];
+    if(filtered){
+        u8* image=(u8*)calloc(pixels_count,4);
+        if(image){
+            for(size_t p=0;p<pixels_count;p++){
+                u8 value=filtered[p].coverage>.5f?255:0;
+                image[p*4]=image[p*4+1]=image[p*4+2]=value;image[p*4+3]=255;
+            }
+            snprintf(path,sizeof(path),"%s/motion-depth-filtered-coverage.bmp",d2_temporal_directory);
+            cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
+            filtered_images=d2_hud_bmp_complete(path);
+            memset(image,0,pixels_count*4);
+            for(size_t p=0;p<pixels_count;p++)if(filtered[p].coverage>.5f){
+                double x=.5+(double)filtered[p].delta_x/512.0,y=.5+(double)filtered[p].delta_y/512.0;
+                image[p*4]=(u8)(255*(x<0?0:x>1?1:x));image[p*4+1]=(u8)(255*(y<0?0:y>1?1:y));
+                image[p*4+2]=128;image[p*4+3]=255;
+            }
+            snprintf(path,sizeof(path),"%s/motion-depth-filtered-vectors.bmp",d2_temporal_directory);
+            cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
+            filtered_images=filtered_images && d2_hud_bmp_complete(path);free(image);
+        }
+    }
     if(depth_compared){
         u8* classification=(u8*)calloc(pixels_count,4);
         if(classification){
@@ -473,6 +507,9 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             "\"candidate_depth_equal_pixels\":%llu,\"candidate_deeper_pixels\":%llu,"
             "\"candidate_nearer_pixels\":%llu,\"depth_comparison_invalid_pixels\":%llu,"
             "\"depth_classification_image_written\":%s,\"depth_visibility_validated\":false,"
+            "\"depth_filter_applied\":%s,\"depth_filter_policy\":\"coincident-only\","
+            "\"depth_filtered_pixels\":%llu,\"depth_filtered_rejected_pixels\":%llu,"
+            "\"depth_filtered_images_written\":%s,\"depth_filter_is_visibility_proof\":false,"
             "\"render_width\":%u,\"render_height\":%u,\"draw_count\":%u,\"vertices\":%u,\"rejected_samples\":%u,"
             "\"status\":\"%s\",\"gpu_result\":%d,\"covered_pixels\":%llu,\"moving_pixels\":%llu,\"invalid_pixels\":%llu,"
             "\"maximum_absolute_delta_pixels\":[%.9g,%.9g],\"images_written\":%s,"
@@ -488,7 +525,8 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             d2_reference_available && d2_reference_frame==current->frame?"true":"false",
             d2_scene_depth_available?"true":"false",d2_scene_depth_frame_text,d2_scene_depth_result,
             depth_compared?"true":"false",(double)depth_epsilon,depth_equal,depth_deeper,depth_nearer,depth_invalid,
-            depth_image?"true":"false",s_d3d.width,s_d3d.height,count,total_vertices,rejected,
+            depth_image?"true":"false",filtered?"true":"false",filtered_kept,filtered_rejected,
+            filtered_images?"true":"false",s_d3d.width,s_d3d.height,count,total_vertices,rejected,
             result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
             result,covered,moving,invalid,max_x,max_y,images?"true":"false",
             result==0 && count && covered && !invalid?"true":"false",unreplayed_draws,no_cull_ran?"true":"false",no_cull_result,no_cull_covered);
@@ -500,17 +538,28 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             fprintf(file,"%s{\"draw\":%u,\"reason\":\"%s\",\"eligibility_mask\":%u,"
                 "\"geometry_vertices\":%u,\"unchanged_geometry_matches\":%u,\"topology\":%u,"
                 "\"blend\":%u,\"alpha_ctl\":%u,\"stencil\":%u,\"viewport\":[%u,%u,%u,%u],"
-                "\"cull\":%u,\"frustum_candidate_triangles\":%u,\"current_ndc_bounds\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]}",
+                "\"cull\":%u,\"frustum_candidate_triangles\":%u,\"current_ndc_bounds\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],"
+                "\"fp_alpha_uniform_available\":%s,\"fp_alpha_uniform\":",
                 shown++?",":"",sample->draw,reasons[i],sample->geometry_reject,sample->geometry_count,
                 geometry_matches[i],sample->topology,sample->blend,sample->alpha_ctl,sample->stencil,
                 sample->viewport[0],sample->viewport[1],sample->viewport[2],sample->viewport[3],
                 sample->cull,frustum_triangles[i],(double)ndc_bounds[i][0],(double)ndc_bounds[i][1],(double)ndc_bounds[i][2],
-                (double)ndc_bounds[i][3],(double)ndc_bounds[i][4],(double)ndc_bounds[i][5]);
+                (double)ndc_bounds[i][3],(double)ndc_bounds[i][4],(double)ndc_bounds[i][5],
+                sample->has_fp_alpha?"true":"false");
+            if(sample->has_fp_alpha){
+                fprintf(file,"[");
+                for(unsigned k=0;k<4;k++){
+                    if(isfinite(sample->fp_alpha[k]))fprintf(file,"%s%.9g",k?",":"",(double)sample->fp_alpha[k]);
+                    else fprintf(file,"%snull",k?",":"");
+                }
+                fprintf(file,"]");
+            }else fprintf(file,"null");
+            fprintf(file,"}");
         }
         fprintf(file,"]}\n");fclose(file);
     }
     fprintf(stderr,"[D2MOTION] candidate raster draws=%u covered=%llu moving=%llu; full scene visibility pending\n",count,covered,moving);
-    free(pixels);free(vertices);
+    free(filtered);free(pixels);free(vertices);
     free(d2_scene_depth_data);d2_scene_depth_data=NULL;
 }
 

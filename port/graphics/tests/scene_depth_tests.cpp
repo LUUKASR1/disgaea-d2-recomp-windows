@@ -48,5 +48,17 @@ int main(){try{
     require(d2_depth_relation(.2f,.8f,epsilon)==3,"Nearer candidate");
     require(d2_depth_relation(std::numeric_limits<float>::quiet_NaN(),.5f,epsilon)==0,"Invalid depth rejected");
     require(d2_depth_relation(-.1f,.5f,epsilon)==0,"Out-of-range rejected");
+    D2MotionPixel candidate{12,-7,1,.5f},filtered{};
+    require(d2_depth_filter_pixel(&candidate,.5f,epsilon,&filtered) && filtered.coverage==1 &&
+        filtered.delta_x==12 && filtered.delta_y==-7,"Equal depth retains actual vector");
+    require(!d2_depth_filter_pixel(&candidate,.2f,epsilon,&filtered) && filtered.coverage==0 &&
+        filtered.delta_x==0 && filtered.delta_y==0,"Behind depth rejects coverage, not a valid zero vector");
+    require(!d2_depth_filter_pixel(&candidate,.8f,epsilon,&filtered),"Nearer depth stays unvalidated");
+    candidate.coverage=0;require(!d2_depth_filter_pixel(&candidate,.5f,epsilon,&filtered),"Uncovered pixel stays unknown");
+    candidate.coverage=1;candidate.delta_x=std::numeric_limits<float>::quiet_NaN();
+    require(!d2_depth_filter_pixel(&candidate,.5f,epsilon,&filtered),"Invalid motion rejected");
+    candidate.delta_x=0;candidate.delta_y=0;
+    require(d2_depth_filter_pixel(&candidate,.5f,epsilon,&candidate) && candidate.coverage==1,
+        "Valid stationary zero vector and in-place operation preserved");
     puts("PASS scene D24 depth: typed/typeless, padded full-plane copy, cropped output, stencil independence, restoration and relations");return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
