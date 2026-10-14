@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <string>
 template<class T>struct Ref{T* p=nullptr;~Ref(){if(p)p->Release();}T** put(){return &p;}T* operator->(){return p;}};
 void check(HRESULT h){if(FAILED(h))throw std::runtime_error("GPU setup failed");}
 void require(bool v,const char* m){if(!v)throw std::runtime_error(m);}
