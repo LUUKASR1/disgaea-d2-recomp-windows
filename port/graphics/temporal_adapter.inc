@@ -67,7 +67,10 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
                !r->d2_capture_vs_hash || r->cb_slot>=MAX_DRAWS)continue;
             if(d2_hud_record_candidate(r,parity))continue;
             unsigned geometry_reject=d2_geometry_rejection(r);
-            if((pass==0 && geometry_reject) || (pass==1 && !geometry_reject))continue;
+            /* Alpha/blend remain reported but cannot block a geometry-only
+               diagnostic. They MUST still block treating this as scene visibility. */
+            unsigned structural_reject=geometry_reject & ~(64u|128u);
+            if((pass==0 && structural_reject) || (pass==1 && !structural_reject))continue;
             unsigned same=0;
             for(u32 i=0;i<frame->count;i++)if(frame->samples[i].shader==r->d2_capture_vs_hash)same++;
             if(same>=2)continue;
@@ -93,7 +96,7 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             if(sample->has_vertex){
                 const void* vertex=(const char*)s_d3d.vp_vb_mapped+(u64)parity*MAX_VERTICES*256u+r->vb_byte_offset;
                 memcpy(sample->attributes,vertex,sizeof(sample->attributes));
-                if(!geometry_reject){
+                if(!(geometry_reject & ~(64u|128u))){
                     sample->geometry_count=r->vertex_count;
                     for(unsigned v=0;v<sample->geometry_count;v++)
                         memcpy(sample->positions[v],(const char*)vertex+(size_t)v*256u,4*sizeof(float));
@@ -279,7 +282,7 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
 
 static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
     D2MotionVertex* vertices=(D2MotionVertex*)calloc(D2_TEMP_SAMPLES*D2_GEOMETRY_LIMIT,sizeof(D2MotionVertex));
-    D2MotionDraw draws[D2_TEMP_SAMPLES]={0};unsigned count=0,total_vertices=0,rejected=0;
+    D2MotionDraw draws[D2_TEMP_SAMPLES]={0};unsigned count=0,total_vertices=0,rejected=0,unreplayed_draws=0;
     const char* reasons[D2_TEMP_SAMPLES]={"not-world","not-world","not-world","not-world"};
     unsigned geometry_matches[D2_TEMP_SAMPLES]={0};
     if(vertices && current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
@@ -303,7 +306,8 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
                    old->constants[466*4+2],sample->positions[v],dst[v].previous_clip)){valid=0;break;}
         }
         if(!valid){reasons[i]="projection-invalid";rejected++;continue;}
-        reasons[i]="accepted";
+        reasons[i]=(sample->geometry_reject & (64u|128u))?"accepted-geometry-only-alpha-blend-unreplayed":"accepted";
+        if(sample->geometry_reject & (64u|128u))unreplayed_draws++;
         draws[count].vertices=dst;draws[count].count=sample->geometry_count;draws[count].cull=sample->cull;
         total_vertices+=sample->geometry_count;count++;
     }
@@ -352,13 +356,15 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             "\"maximum_absolute_delta_pixels\":[%.9g,%.9g],\"images_written\":%s,"
             "\"candidate_raster_coverage_available\":%s,\"full_scene_visibility_validated\":false,"
             "\"motion_vectors_available\":false,\"object_identity_available\":false,"
+            "\"coverage_scope\":\"candidate-geometry-only\",\"shader_alpha_test_replayed\":false,"
+            "\"blend_replayed\":false,\"draws_with_unreplayed_alpha_or_blend\":%u,"
             "\"depth_test\":\"less-equal-among-candidates\",\"alpha_stencil_scene_occlusion_validated\":false,"
             "\"units\":\"render-pixels\",\"direction\":\"previous-minus-current-uv\",\"normal_rendering_changed\":false,\"sample_rejections\":[",
             index,(unsigned long long)current->frame,(unsigned long long)previous->frame,
             (unsigned long long)s_d3d.frame_count,s_d3d.width,s_d3d.height,count,total_vertices,rejected,
             result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
             result,covered,moving,invalid,max_x,max_y,images?"true":"false",
-            result==0 && count && covered && !invalid?"true":"false");
+            result==0 && count && covered && !invalid?"true":"false",unreplayed_draws);
 
         unsigned shown=0;
         for(unsigned i=0;i<current->count;i++){

@@ -290,3 +290,27 @@ completo e a projeção ainda precisam passar. O JSON distingue geometria
 inelegível, correspondência não única/alterada e projeção inválida.
 
 Use o mesmo teste F8 em 720p e envie o novo JSON. DLSS/FG permanecem pendentes.
+
+## 0.1.28 — cenário com alpha/blend no diagnóstico geométrico
+
+O JSON 0.1.27 enviado pelo usuário identifica eligibility_mask=192 nas duas
+amostras: blend (64) e alpha test (128). Topologia, viewport e stencil passam.
+Não é falha da GPU e não informa se os texels visíveis são opacos.
+
+Esses dois estados deixam de bloquear a cópia/raster de GEOMETRIA CANDIDATA.
+Os demais filtros estruturais e pareamento completo continuam obrigatórios.
+O bitmask original é mantido e cada draw informa
+accepted-geometry-only-alpha-blend-unreplayed quando esses estados estão ativos.
+O renderer normal não é modificado; o diagnóstico continua isolado.
+
+O relatório explicita coverage_scope=candidate-geometry-only,
+shader_alpha_test_replayed=false, blend_replayed=false e a quantidade de draws
+com esses estados não reproduzidos. A máscara branca é uma silhueta geométrica
+possível, não a contribuição final do fragment shader. Pixels que o shader
+descarta podem aparecer nela; depth LESS_EQUAL entre candidatos não resolve
+transparência. Não usar essa máscara para ativar DLSS ou geração de frames.
+full_scene_visibility_validated e motion_vectors_available continuam false.
+
+O próximo passo após verificar direção/cobertura geométrica é reproduzir
+alpha/discard e a contribuição dos draws reais, incluindo oclusões por
+personagens. Essa versão não afirma que isso esteja implementado.
