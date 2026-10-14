@@ -21,6 +21,9 @@ static D2TemporalFrame d2_temporal_frames[2];
 static unsigned d2_temporal_next;
 static D2AutoProbe d2_auto_probe;
 static char d2_temporal_directory[512];
+static int d2_reference_attempted,d2_reference_available;
+static u64 d2_reference_frame;
+static char d2_reference_frame_text[32]="null";
 static int d2_temporal_enabled(void){
     static int enabled=-1;
     if(enabled<0){const char* e=getenv("D2_CAPTURE_MASK_STATE");enabled=e && strcmp(e,"1")==0;}
@@ -28,9 +31,11 @@ static int d2_temporal_enabled(void){
 }
 static int d2_temporal_request(u32* index,HWND window){
     if(!d2_temporal_enabled())return d2_capture_next(index,window);
-    if(d2_auto_probe.phase){*index=d2_auto_probe.index;return d2_auto_capture(&d2_auto_probe,GetTickCount64());}
+    if(d2_auto_probe.phase){*index=d2_auto_probe.index;return d2_auto_capture_frozen(&d2_auto_probe,GetTickCount64());}
     if(!d2_capture_next(index,window))return 0;
     d2_auto_arm(&d2_auto_probe,*index,GetTickCount64());d2_temporal_next=0;
+    d2_reference_attempted=d2_reference_available=0;d2_reference_frame=0;
+    snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
     fprintf(stderr,"[D2TEMP] armed capture=%u; rotate camera within 10 seconds\n",*index);
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
     return 0; /* Observe until a stable scene sample changes transform or timeout. */
@@ -137,6 +142,36 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
     if(d2_auto_probe.phase==D2_AUTO_READY)fprintf(stderr,"[D2TEMP] selection=%s capture=%u\n",
         d2_auto_probe.changed?"transform-changed":"timeout-no-transform-change",d2_auto_probe.index);
 }
+
+/* Called after frame submission/observation, before any subsequent game frame. */
+static void d2_temporal_reference(u32 fi){
+    if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_READY || d2_reference_attempted)return;
+    d2_reference_attempted=1;
+    const D2TemporalFrame* current=&d2_temporal_frames[d2_temporal_next^1];
+    if(!current->valid || current->frame!=s_d3d.frame_count || !s_d3d.render_targets[fi])return;
+    const char* base=d2_capture_directory();char path[600];
+    if(!base || !*base)base="rsxcap";
+    d2_capture_mkdir(base);
+    snprintf(d2_temporal_directory,sizeof(d2_temporal_directory),"%s/frame_%02u",base,d2_auto_probe.index);
+    d2_capture_mkdir(d2_temporal_directory);
+    snprintf(path,sizeof(path),"%s/selected-reference.bmp",d2_temporal_directory);
+    /* Truncate first; a failed readback cannot validate an old file by its size. */
+    FILE* truncate=d2_capture_fopen(path,"wb");if(!truncate)return;fclose(truncate);
+    cap_readback_write(s_d3d.render_targets[fi],s_d3d.width,s_d3d.height,DXGI_FORMAT_R8G8B8A8_UNORM,
+        D3D12_RESOURCE_STATE_PRESENT,fi,path);
+    if(!d2_hud_bmp_complete(path))return;
+    FILE* file=d2_capture_fopen(path,"rb");if(!file)return;
+    unsigned char header[54];size_t bytes=fread(header,1,sizeof(header),file);fclose(file);
+    int32_t width=0,height=0;
+    if(bytes==sizeof(header)){memcpy(&width,header+18,4);memcpy(&height,header+22,4);}
+    if(bytes!=sizeof(header) || header[0]!='B' || header[1]!='M' ||
+       width!=(int32_t)s_d3d.width || height!=(int32_t)s_d3d.height)return;
+    d2_reference_available=1;d2_reference_frame=current->frame;
+    snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"%llu",(unsigned long long)d2_reference_frame);
+    fprintf(stderr,"[D2MOTION] selected reference frame=%llu captured before next frame\n",
+        (unsigned long long)d2_reference_frame);
+}
+
 static D2ConstantReads d2_temporal_reads(u32 hash,int* available){
     D2ConstantReads reads={0};*available=0;
     for(int i=0;i<s_d3d.vp_vs_n && i<VP_VS_CACHE;i++){
@@ -390,6 +425,9 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
     if(file){
         fprintf(file,"{\"schema\":1,\"purpose\":\"candidate-scenery-motion-raster\",\"capture_index\":%u,"
             "\"current_frame\":%llu,\"previous_frame\":%llu,\"capture_image_frame\":%llu,"
+            "\"reference_image\":\"selected-reference.bmp\",\"reference_image_frame\":%s,"
+            "\"reference_image_available\":%s,\"reference_matches_current_frame\":%s,"
+            "\"reference_space\":\"internal-full-frame\","
             "\"render_width\":%u,\"render_height\":%u,\"draw_count\":%u,\"vertices\":%u,\"rejected_samples\":%u,"
             "\"status\":\"%s\",\"gpu_result\":%d,\"covered_pixels\":%llu,\"moving_pixels\":%llu,\"invalid_pixels\":%llu,"
             "\"maximum_absolute_delta_pixels\":[%.9g,%.9g],\"images_written\":%s,"
@@ -401,7 +439,9 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             "\"depth_test\":\"less-equal-among-candidates\",\"alpha_stencil_scene_occlusion_validated\":false,"
             "\"units\":\"render-pixels\",\"direction\":\"previous-minus-current-uv\",\"normal_rendering_changed\":false,\"sample_rejections\":[",
             index,(unsigned long long)current->frame,(unsigned long long)previous->frame,
-            (unsigned long long)s_d3d.frame_count,s_d3d.width,s_d3d.height,count,total_vertices,rejected,
+            (unsigned long long)s_d3d.frame_count,d2_reference_frame_text,d2_reference_available?"true":"false",
+            d2_reference_available && d2_reference_frame==current->frame?"true":"false",
+            s_d3d.width,s_d3d.height,count,total_vertices,rejected,
             result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
             result,covered,moving,invalid,max_x,max_y,images?"true":"false",
             result==0 && count && covered && !invalid?"true":"false",unreplayed_draws,no_cull_ran?"true":"false",no_cull_result,no_cull_covered);

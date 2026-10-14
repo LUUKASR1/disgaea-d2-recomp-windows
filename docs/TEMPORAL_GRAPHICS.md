@@ -338,3 +338,36 @@ Um teste nativo adicional cobre os seis planos, triângulos cruzando o viewport,
 degenerados, NaN e w negativo. A validação real da nova seleção está pendente.
 Alpha/blend, visibilidade completa, identidade e motion vectors utilizáveis
 continuam pendentes. Use o mesmo F8 em 720p e envie motion-raster-check.json.
+
+## 0.1.30 — referência visual do frame selecionado
+
+O usuário confirmou um raster 0.1.29 com 699 vértices, 11.221 pixels cobertos
+e em movimento, zero inválidos. O segundo draw não teve geometria inteira
+correspondente. As imagens de máscara e vetores ocupam a mesma pequena região
+superior esquerda. output.bmp, porém, era do frame seguinte; não se confirmou
+alinhamento preciso ou direção visual a partir dessas imagens.
+
+Após submeter o frame e selecionar/congelar o par, o adaptador agora faz um
+readback do alvo interno completo ainda correspondente ao current_frame.
+Grava selected-reference.bmp antes de renderizar outro frame. O helper de
+readback existente sincroniza a fila, copia/restaura o estado PRESENT e confirma
+a escrita pelo tamanho/header/dimensões. O arquivo é truncado antes da tentativa
+para uma falha não reutilizar uma imagem antiga. É cor interna completa,
+incluindo HUD: não é a imagem de saída ampliada e não é uma cena sem HUD.
+
+O JSON de raster inclui reference_image, reference_image_frame (null em falha),
+reference_image_available, reference_matches_current_frame e reference_space.
+As imagens normais output.bmp continuam vinculadas a capture_image_frame,
+possivelmente seguinte, e não devem ser usadas como referência alinhada.
+
+O prazo de dez segundos passa a expirar na observação após o render, não na
+requisição anterior ao render. Assim, também no timeout, a geometria congelada
+e a referência vêm do mesmo frame. O dump normal continua na requisição
+seguinte, uma única vez; uma seleção não provoca readback contínuo. O teste
+automático cobre o deadline pré-render, observação pós-render e emissão única.
+
+Use 720p interno/saída, upscaling desligado, captura habilitada; F8 e giro da
+câmera em dez segundos. Aguarde concluir e envie motion-raster-check.json,
+selected-reference.bmp e motion-coverage.bmp. Falha da referência é explícita;
+o diagnóstico geométrico pode continuar disponível. Readbacks podem pausar o
+jogo. Alpha/blend, oclusões completas, identidade, DLSS e FG seguem pendentes.

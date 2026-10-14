@@ -152,7 +152,10 @@ def generate(source, output):
     text = replace(text, '''        u32 index;
         if(s_present_this_frame && s_dbg_last_draws>0 && d2_capture_f8_next(&index))
             rsx_capture_frame(fi,s_dbg_last_draws,index);''',
-        '''        if(s_present_this_frame)d2_temporal_observe(s_dbg_last_draws,d2_hud_start);
+        '''        if(s_present_this_frame) {
+            d2_temporal_observe(s_dbg_last_draws,d2_hud_start);
+            d2_temporal_reference(fi);
+        }
         if(d2_capture_requested) {
             rsx_capture_frame(fi,s_dbg_last_draws,d2_capture_index);
             d2_temporal_dump(d2_capture_index);

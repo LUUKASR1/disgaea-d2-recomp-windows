@@ -17,6 +17,11 @@ static inline int d2_auto_capture(D2AutoProbe* probe,uint64_t now){
     if(probe->phase!=D2_AUTO_READY)return 0;
     probe->phase=D2_AUTO_CAPTURING;return 1;
 }
+/* Timeout must be observed after rendering, so reference and geometry agree. */
+static inline int d2_auto_capture_frozen(D2AutoProbe* probe,uint64_t now){
+    if(probe->phase!=D2_AUTO_READY)return 0;
+    return d2_auto_capture(probe,now);
+}
 static inline int d2_transform_changed(const float* previous,const float* current){
     int changed=0;
     for(unsigned i=0;i<16;i++){

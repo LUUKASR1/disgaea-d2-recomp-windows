@@ -22,6 +22,14 @@ int main(){try{
     d2_auto_observed(&probe,1,10300);
     require(probe.timed_out && !probe.changed,"Change at expired deadline is not reported as success");
 
+    d2_auto_arm(&probe,6,1000);
+    require(!d2_auto_capture_frozen(&probe,11000) && probe.phase==D2_AUTO_WAITING,
+        "Pre-render request cannot expire and capture an unobserved frame");
+    d2_auto_observed(&probe,0,11000);
+    require(probe.phase==D2_AUTO_READY && probe.timed_out,"Post-render timeout freezes observed frame");
+    require(d2_auto_capture_frozen(&probe,11001),"Only next request captures the frozen pair");
+    require(!d2_auto_capture_frozen(&probe,11002),"Frozen capture emits only once");
+
     float a[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},b[16];
     for(unsigned i=0;i<16;i++)b[i]=a[i];
     require(!d2_transform_changed(a,b),"Static transform");
