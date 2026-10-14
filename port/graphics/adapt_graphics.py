@@ -107,7 +107,7 @@ def generate(source, output):
     capture = capture.replace('+ d) * VP_CB_STRIDE', '+ r->cb_slot) * VP_CB_STRIDE')
     text = text[:start] + capture + text[end:]
     text = replace(text, 'static void render_frame(void)\n{',
-        '#include "hud_adapter.inc"\n\nstatic void render_frame(void)\n{')
+        '#include "hud_adapter.inc"\n#include "temporal_adapter.inc"\n\nstatic void render_frame(void)\n{')
     text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
         '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',
@@ -152,8 +152,10 @@ def generate(source, output):
     text = replace(text, '''        u32 index;
         if(s_present_this_frame && s_dbg_last_draws>0 && d2_capture_f8_next(&index))
             rsx_capture_frame(fi,s_dbg_last_draws,index);''',
-        '''        if(d2_capture_requested) {
+        '''        if(s_present_this_frame)d2_temporal_observe(s_dbg_last_draws,d2_hud_start);
+        if(d2_capture_requested) {
             rsx_capture_frame(fi,s_dbg_last_draws,d2_capture_index);
+            d2_temporal_dump(d2_capture_index);
             d2_hud_dump(fi,s_dbg_last_draws,d2_hud_start,d2_capture_index,d2_hud_snapshotted);
         }''')
     def includes(match):

@@ -17,14 +17,15 @@ class DisplayTests(unittest.TestCase):
     def test_refresh_choices_and_unlimited_environment(self):
         migrated=display.validate_settings({'maximum_refresh':True})
         self.assertEqual(migrated['refresh_rate'],'native')
-        self.assertTrue(migrated['fps_unlimited'])
+        self.assertFalse(migrated['fps_unlimited'])
         for rate in display.REFRESH_RATES:
             value=dict(migrated,refresh_rate=rate)
             env=display.display_environment({'D2_MAX_REFRESH':'1','D2_REFRESH_RATE':'999','D2_GCM_UNLIMITED':'0'},value)
             self.assertEqual(env['D2_REFRESH_RATE'],rate)
             self.assertEqual(env['D2_MAX_REFRESH'],'0')
-            self.assertEqual(env['D2_GCM_UNLIMITED'],'1')
+            self.assertEqual(env['D2_GCM_UNLIMITED'],'0')
         self.assertEqual(display.display_environment({},dict(migrated,fps_unlimited=False))['D2_GCM_UNLIMITED'],'0')
+        self.assertFalse(display.validate_settings(dict(migrated,fps_unlimited=True))['fps_unlimited'])
         for invalid in ('240',60,True,None):
             with self.assertRaises(ValueError):display.validate_settings(dict(migrated,refresh_rate=invalid))
         for name in ('fps_unlimited','vrr'):

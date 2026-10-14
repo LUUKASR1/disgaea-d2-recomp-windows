@@ -267,12 +267,12 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         state='readonly', style='D2.TCombobox', width=32)
     refresh_combo.pack(anchor='w', pady=(0,10)); entries.append(refresh_combo)
     for text, variable in (
-        ('Sem limite de FPS — experimental', fps_unlimited),
+
         ('Permitir VRR / G-SYNC / FreeSync quando suportado', vrr)):
         toggle = tk.Checkbutton(video, text=text, variable=variable, bg=CARD, fg=TEXT,
             selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
         toggle.pack(anchor='w', pady=8); entries.append(toggle)
-    label(video, 'Nativo mantém os Hz atuais do Windows. Uma taxa indisponível mantém o modo atual. A troca pode piscar e é restaurada ao fechar normalmente. Sem limite remove a espera de apresentação de 60 Hz; se alterar a velocidade do jogo, desligue. VRR requer VSync desligado.', 10, MUTED)
+    label(video, 'Nativo mantém os Hz atuais do Windows. Uma taxa indisponível mantém o modo atual. A troca pode piscar e é restaurada ao fechar normalmente. A lógica permanece no ritmo original de 60 Hz; o modo sem limite foi suspenso após acelerar o jogo. VRR requer VSync desligado.', 10, MUTED)
     graphics = card(page)
     label(graphics, 'Resolução interna de renderização', bold=True)
     render_combo = ttk.Combobox(graphics, textvariable=render_resolution, values=RENDER_RESOLUTIONS,
@@ -291,8 +291,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI',11))
     hud_toggle.pack(anchor='w',pady=8);entries.append(hud_toggle)
     label(graphics, 'Desenha a interface na resolução de saída nas cenas reconhecidas. Cenas sem suporte usam o caminho atual. Requer reiniciar o jogo.', 10, MUTED)
-    label(graphics, 'DLSS e Frame Generation: ainda indisponíveis nesta versão.', 10, MUTED)
-    label(graphics, 'FSR 1 é espacial. FSR 3, DLSS e geração de frames exigem outra etapa de integração.', 10, MUTED)
+    label(graphics, 'DLSS e Frame Generation: etapa de diagnóstico de câmera e movimento.', 10, MUTED)
+    label(graphics, 'Ainda indisponíveis para jogar. Capturas F8 agora incluem temporal-probe.json com constantes de dois frames.', 10, MUTED)
     label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
     def save_video():
         try:

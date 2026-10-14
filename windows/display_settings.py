@@ -9,7 +9,7 @@ REFRESH_RATES = ('native', '60', '75', '120', '144', '165', '180')
 RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
 DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
             'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
-            'hud_after_upscale': False, 'refresh_rate': 'native', 'fps_unlimited': True, 'vrr': False}
+            'hud_after_upscale': False, 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
 
 
 def validate_settings(value):
@@ -25,6 +25,8 @@ def validate_settings(value):
     for name in ('fps_unlimited', 'vrr'):
         if type(result[name]) is not bool:
             raise ValueError('Taxa máxima e VRR devem estar ligados ou desligados.')
+    # User validation showed fixed-step game acceleration when flips were uncapped.
+    result['fps_unlimited'] = False
     if result['refresh_rate'] not in REFRESH_RATES:
         raise ValueError('Selecione uma taxa de atualização da lista.')
     if result['render_resolution'] not in RENDER_RESOLUTIONS:
