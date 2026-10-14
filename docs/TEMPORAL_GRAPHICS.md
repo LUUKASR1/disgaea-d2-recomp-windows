@@ -314,3 +314,27 @@ full_scene_visibility_validated e motion_vectors_available continuam false.
 O próximo passo após verificar direção/cobertura geométrica é reproduzir
 alpha/discard e a contribuição dos draws reais, incluindo oclusões por
 personagens. Essa versão não afirma que isso esteja implementado.
+
+## 0.1.29 — candidatos no frustum e diagnóstico de culling
+
+O relatório real 0.1.28 aceitou dois draws e 78 vértices, sem rejeições ou erros
+GPU, mas não cobriu nenhum pixel. Isso não comprova falha da projeção: os
+candidatos podem estar fora do frustum ou ser descartados pelo culling.
+
+A seleção agora prioriza geometria com pelo menos um triângulo potencialmente
+visível no frustum D3D (x/y entre -w e w, z entre zero e w). O teste rejeita
+triângulos inteiramente além do mesmo plano e degenerados; aceita triângulos
+que cruzam a tela mesmo que nenhum vértice esteja dentro. Não prova cobertura
+de pixels ou oclusão. Valores singulares/atrás da câmera continuam conservadores.
+Bits adicionais: 1024 sem triângulo candidato, 2048 projeção inválida.
+
+O JSON registra cull, quantidade de triângulos candidatos e limites NDC das
+geometrias aceitas. Quando o raster principal fica vazio e há culling ativo,
+executa uma comparação separada com culling desligado e reporta se ocorreu,
+resultado GPU e pixels cobertos. Essa comparação não substitui as imagens
+principais, não modifica o jogo e não habilita DLSS. Só ocorre na captura vazia.
+
+Um teste nativo adicional cobre os seis planos, triângulos cruzando o viewport,
+degenerados, NaN e w negativo. A validação real da nova seleção está pendente.
+Alpha/blend, visibilidade completa, identidade e motion vectors utilizáveis
+continuam pendentes. Use o mesmo F8 em 720p e envie motion-raster-check.json.

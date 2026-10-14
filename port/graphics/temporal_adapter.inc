@@ -4,6 +4,7 @@
 #include "auto_probe.h"
 #include "motion_probe.h"
 #include "motion_raster.h"
+#include "motion_visibility.h"
 #define D2_GEOMETRY_LIMIT 4096
 #define D2_TEMP_SAMPLES 4
 typedef struct {
@@ -55,6 +56,19 @@ static unsigned d2_geometry_rejection(const D3D12DrawRecord* r){
     return flags;
 }
 
+
+static unsigned d2_geometry_view_rejection(const D3D12DrawRecord* r,u32 parity){
+    const float* bank=(const float*)((const char*)s_d3d.vp_cb_mapped+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE);
+    const char* vertices=(const char*)s_d3d.vp_vb_mapped+(u64)parity*MAX_VERTICES*256u+r->vb_byte_offset;
+    unsigned candidates=0;float clip[3][4];
+    for(unsigned v=0;v<r->vertex_count;v+=3){
+        for(unsigned k=0;k<3;k++)if(!d2_project_world(bank+256*4,bank+512*4,bank+513*4,bank[466*4+2],
+            (const float*)(vertices+(size_t)(v+k)*256u),clip[k]))return 2048u;
+        if(d2_triangle_frustum_candidate(clip[0],clip[1],clip[2]))candidates++;
+    }
+    return candidates?0u:1024u;
+}
+
 static void d2_temporal_observe(u32 count,u32 hud_start){
     if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_WAITING || !count)return;
     D2TemporalFrame* frame=&d2_temporal_frames[d2_temporal_next];
@@ -69,6 +83,7 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             unsigned geometry_reject=d2_geometry_rejection(r);
             /* Alpha/blend remain reported but cannot block a geometry-only
                diagnostic. They MUST still block treating this as scene visibility. */
+            if(!(geometry_reject & ~(64u|128u)))geometry_reject|=d2_geometry_view_rejection(r,parity);
             unsigned structural_reject=geometry_reject & ~(64u|128u);
             if((pass==0 && structural_reject) || (pass==1 && !structural_reject))continue;
             unsigned same=0;
@@ -284,7 +299,8 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
     D2MotionVertex* vertices=(D2MotionVertex*)calloc(D2_TEMP_SAMPLES*D2_GEOMETRY_LIMIT,sizeof(D2MotionVertex));
     D2MotionDraw draws[D2_TEMP_SAMPLES]={0};unsigned count=0,total_vertices=0,rejected=0,unreplayed_draws=0;
     const char* reasons[D2_TEMP_SAMPLES]={"not-world","not-world","not-world","not-world"};
-    unsigned geometry_matches[D2_TEMP_SAMPLES]={0};
+    unsigned geometry_matches[D2_TEMP_SAMPLES]={0},frustum_triangles[D2_TEMP_SAMPLES]={0};
+    float ndc_bounds[D2_TEMP_SAMPLES][6]={{0}};
     if(vertices && current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];
         if(sample->shader!=0x99362655u)continue;
@@ -306,6 +322,15 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
                    old->constants[466*4+2],sample->positions[v],dst[v].previous_clip)){valid=0;break;}
         }
         if(!valid){reasons[i]="projection-invalid";rejected++;continue;}
+        for(unsigned axis=0;axis<3;axis++)ndc_bounds[i][axis]=ndc_bounds[i][axis+3]=dst[0].current_clip[axis]/dst[0].current_clip[3];
+        for(unsigned v=0;v<sample->geometry_count;v++){
+            for(unsigned axis=0;axis<3;axis++){
+                float value=dst[v].current_clip[axis]/dst[v].current_clip[3];
+                if(value<ndc_bounds[i][axis])ndc_bounds[i][axis]=value;
+                if(value>ndc_bounds[i][axis+3])ndc_bounds[i][axis+3]=value;
+            }
+            if(v%3u==0 && d2_triangle_frustum_candidate(dst[v].current_clip,dst[v+1].current_clip,dst[v+2].current_clip))frustum_triangles[i]++;
+        }
         reasons[i]=(sample->geometry_reject & (64u|128u))?"accepted-geometry-only-alpha-blend-unreplayed":"accepted";
         if(sample->geometry_reject & (64u|128u))unreplayed_draws++;
         draws[count].vertices=dst;draws[count].count=sample->geometry_count;draws[count].cull=sample->cull;
@@ -323,6 +348,20 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
         covered++;
         double x=fabs((double)pixels[p].delta_x),y=fabs((double)pixels[p].delta_y);
         if(x>.01 || y>.01)moving++;if(x>max_x)max_x=x;if(y>max_y)max_y=y;
+    }
+    unsigned long long no_cull_covered=0;int no_cull_result=0,no_cull_ran=0;
+    if(result==0 && count && !covered){
+        int has_cull=0;D2MotionDraw uncull[D2_TEMP_SAMPLES];
+        for(unsigned i=0;i<count;i++){uncull[i]=draws[i];has_cull|=(draws[i].cull & 1u)!=0;uncull[i].cull=0;}
+        if(has_cull){
+            D2MotionPixel* comparison=(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel));
+            if(comparison){
+                no_cull_ran=1;
+                no_cull_result=d2_motion_raster_gpu(s_d3d.device,s_d3d.cmd_queue,uncull,count,s_d3d.width,s_d3d.height,comparison);
+                if(no_cull_result==0)for(size_t p=0;p<pixels_count;p++)no_cull_covered+=comparison[p].coverage>.5f;
+                free(comparison);
+            }
+        }
     }
     char path[600];
     if(result==0 && count){
@@ -358,13 +397,14 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             "\"motion_vectors_available\":false,\"object_identity_available\":false,"
             "\"coverage_scope\":\"candidate-geometry-only\",\"shader_alpha_test_replayed\":false,"
             "\"blend_replayed\":false,\"draws_with_unreplayed_alpha_or_blend\":%u,"
+            "\"no_cull_comparison_ran\":%s,\"no_cull_gpu_result\":%d,\"no_cull_covered_pixels\":%llu,"
             "\"depth_test\":\"less-equal-among-candidates\",\"alpha_stencil_scene_occlusion_validated\":false,"
             "\"units\":\"render-pixels\",\"direction\":\"previous-minus-current-uv\",\"normal_rendering_changed\":false,\"sample_rejections\":[",
             index,(unsigned long long)current->frame,(unsigned long long)previous->frame,
             (unsigned long long)s_d3d.frame_count,s_d3d.width,s_d3d.height,count,total_vertices,rejected,
             result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
             result,covered,moving,invalid,max_x,max_y,images?"true":"false",
-            result==0 && count && covered && !invalid?"true":"false",unreplayed_draws);
+            result==0 && count && covered && !invalid?"true":"false",unreplayed_draws,no_cull_ran?"true":"false",no_cull_result,no_cull_covered);
 
         unsigned shown=0;
         for(unsigned i=0;i<current->count;i++){
@@ -372,10 +412,13 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             if(sample->shader!=0x99362655u)continue;
             fprintf(file,"%s{\"draw\":%u,\"reason\":\"%s\",\"eligibility_mask\":%u,"
                 "\"geometry_vertices\":%u,\"unchanged_geometry_matches\":%u,\"topology\":%u,"
-                "\"blend\":%u,\"alpha_ctl\":%u,\"stencil\":%u,\"viewport\":[%u,%u,%u,%u]}",
+                "\"blend\":%u,\"alpha_ctl\":%u,\"stencil\":%u,\"viewport\":[%u,%u,%u,%u],"
+                "\"cull\":%u,\"frustum_candidate_triangles\":%u,\"current_ndc_bounds\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]}",
                 shown++?",":"",sample->draw,reasons[i],sample->geometry_reject,sample->geometry_count,
                 geometry_matches[i],sample->topology,sample->blend,sample->alpha_ctl,sample->stencil,
-                sample->viewport[0],sample->viewport[1],sample->viewport[2],sample->viewport[3]);
+                sample->viewport[0],sample->viewport[1],sample->viewport[2],sample->viewport[3],
+                sample->cull,frustum_triangles[i],(double)ndc_bounds[i][0],(double)ndc_bounds[i][1],(double)ndc_bounds[i][2],
+                (double)ndc_bounds[i][3],(double)ndc_bounds[i][4],(double)ndc_bounds[i][5]);
         }
         fprintf(file,"]}\n");fclose(file);
     }
