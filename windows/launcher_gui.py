@@ -370,7 +370,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             values=('Cenário — girar câmera', 'Sprites — movimentar personagem'),
             state='readonly', style='D2.TCombobox', width=40)
         goal_combo.pack(anchor='w', pady=4); entries.append(goal_combo)
-        label(diagnostic, 'Para investigar sprites, mantenha a câmera parada e pressione F8 durante o movimento do personagem. Escolha o objetivo antes de abrir o jogo.', 10, MUTED)
+        label(diagnostic, 'Para investigar sprites, pressione F8 durante o movimento do personagem, sem girar a câmera manualmente. A captura também registra o acompanhamento automático da câmera. Escolha o objetivo antes de abrir o jogo.', 10, MUTED)
 
         label(diagnostic, 'Com o jogo aberto, pressione F8 ou clique em Capturar frame. Até oito capturas por sessão. Pode haver uma pausa breve durante a gravação.', 10, MUTED)
         label(diagnostic, 'Nas cenas reconhecidas, o relatório inclui cena sem HUD, HUD isolada, recomposição e comparação de pixels. A imagem normal do jogo continua sendo a referência.', 10, MUTED)

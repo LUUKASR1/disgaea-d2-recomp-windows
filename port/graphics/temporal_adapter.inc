@@ -10,6 +10,7 @@
 #include "motion_gap.h"
 #include "motion_layers.h"
 #include "sprite_probe.h"
+#include "sprite_projection.h"
 #include "static_pair.h"
 #include "scenery_survey.h"
 #include "scenery_feedback.h"
@@ -88,7 +89,7 @@ static int d2_temporal_request(u32* index,HWND window){
     snprintf(d2_scene_depth_frame_text,sizeof(d2_scene_depth_frame_text),"null");
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
     fprintf(stderr,"[D2TEMP] armed capture=%u; %s within 10 seconds\n",*index,
-        d2_sprite_goal()?"move character with camera stationary":"rotate camera");
+        d2_sprite_goal()?"move character without manual camera rotation":"rotate camera");
     d2_alpha_clear_pipelines();d2_alpha_clear_snapshots();
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
     return 0; /* Observe until a stable scene sample changes transform or timeout. */
@@ -224,12 +225,12 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
     if(d2_sprite_goal()){
         d2_sprite_frames[d2_temporal_next].reference_pairs=reference_pairs;
         d2_sprite_frames[d2_temporal_next].reference_unchanged=reference_pairs>0 && !changed;
-        changed=reference_pairs>0 && !changed && sprite_changed;
+        changed=sprite_changed;
     }
     d2_temporal_next^=1;
     d2_auto_observed(&d2_auto_probe,changed,GetTickCount64());
     if(d2_auto_probe.phase==D2_AUTO_READY)fprintf(stderr,"[D2TEMP] selection=%s capture=%u\n",
-        d2_auto_probe.changed?(d2_sprite_goal()?"small-geometry-moved-with-static-reference":"transform-changed"):"timeout-no-eligible-change",d2_auto_probe.index);
+        d2_auto_probe.changed?(d2_sprite_goal()?"projected-candidate-geometry-changed":"transform-changed"):"timeout-no-eligible-change",d2_auto_probe.index);
 }
 
 /* Retain the pipeline actually submitted, never rebuild it from guest memory. */
@@ -444,7 +445,7 @@ static void d2_projection_dump(u32 index,const D2TemporalFrame* current,const D2
         "\"render_width\":%u,\"render_height\":%u,\"automatic_selection\":true,\"selection_status\":\"%s\","
         "\"capture_image_frame\":%llu,\"samples\":[",index,
         (unsigned long long)current->frame,(unsigned long long)previous->frame,s_d3d.width,s_d3d.height,
-        !d2_temporal_enabled()?"not-armed":d2_auto_probe.changed?(d2_sprite_goal()?"small-geometry-moved-with-static-reference":"transform-changed"):"timeout-no-eligible-change",
+        !d2_temporal_enabled()?"not-armed":d2_auto_probe.changed?(d2_sprite_goal()?"projected-candidate-geometry-changed":"transform-changed"):"timeout-no-eligible-change",
         (unsigned long long)s_d3d.frame_count);
     unsigned shown=0;
     for(u32 i=0;i<current->count;i++){

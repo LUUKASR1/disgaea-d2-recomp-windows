@@ -787,3 +787,38 @@ Timeout reports remain useful but may contain no eligible changed record. The
 new signature discovery suite covers reordering, duplicate signatures in either
 inventory, stationary/moving centers and invalid geometry. Launcher tests cover
 explicit goal propagation and environment cleanup.
+
+
+### 0.1.43 — observed direct sprite projection and camera hypothesis
+
+The three 0.1.42 captures timed out with changing static-reference transforms.
+Changed small geometry used VP 2003CB89. Its captured assembly reads only rows
+512/513 for position: `clip.xyz = ATTR0.xyz * scale.xyz + ATTR0.w * offset.xyz`,
+`clip.w = ATTR0.w`. Rows 256..259 are unused; their changes were irrelevant to this
+path. Discovery now stores scale/offset and projects this path. Sprite mode arms
+on a unique direct-path candidate's changed geometry, including automatic camera
+following; it does not require stationary scenery references.
+
+`sprite-projection-check.json` checks up to 128 signature-unique six-vertex
+candidates in a supported full-frame viewport. Subviewports remain excluded.
+An isolated compute probe applies the algebraically equivalent
+identity-world transform to each current and previous point and compares its
+previous-minus-current pixel delta against the CPU direct formula. This verifies
+formula consistency, not object identity, vertex correspondence or the original
+shader's full raster visibility. `sprite-candidate-overlay.bmp` labels candidate
+screen bounding boxes with draw indices on the exact selected reference image.
+These labels are local draw indices, not persistent character IDs.
+
+A separate camera-only reprojection hypothesis is reported when at least two
+unchanged-geometry world references agree on current/previous projection data.
+Nonzero world bias, singular/nonfinite transforms and disagreements fail closed.
+It inverse-projects current sprite clip position with the world reference and
+reprojects that point in the previous reference, reporting observed screen delta,
+estimated camera delta and an **unvalidated residual**. Cross-shader depth-space
+compatibility and actual billboard vertex correspondence are not proven, so this
+residual is never applied to live motion or DLSS. Valid live motion must retain
+both camera and object movement; this separation is for discovery only.
+Animated UVs remain explicit.
+Normal rendering and the baseline static fields stay unchanged. New tests cover
+the direct position rule, homogeneous W, reprojection direction, singular/bias
+rejection and invalid values, joining the previous twenty graphics suites.
