@@ -822,3 +822,41 @@ Animated UVs remain explicit.
 Normal rendering and the baseline static fields stay unchanged. New tests cover
 the direct position rule, homogeneous W, reprojection direction, singular/bias
 rejection and invalid values, joining the previous twenty graphics suites.
+
+
+### 0.1.44 — texture-corner correspondence and original sprite shader replay
+
+Six 0.1.43 captures checked 44 direct-path candidate quads: every CPU/GPU delta
+comparison reported zero error. Overlays visually localized Laharl, Etna and
+Flonne; Laharl's draw changed from 784 to 792 while its texture was 065E2700.
+These local labels still do not establish a persistent instance identity.
+Applying the new UV rule offline to those uploaded captures matched 38 pairs and
+rejected six changed atlas images; none had invalid/ambiguous quad geometry.
+
+New correspondence maps current vertices to previous UV corners, rather than
+assuming vertex index stability. Both six-vertex inputs must describe four UV
+corners with consistent duplicated positions. Changed UV sets, invalid values,
+degenerate triangles and orientation flips remain unknown. Reordered vertices
+with the same corner data can match. Matching texture corners within a
+signature-unique pair is not proof of same-object correspondence across frames.
+
+Before releasing captured PSOs, direct-path candidates now replay the actual
+original vertex/pixel shaders, descriptors, CBs and VB. Sprite mask/depth snapshots
+share the existing 128 MiB budget with static scenery. Unsupported depth writes,
+stencil, mutable textures, missing bindings and allocation/GPU failures remain
+explicitly unavailable. Retained snapshots are freed after the selected capture.
+
+`sprite-motion-check.json` reports candidate/UV/raster status and per-draw counts.
+UV-matched vertices rasterize previous-minus-current total projected motion;
+there is no camera subtraction. A pixel requires its owning original shader
+coverage, matching original shader depth and matching frozen pre-HUD scene depth.
+Overlapping surviving candidates with conflicting motion remain unknown. The
+new `sprite-motion-{coverage,vectors}.bmp` show this partial candidate field,
+separate from all static fields and normal rendering. Animation-change cases are
+not given fabricated zero vectors. Object identity, full visibility, blend
+contribution and live temporal/DLSS integration remain pending.
+
+The new pure correspondence suite covers stationary/translated quads, vertex
+reordering, animation UV changes, flips, inconsistent repeated UV geometry and
+invalid values. It joins the prior 21 graphics suites; existing GPU shader replay,
+raster and owning-mask/depth suites exercise the reused GPU components.

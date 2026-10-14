@@ -11,6 +11,7 @@
 #include "motion_layers.h"
 #include "sprite_probe.h"
 #include "sprite_projection.h"
+#include "sprite_correspondence.h"
 #include "static_pair.h"
 #include "scenery_survey.h"
 #include "scenery_feedback.h"
@@ -78,6 +79,7 @@ static int d2_temporal_enabled(void){
     return enabled;
 }
 static int d2_sprite_goal(void);
+static void d2_sprite_clear_snapshots(void);
 static int d2_temporal_request(u32* index,HWND window){
     if(!d2_temporal_enabled())return d2_capture_next(index,window);
     if(d2_auto_probe.phase){*index=d2_auto_probe.index;return d2_auto_capture_frozen(&d2_auto_probe,GetTickCount64());}
@@ -90,7 +92,7 @@ static int d2_temporal_request(u32* index,HWND window){
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
     fprintf(stderr,"[D2TEMP] armed capture=%u; %s within 10 seconds\n",*index,
         d2_sprite_goal()?"move character without manual camera rotation":"rotate camera");
-    d2_alpha_clear_pipelines();d2_alpha_clear_snapshots();
+    d2_alpha_clear_pipelines();d2_alpha_clear_snapshots();d2_sprite_clear_snapshots();
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
     return 0; /* Observe until a stable scene sample changes transform or timeout. */
 }
@@ -290,6 +292,7 @@ static const char* d2_alpha_unsupported(const D2TemporalSample* sample){
     }
     return NULL;
 }
+#include "sprite_alpha_adapter.inc"
 static void d2_alpha_reference(const D2TemporalFrame* current){
     char path[600];snprintf(path,sizeof(path),"%s/alpha-replay.json",d2_temporal_directory);
     FILE* json=d2_capture_fopen(path,"wb");if(!json){d2_alpha_clear_pipelines();return;}
@@ -348,7 +351,7 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
             d2_alpha_snapshots[i].surviving_pixels=survivors;d2_alpha_snapshots[i].available=1;retained_bytes+=size*(1+sizeof(float));
         }else{free(mask);free(original_depth);}
     }
-    fprintf(json,"],\"snapshot_budget_bytes\":%u,\"retained_snapshot_bytes\":%llu}\n",D2_ALPHA_SNAPSHOT_BUDGET,(unsigned long long)retained_bytes);fclose(json);d2_alpha_clear_pipelines();
+    fprintf(json,"],\"snapshot_budget_bytes\":%u,\"retained_snapshot_bytes\":%llu}\n",D2_ALPHA_SNAPSHOT_BUDGET,(unsigned long long)retained_bytes);fclose(json);d2_sprite_alpha_reference(current,retained_bytes);d2_alpha_clear_pipelines();
 }
 
 /* Called after frame submission/observation, before any subsequent game frame. */
@@ -536,6 +539,7 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
 }
 
 
+#include "sprite_raster_adapter.inc"
 #include "motion_draw_adapter.inc"
 #include "motion_mask_adapter.inc"
 
@@ -794,7 +798,7 @@ static void d2_temporal_dump(u32 index){
     const char* base=d2_capture_directory();char path[512];
     snprintf(d2_temporal_directory,sizeof(d2_temporal_directory),"%s/frame_%02u",base?base:"rsxcap",index);
     snprintf(path,sizeof(path),"%s/temporal-probe.json",d2_temporal_directory);
-    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;d2_alpha_clear_pipelines();if(!file){d2_alpha_clear_snapshots();return;}
+    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;d2_alpha_clear_pipelines();if(!file){d2_alpha_clear_snapshots();d2_sprite_clear_snapshots();return;}
     LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);
     double milliseconds=previous->valid && current->valid && frequency.QuadPart>0
         ?(double)(current->time.QuadPart-previous->time.QuadPart)*1000.0/(double)frequency.QuadPart:0;
@@ -806,7 +810,8 @@ static void d2_temporal_dump(u32 index){
     d2_motion_dump(index,current,previous);
     d2_raster_dump(index,current,previous);
     d2_sprite_dump(index,current);
-    d2_alpha_clear_snapshots();d2_depth_timeline_free_pixels();
+    d2_sprite_raster_dump(index,current);
+    d2_alpha_clear_snapshots();d2_sprite_clear_snapshots();d2_depth_timeline_free_pixels();
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);
 }

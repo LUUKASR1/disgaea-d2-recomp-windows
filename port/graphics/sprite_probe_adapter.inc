@@ -3,6 +3,12 @@
 typedef struct {u32 draw;u64 geometry_hash,uv_hash;float center[3],positions[6][4],uv[6][2],transform[16],clip[6][4],scale[4],offset[4];int projected;} D2SpriteRecord;
 typedef struct {u64 frame;u32 count,legacy,large,invalid;int valid,reference_unchanged;u32 reference_pairs;D2SpriteKey keys[MAX_DRAWS];D2SpriteRecord records[MAX_DRAWS];} D2SpriteFrame;
 static D2SpriteFrame d2_sprite_frames[2];
+typedef struct {unsigned char* mask;float* depth;u64 frame;u32 draw;int available,result;const char* reason;} D2SpriteAlpha;
+static D2SpriteAlpha d2_sprite_alpha[MAX_DRAWS];
+static void d2_sprite_clear_snapshots(void){
+    for(unsigned i=0;i<MAX_DRAWS;i++){free(d2_sprite_alpha[i].mask);free(d2_sprite_alpha[i].depth);}
+    memset(d2_sprite_alpha,0,sizeof(d2_sprite_alpha));
+}
 static int d2_sprite_goal(void){const char* goal=getenv("D2_CAPTURE_GOAL");return goal && !strcmp(goal,"sprites");}
 static int d2_sprite_observe(u32 count,u32 hud,u32 parity,unsigned index){
     if(!d2_sprite_goal())return 0;
