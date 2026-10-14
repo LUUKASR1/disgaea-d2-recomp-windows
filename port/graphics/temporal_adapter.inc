@@ -76,6 +76,7 @@ static int d2_temporal_enabled(void){
     if(enabled<0){const char* e=getenv("D2_CAPTURE_MASK_STATE");enabled=e && strcmp(e,"1")==0;}
     return enabled;
 }
+static int d2_sprite_goal(void);
 static int d2_temporal_request(u32* index,HWND window){
     if(!d2_temporal_enabled())return d2_capture_next(index,window);
     if(d2_auto_probe.phase){*index=d2_auto_probe.index;return d2_auto_capture_frozen(&d2_auto_probe,GetTickCount64());}
@@ -86,7 +87,8 @@ static int d2_temporal_request(u32* index,HWND window){
     d2_scene_depth_available=0;d2_scene_depth_result=0;d2_scene_depth_frame=0;
     snprintf(d2_scene_depth_frame_text,sizeof(d2_scene_depth_frame_text),"null");
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
-    fprintf(stderr,"[D2TEMP] armed capture=%u; rotate camera within 10 seconds\n",*index);
+    fprintf(stderr,"[D2TEMP] armed capture=%u; %s within 10 seconds\n",*index,
+        d2_sprite_goal()?"move character with camera stationary":"rotate camera");
     d2_alpha_clear_pipelines();d2_alpha_clear_snapshots();
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
     return 0; /* Observe until a stable scene sample changes transform or timeout. */
