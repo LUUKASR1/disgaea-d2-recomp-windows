@@ -3,6 +3,7 @@
 #define D2_TEMP_SAMPLES 4
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
+    int has_vertex;float attributes[64];
     float constants[D2_TEMP_ROWS*4];
 } D2TemporalSample;
 typedef struct {
@@ -36,6 +37,12 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             sample->vertices=r->vertex_count;sample->texture=r->tex[0].raw;sample->cb_slot=r->cb_slot;
             const void* bank=(const char*)s_d3d.vp_cb_mapped+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE;
             memcpy(sample->constants,bank,sizeof(sample->constants));
+            sample->has_vertex=s_d3d.vp_vb_mapped && r->vertex_count>0 && r->vb_byte_offset%256u==0 &&
+                r->vb_byte_offset/256u<MAX_VERTICES;
+            if(sample->has_vertex){
+                const void* vertex=(const char*)s_d3d.vp_vb_mapped+(u64)parity*MAX_VERTICES*256u+r->vb_byte_offset;
+                memcpy(sample->attributes,vertex,sizeof(sample->attributes));
+            }
         }
         frame->valid=1;
     }
@@ -74,6 +81,15 @@ static void d2_temporal_json_frame(FILE* file,const D2TemporalFrame* frame){
             fprintf(file,"%s{\"row\":%u,\"values\":[",shown++?",":"",row);
             for(unsigned k=0;k<4;k++){if(isfinite(v[k]))fprintf(file,"%s%.9g",k?",":"",(double)v[k]);else fprintf(file,"%snull",k?",":"");}
             fprintf(file,"]}");
+        }
+        fprintf(file,"],\"first_vertex_attributes\":[");
+        if(sample->has_vertex)for(unsigned attribute=0;attribute<16;attribute++){
+            fprintf(file,"%s[",attribute?",":"");
+            for(unsigned component=0;component<4;component++){
+                float value=sample->attributes[attribute*4+component];
+                if(isfinite(value))fprintf(file,"%s%.9g",component?",":"",(double)value);else fprintf(file,"%snull",component?",":"");
+            }
+            fprintf(file,"]");
         }
         fprintf(file,"]}");
     }

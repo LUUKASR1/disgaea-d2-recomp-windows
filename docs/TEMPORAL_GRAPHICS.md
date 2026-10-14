@@ -116,3 +116,7 @@ F8 também grava vp_<hash>.asm com o disassembly do shader disponível, apenas
 na pasta de captura do usuário. Isso permite verificar quais registros alimentam
 a saída de posição; ler um registro não demonstra que ele seja uma matriz de câmera.
 Não há shaders/código do jogo incluídos no repositório ou no launcher.
+
+Cada amostra inclui os 16 atributos float4 do primeiro vértice, quando o offset
+e a memória são válidos. Isso permite avaliar a transformação de posição com
+entradas reais do mesmo draw; não fornece identificação persistente do objeto.
