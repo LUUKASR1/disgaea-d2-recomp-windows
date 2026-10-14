@@ -6,6 +6,7 @@
 #include "motion_raster.h"
 #include "motion_visibility.h"
 #include "scene_depth.h"
+#include "motion_mask.h"
 #include "alpha_replay.h"
 #define D2_GEOMETRY_LIMIT 4096
 #define D2_TEMP_SAMPLES 4
@@ -30,7 +31,7 @@ static float* d2_scene_depth_data;
 static int d2_scene_depth_available,d2_scene_depth_result;
 static u64 d2_scene_depth_frame;
 static char d2_scene_depth_frame_text[32]="null";
-typedef struct {unsigned char* mask;float* depth;u64 frame;u32 draw;int available;} D2AlphaSnapshot;
+typedef struct {unsigned char* mask;float* depth;u64 frame;u32 draw,width,height;int available;} D2AlphaSnapshot;
 static D2AlphaSnapshot d2_alpha_snapshots[D2_TEMP_SAMPLES];
 static void d2_alpha_clear_snapshots(void){
     for(unsigned i=0;i<D2_TEMP_SAMPLES;i++){
@@ -278,6 +279,7 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
         if(!reason){
             d2_alpha_snapshots[i].mask=mask;d2_alpha_snapshots[i].depth=original_depth;
             d2_alpha_snapshots[i].frame=current->frame;d2_alpha_snapshots[i].draw=sample->draw;
+            d2_alpha_snapshots[i].width=s_d3d.width;d2_alpha_snapshots[i].height=s_d3d.height;
             d2_alpha_snapshots[i].available=1;
         }else{free(mask);free(original_depth);}
     }
@@ -482,6 +484,7 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
 
 
 #include "motion_draw_adapter.inc"
+#include "motion_mask_adapter.inc"
 
 static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
     D2MotionVertex* vertices=(D2MotionVertex*)calloc(D2_TEMP_SAMPLES*D2_GEOMETRY_LIMIT,sizeof(D2MotionVertex));
@@ -576,6 +579,7 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             if(depth_compared && d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon)!=1)kept_but_final_rejected++;
         }else if(pixels[p].coverage>.5f)filtered_rejected++;
     }
+    d2_alpha_depth_dump(index,current,pixels,filtered,draw_samples,count,pixels_count,depth_epsilon);
     int depth_image=0,pre_hud_image=0;char path[600];
     if(filtered){
         u8* image=(u8*)calloc(pixels_count,4);

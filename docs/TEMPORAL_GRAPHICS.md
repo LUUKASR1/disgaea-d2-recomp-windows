@@ -589,3 +589,36 @@ raster dimensions. The audited SDK lock/patch are unchanged. This is still a
 capture-only partial candidate field; original alpha-mask integration, full
 visibility, scene-wide motion, persistent object identity and DLSS/FG remain
 pending. Normal rendering is preserved.
+
+### 0.1.37 — owning-draw original shader coverage plus pre-HUD depth
+
+The 0.1.36 game capture 1263 retained 52,877 candidate pixels with pre-HUD depth,
+including 20,210 that final depth would reject. Draw 54 had no unique unchanged
+geometry pair and remained excluded. We continue on DirectX 12 toward temporal
+inputs before starting a separate Vulkan backend.
+
+The new `motion-alpha-depth-check.json` and
+`motion-alpha-depth-filtered-{coverage,vectors}.bmp` combine the verified pre-HUD
+depth filter with original shader coverage. For each candidate pixel, the raw
+raster's owning draw index selects **only that draw's** original shader mask and
+D24 depth. The snapshot must match the frozen frame, draw and raster dimensions.
+A survivor also requires projected depth to coincide with the original shader's
+depth within the existing eight-D24-LSB tolerance. Unknown masks, invalid owners,
+nonfinite motion, shader coverage rejection and depth mismatches fail closed.
+
+Masks are never unioned. A discarded nearest candidate is not reassigned to a
+farther candidate: recovering that layer requires a more complete visibility
+implementation. Valid zero-motion pixels retain coverage; rejected pixels are
+uncovered/unknown, not valid stationary vectors. The prior pre-HUD-only images
+remain available for comparison. The new report includes aggregate/per-draw
+kept and rejected counts, matched mask availability and the partial-field scope.
+`alpha_rejected_pixels` denotes missing original shader coverage, not independent
+proof that alpha discard alone caused a coverage difference.
+
+Tests cover overlapping owners with different masks, original depth mismatch,
+missing masks, bounds, nonintegral/out-of-range/nonfinite owner tags, nonfinite
+vectors and valid stationary motion. Windows CI adds this suite to the existing
+13 graphics suites and compiles the unchanged audited SDK through its adapter.
+Normal rendering is preserved. The selected static candidate field remains a
+capture diagnostic: full scene visibility, blend contribution, dynamic sprites,
+complete scene motion, temporal jitter/history/reset and DLSS/FG are pending.
