@@ -7,9 +7,12 @@
 #include "motion_visibility.h"
 #include "scene_depth.h"
 #include "motion_mask.h"
+#include "static_pair.h"
 #include "alpha_replay.h"
 #define D2_GEOMETRY_LIMIT 4096
-#define D2_TEMP_SAMPLES 4
+#define D2_WORLD_SAMPLES 8
+#define D2_TEMP_SAMPLES 12
+#define D2_ALPHA_SNAPSHOT_BUDGET (128u*1024u*1024u)
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
     int has_vertex,has_fp_alpha;float fp_alpha[4];float attributes[64];unsigned char copied[D2_TEMP_ROWS];unsigned copied_rows;
@@ -17,9 +20,23 @@ typedef struct {
     unsigned geometry_count,cull,geometry_reject,topology,blend,alpha_ctl,stencil,viewport[4];float positions[D2_GEOMETRY_LIMIT][4];
 } D2TemporalSample;
 typedef struct {
-    u64 frame;LARGE_INTEGER time;u32 count;int valid;
+    u64 frame;LARGE_INTEGER time;u32 count,world_records;int valid;
     D2TemporalSample samples[D2_TEMP_SAMPLES];
 } D2TemporalFrame;
+static D2StaticPair d2_temporal_static_pair(const D2TemporalFrame* current,const D2TemporalFrame* previous,u32 index){
+    D2StaticGeometry now[D2_TEMP_SAMPLES]={0},old[D2_TEMP_SAMPLES]={0};
+    D2StaticPair invalid={0,0,-1};
+    if(!current->valid || !previous->valid || current->count>D2_TEMP_SAMPLES || previous->count>D2_TEMP_SAMPLES)return invalid;
+    for(unsigned side=0;side<2;side++){
+        const D2TemporalFrame* frame=side?previous:current;D2StaticGeometry* dst=side?old:now;
+        for(unsigned i=0;i<frame->count;i++){
+            const D2TemporalSample* sample=&frame->samples[i];
+            dst[i].shader=sample->shader;dst[i].fragment=sample->fp;dst[i].texture=sample->texture;
+            dst[i].vertices=sample->geometry_count;dst[i].cull=sample->cull;dst[i].positions=&sample->positions[0][0];
+        }
+    }
+    return d2_static_pair_select(now,current->count,old,previous->count,index);
+}
 static D2TemporalFrame d2_temporal_frames[2];
 static unsigned d2_temporal_next;
 static D2AutoProbe d2_auto_probe;
@@ -99,7 +116,7 @@ static unsigned d2_geometry_view_rejection(const D3D12DrawRecord* r,u32 parity){
 static void d2_temporal_observe(u32 count,u32 hud_start){
     if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_WAITING || !count)return;
     D2TemporalFrame* frame=&d2_temporal_frames[d2_temporal_next];
-    frame->valid=0;frame->count=0;frame->frame=s_d3d.frame_count;QueryPerformanceCounter(&frame->time);
+    frame->valid=0;frame->count=0;frame->world_records=0;frame->frame=s_d3d.frame_count;QueryPerformanceCounter(&frame->time);
     if(s_d3d.vp_cb_mapped){
         u32 parity=(u32)(s_d3d.vp_parity^1);
         for(unsigned pass=0;pass<2;pass++)for(u32 d=0;d<count && d<MAX_DRAWS && d<hud_start && frame->count<D2_TEMP_SAMPLES;d++){
@@ -107,9 +124,10 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             if(!r->is_vp || r->is_clear || r->rt_off || r->rt_mrt[0] || r->rt_mrt[1] || r->rt_mrt[2] ||
                !r->d2_capture_vs_hash || r->cb_slot>=MAX_DRAWS)continue;
             if(d2_hud_record_candidate(r,parity))continue;
+            if(pass==0 && r->d2_capture_vs_hash==0x99362655u)frame->world_records++;
             unsigned same=0;
             for(u32 i=0;i<frame->count;i++)if(frame->samples[i].shader==r->d2_capture_vs_hash)same++;
-            if(same>=2)continue;
+            if(same>=(r->d2_capture_vs_hash==0x99362655u?D2_WORLD_SAMPLES:2u))continue;
             unsigned geometry_reject=d2_geometry_rejection(r);
             /* Alpha/blend remain reported but cannot block a geometry-only
                diagnostic. They MUST still block treating this as scene visibility. */
@@ -159,11 +177,10 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
     if(previous->valid && frame->valid)for(u32 i=0;i<frame->count && !changed;i++){
         const D2TemporalSample* sample=&frame->samples[i];
         if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
-        for(u32 j=0;j<previous->count;j++){
-            const D2TemporalSample* old=&previous->samples[j];
-            if(old->shader!=sample->shader || old->fp!=sample->fp || old->vertices!=sample->vertices ||
-               old->texture!=sample->texture || !old->has_vertex || memcmp(old->attributes,sample->attributes,4*sizeof(float)))continue;
-            if(d2_transform_changed(old->constants+256*4,sample->constants+256*4)){changed=1;break;}
+        D2StaticPair pair=d2_temporal_static_pair(frame,previous,i);
+        if(pair.previous_index>=0){
+            const D2TemporalSample* old=&previous->samples[pair.previous_index];
+            if(d2_transform_changed(old->constants+256*4,sample->constants+256*4))changed=1;
         }
     }
     d2_temporal_next^=1;
@@ -239,10 +256,14 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
         "\"motion_vectors_available\":false,\"normal_rendering_changed\":false,\"samples\":[",
         (unsigned long long)current->frame,d2_reference_available && d2_reference_frame==current->frame?"true":"false",
         s_d3d.width,s_d3d.height);
-    size_t size=(size_t)s_d3d.width*s_d3d.height;unsigned shown=0;
+    size_t size=(size_t)s_d3d.width*s_d3d.height,retained_bytes=0;unsigned shown=0;
     for(unsigned i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];if(sample->shader!=0x99362655u)continue;
-        const char* reason=d2_alpha_unsupported(sample);int result=0,image_written=0;unsigned long long survivors=0;
+        const char* reason=d2_alpha_unsupported(sample);
+        D2StaticPair pair=d2_temporal_static_pair(current,&d2_temporal_frames[d2_temporal_next],i);
+        if(!reason && pair.previous_index<0)reason="no-unique-static-pair";
+        if(!reason && size*(1+sizeof(float))>D2_ALPHA_SNAPSHOT_BUDGET-retained_bytes)reason="snapshot-budget-exceeded";
+        int result=0,image_written=0;unsigned long long survivors=0;
         unsigned char* mask=NULL;float* original_depth=NULL;
         if(!reason){
             mask=size<=8388608?(unsigned char*)calloc(size,1):NULL;
@@ -280,10 +301,10 @@ static void d2_alpha_reference(const D2TemporalFrame* current){
             d2_alpha_snapshots[i].mask=mask;d2_alpha_snapshots[i].depth=original_depth;
             d2_alpha_snapshots[i].frame=current->frame;d2_alpha_snapshots[i].draw=sample->draw;
             d2_alpha_snapshots[i].width=s_d3d.width;d2_alpha_snapshots[i].height=s_d3d.height;
-            d2_alpha_snapshots[i].available=1;
+            d2_alpha_snapshots[i].available=1;retained_bytes+=size*(1+sizeof(float));
         }else{free(mask);free(original_depth);}
     }
-    fprintf(json,"]}\n");fclose(json);d2_alpha_clear_pipelines();
+    fprintf(json,"],\"snapshot_budget_bytes\":%u,\"retained_snapshot_bytes\":%llu}\n",D2_ALPHA_SNAPSHOT_BUDGET,(unsigned long long)retained_bytes);fclose(json);d2_alpha_clear_pipelines();
 }
 
 /* Called after frame submission/observation, before any subsequent game frame. */
@@ -386,12 +407,8 @@ static void d2_projection_dump(u32 index,const D2TemporalFrame* current,const D2
     for(u32 i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];
         if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
-        const D2TemporalSample* old=NULL;
-        for(u32 j=0;j<previous->count;j++){
-            const D2TemporalSample* candidate=&previous->samples[j];
-            if(candidate->shader==sample->shader && candidate->fp==sample->fp &&
-               candidate->vertices==sample->vertices && candidate->texture==sample->texture){old=candidate;break;}
-        }
+        D2StaticPair pair=d2_temporal_static_pair(current,previous,i);
+        const D2TemporalSample* old=pair.previous_index>=0?&previous->samples[pair.previous_index]:NULL;
         float now[4]={0},before[4]={0},delta[2]={0};
         int valid=d2_project_world(sample->constants+256*4,sample->constants+512*4,sample->constants+513*4,
             sample->constants[466*4+2],sample->attributes,now);
@@ -419,17 +436,9 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
     if(current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];
         if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
-        const D2TemporalSample* old=NULL;unsigned matches=0;
-        for(u32 j=0;j<previous->count;j++){
-            const D2TemporalSample* candidate=&previous->samples[j];
-            if(candidate->shader==sample->shader && candidate->fp==sample->fp &&
-               candidate->vertices==sample->vertices && candidate->texture==sample->texture &&
-               candidate->has_vertex && !memcmp(candidate->attributes,sample->attributes,4*sizeof(float))){
-                old=candidate;matches++;
-            }
-        }
-        /* Ambiguous first-point signatures are rejected, not used as identities. */
-        if(matches!=1)continue;
+        D2StaticPair pair=d2_temporal_static_pair(current,previous,i);
+        if(pair.previous_index<0)continue;
+        const D2TemporalSample* old=&previous->samples[pair.previous_index];
         float now[4],before[4],delta[2];
         if(!d2_project_world(sample->constants+256*4,sample->constants+512*4,sample->constants+513*4,
                sample->constants[466*4+2],sample->attributes,now) ||
@@ -489,22 +498,17 @@ static void d2_motion_dump(u32 index,const D2TemporalFrame* current,const D2Temp
 static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
     D2MotionVertex* vertices=(D2MotionVertex*)calloc(D2_TEMP_SAMPLES*D2_GEOMETRY_LIMIT,sizeof(D2MotionVertex));
     D2MotionDraw draws[D2_TEMP_SAMPLES]={0};unsigned count=0,total_vertices=0,rejected=0,unreplayed_draws=0;
-    const char* reasons[D2_TEMP_SAMPLES]={"not-world","not-world","not-world","not-world"};
-    unsigned geometry_matches[D2_TEMP_SAMPLES]={0},frustum_triangles[D2_TEMP_SAMPLES]={0};
+    const char* reasons[D2_TEMP_SAMPLES];for(unsigned i=0;i<D2_TEMP_SAMPLES;i++)reasons[i]="not-world";
+    unsigned geometry_matches[D2_TEMP_SAMPLES]={0},current_geometry_matches[D2_TEMP_SAMPLES]={0},frustum_triangles[D2_TEMP_SAMPLES]={0};
     float ndc_bounds[D2_TEMP_SAMPLES][6]={{0}};unsigned draw_samples[D2_TEMP_SAMPLES]={0};
     if(vertices && current->valid && previous->valid)for(u32 i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];
         if(sample->shader!=0x99362655u)continue;
         if(!sample->geometry_count){reasons[i]="geometry-ineligible";rejected++;continue;}
-        const D2TemporalSample* old=NULL;unsigned matches=0;
-        for(u32 j=0;j<previous->count;j++){
-            const D2TemporalSample* p=&previous->samples[j];
-            if(p->shader==sample->shader && p->fp==sample->fp && p->texture==sample->texture &&
-               p->geometry_count==sample->geometry_count && p->cull==sample->cull &&
-               !memcmp(p->positions,sample->positions,sample->geometry_count*4*sizeof(float))){old=p;matches++;}
-        }
-        geometry_matches[i]=matches;
-        if(matches!=1){reasons[i]="no-unique-unchanged-geometry";rejected++;continue;}
+        D2StaticPair pair=d2_temporal_static_pair(current,previous,i);
+        geometry_matches[i]=pair.previous_matches;current_geometry_matches[i]=pair.current_matches;
+        if(pair.previous_index<0){reasons[i]=pair.current_matches>1?"ambiguous-current-geometry":"no-unique-unchanged-geometry";rejected++;continue;}
+        const D2TemporalSample* old=&previous->samples[pair.previous_index];
         D2MotionVertex* dst=vertices+count*D2_GEOMETRY_LIMIT;int valid=1;
         for(unsigned v=0;v<sample->geometry_count;v++){
             if(!d2_project_world(sample->constants+256*4,sample->constants+512*4,sample->constants+513*4,
@@ -703,12 +707,12 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             const D2TemporalSample* sample=&current->samples[i];
             if(sample->shader!=0x99362655u)continue;
             fprintf(file,"%s{\"draw\":%u,\"reason\":\"%s\",\"eligibility_mask\":%u,"
-                "\"geometry_vertices\":%u,\"unchanged_geometry_matches\":%u,\"topology\":%u,"
+                "\"geometry_vertices\":%u,\"unchanged_geometry_matches\":%u,\"current_geometry_matches\":%u,\"topology\":%u,"
                 "\"blend\":%u,\"alpha_ctl\":%u,\"stencil\":%u,\"viewport\":[%u,%u,%u,%u],"
                 "\"cull\":%u,\"frustum_candidate_triangles\":%u,\"current_ndc_bounds\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],"
                 "\"fp_alpha_uniform_available\":%s,\"fp_alpha_uniform\":",
                 shown++?",":"",sample->draw,reasons[i],sample->geometry_reject,sample->geometry_count,
-                geometry_matches[i],sample->topology,sample->blend,sample->alpha_ctl,sample->stencil,
+                geometry_matches[i],current_geometry_matches[i],sample->topology,sample->blend,sample->alpha_ctl,sample->stencil,
                 sample->viewport[0],sample->viewport[1],sample->viewport[2],sample->viewport[3],
                 sample->cull,frustum_triangles[i],(double)ndc_bounds[i][0],(double)ndc_bounds[i][1],(double)ndc_bounds[i][2],
                 (double)ndc_bounds[i][3],(double)ndc_bounds[i][4],(double)ndc_bounds[i][5],

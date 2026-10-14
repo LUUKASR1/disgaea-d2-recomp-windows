@@ -622,3 +622,39 @@ vectors and valid stationary motion. Windows CI adds this suite to the existing
 Normal rendering is preserved. The selected static candidate field remains a
 capture diagnostic: full scene visibility, blend contribution, dynamic sprites,
 complete scene motion, temporal jitter/history/reset and DLSS/FG are pending.
+
+### 0.1.38 — expanded bounded scenery capture and symmetric pairing
+
+Game capture 1911 validated the combined filter for draw 52: 51,501 retained
+pixels, 7,673 pre-HUD-depth rejections, and no additional original shader mask,
+depth, owner or motion errors. We now expand sampling from two to **up to eight**
+world-shader draws, with twelve total diagnostic sample slots and the existing
+4,096-vertex limit per draw. Eligible in-frustum geometry keeps priority.
+
+Pairing now requires full geometry/pipeline-signature uniqueness in **both**
+captured frame sets. Two current instances cannot borrow one previous sample;
+previous duplicates, changed vertex data, texture or culling remain rejected.
+Draw ordering is not identity. Automatic camera-change selection and CPU/GPU
+point probes use the same conservative pairing rule. These are bounded sample
+sets, not a global object registry or persistent identity proof.
+
+Original shader coverage is replayed only for eligible unique static pairs.
+Retained mask/depth snapshots have a 128 MiB budget: an oversized expansion is
+reported as `snapshot-budget-exceeded`, never substituted with another draw's
+mask. The per-draw depth timeline still snapshots only its original two world
+candidates; the globally captured pre-HUD depth remains usable for every
+accepted world sample. Missing after-draw timeline snapshots are explicit.
+
+`motion-alpha-depth-check.json` adds world records seen, world samples captured,
+limits, pairing scope and selected-candidate screen coverage percentage. This
+percentage is the area covered by the filtered diagnostic field, not a measure
+of complete scene correctness. Per-draw rejection reports distinguish current
+ambiguity from missing/ambiguous previous geometry. Previous diagnostic image
+names and owner/mask/depth rules are preserved.
+
+Tests cover reordered samples, duplicates in either frame, full geometry changes
+with an unchanged first vertex, texture/culling differences and ineligible
+samples. Windows CI adds this suite to the prior fourteen graphics suites and
+compiles the audited renderer adapter. Normal rendering and the SDK lock/patch
+are unchanged. Capture work and report size can increase; live scene motion,
+dynamic sprites/effects, temporal history and DLSS/FG remain pending.
