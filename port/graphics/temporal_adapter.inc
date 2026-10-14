@@ -80,15 +80,15 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             if(!r->is_vp || r->is_clear || r->rt_off || r->rt_mrt[0] || r->rt_mrt[1] || r->rt_mrt[2] ||
                !r->d2_capture_vs_hash || r->cb_slot>=MAX_DRAWS)continue;
             if(d2_hud_record_candidate(r,parity))continue;
+            unsigned same=0;
+            for(u32 i=0;i<frame->count;i++)if(frame->samples[i].shader==r->d2_capture_vs_hash)same++;
+            if(same>=2)continue;
             unsigned geometry_reject=d2_geometry_rejection(r);
             /* Alpha/blend remain reported but cannot block a geometry-only
                diagnostic. They MUST still block treating this as scene visibility. */
             if(!(geometry_reject & ~(64u|128u)))geometry_reject|=d2_geometry_view_rejection(r,parity);
             unsigned structural_reject=geometry_reject & ~(64u|128u);
             if((pass==0 && structural_reject) || (pass==1 && !structural_reject))continue;
-            unsigned same=0;
-            for(u32 i=0;i<frame->count;i++)if(frame->samples[i].shader==r->d2_capture_vs_hash)same++;
-            if(same>=2)continue;
             D2TemporalSample* sample=&frame->samples[frame->count++];
             sample->geometry_count=0;sample->cull=r->cull;
             sample->geometry_reject=geometry_reject;sample->topology=r->topology;
