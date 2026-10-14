@@ -182,7 +182,8 @@ static void d2_alpha_bind(void* command_list,void* user){
     list->lpVtbl->SetPipelineState(list,b->pso);
     list->lpVtbl->SetGraphicsRootSignature(list,s_d3d.vp_root_sig);
     ID3D12DescriptorHeap* heaps[]={s_d3d.srv_heap};list->lpVtbl->SetDescriptorHeaps(list,1,heaps);
-    D3D12_GPU_DESCRIPTOR_HANDLE srv=s_d3d.srv_heap->lpVtbl->GetGPUDescriptorHandleForHeapStart(s_d3d.srv_heap);
+    D3D12_GPU_DESCRIPTOR_HANDLE srv;
+    s_d3d.srv_heap->lpVtbl->GetGPUDescriptorHandleForHeapStart(s_d3d.srv_heap,&srv);
     srv.ptr+=(u64)(DRAW_SRV_BASE+b->draw*4)*s_d3d.srv_inc;
     list->lpVtbl->SetGraphicsRootDescriptorTable(list,1,srv);
     list->lpVtbl->SetGraphicsRootConstantBufferView(list,0,

@@ -47,7 +47,7 @@ extern "C" int d2_alpha_replay(void* dp,void* qp,uint32_t width,uint32_t height,
         check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_ID3D12CommandAllocator,(void**)c->allocator.put()));
         check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,c->allocator.p,nullptr,IID_ID3D12GraphicsCommandList,(void**)c->list.put()));
         float black[4]={0};c->list->ClearRenderTargetView(rt,black,0,nullptr);
-        c->list->ClearDepthStencilView(ds,D3D12_CLEAR_FLAG_DEPTH|D3D12_CLEAR_FLAG_STENCIL,1,0,0,nullptr);
+        c->list->ClearDepthStencilView(ds,(D3D12_CLEAR_FLAGS)(D3D12_CLEAR_FLAG_DEPTH|D3D12_CLEAR_FLAG_STENCIL),1,0,0,nullptr);
         c->list->OMSetRenderTargets(1,&rt,FALSE,&ds);
         D3D12_VIEWPORT vp{0,0,(float)width,(float)height,0,1};D3D12_RECT sc{0,0,(LONG)width,(LONG)height};
         c->list->RSSetViewports(1,&vp);c->list->RSSetScissorRects(1,&sc);
