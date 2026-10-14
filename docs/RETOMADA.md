@@ -1,6 +1,6 @@
 # Retomada do projeto — 14/10/2026
 
-Pausa solicitada pelo usuário para retomar em 15/10/2026 (horário de Brasília).
+Pausa solicitada pelo usuário para retomar mais tarde em 14/10/2026 (horário de Brasília).
 
 ## Estado preservado
 - Branch: `feature/native-graphics`.
