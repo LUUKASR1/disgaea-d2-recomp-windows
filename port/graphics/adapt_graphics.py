@@ -130,11 +130,12 @@ def generate(source, output):
         '                d2_post_ready=1;d2_post_reason="snapshot-not-reached";\n'
         '            }else d2_post_reason="resource-prepare-failed";\n'
         '        }\n'
-        '    }\n\n    /* Transition render target to RENDER_TARGET state */')
+        '    }\n    d2_depth_timeline_prepare();\n\n    /* Transition render target to RENDER_TARGET state */')
     text = replace(text, '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if (!dr->is_vp) continue;''', '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
+                d2_depth_timeline_before_draw(d);
                 if(d2_capture_requested && d==d2_hud_start)
                     d2_hud_snapshotted=d2_hud_snapshot(s_d3d.cmd_list,s_d3d.render_targets[fi],s_d3d.depth_buffer)==0;
                 if(d2_post_ready && d==d2_hud_start){
@@ -150,7 +151,8 @@ def generate(source, output):
                 }
                 if(d2_post_ready && d>=d2_hud_start)d2_posthud_keep(fi,d-d2_hud_start,dpso?dpso:vpso);
                 s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
-                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);''')
+                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);
+                d2_depth_timeline_after_draw(d);''')
     text = replace(text, '''        u32 index;
         if(s_present_this_frame && s_dbg_last_draws>0 && d2_capture_f8_next(&index))
             rsx_capture_frame(fi,s_dbg_last_draws,index);''',

@@ -1,4 +1,5 @@
 #include "scene_depth.h"
+#include "depth_steps.h"
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -39,6 +40,29 @@ int main(){try{
             for(float p:pixels)require(std::abs(p-value)<2.0f/16777215.0f,"D24 low bits decode independently of stencil and row padding");
             // The readback fence also covers the clear and restores source DEPTH_WRITE for the next clear.
         }
+        void* steps=d2_depth_steps_create(device.p,depth.p);require(steps!=nullptr,"Timeline resources allocated");
+        for(unsigned iteration=0;iteration<2;iteration++){
+            d2_depth_steps_reset_after_gpu_idle(steps);
+            Ref<ID3D12CommandAllocator> allocator;Ref<ID3D12GraphicsCommandList> list;
+            check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_ID3D12CommandAllocator,(void**)allocator.put()));
+            check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocator.p,nullptr,IID_ID3D12GraphicsCommandList,(void**)list.put()));
+            const float stages[3]={.8f,.4f,.2f};
+            for(unsigned slot=0;slot<3;slot++){
+                list->ClearDepthStencilView(handle,D3D12_CLEAR_FLAG_DEPTH,stages[slot],0,0,nullptr);
+                require(d2_depth_steps_record(steps,list.p,slot)==0,"Depth snapshot recorded inside original command list");
+            }
+            require(d2_depth_steps_record(steps,list.p,0)<0,"Duplicate slot cannot replace an earlier moment");
+            list->ClearDepthStencilView(handle,D3D12_CLEAR_FLAG_DEPTH,.05f,0,0,nullptr);
+            check(list->Close());ID3D12CommandList* commands[]={list.p};queue->ExecuteCommandLists(1,commands);
+            std::vector<float> pixels(17*9);
+            for(unsigned slot=0;slot<3;slot++){
+                require(d2_depth_steps_read(steps,queue.p,slot,17,9,pixels.data())==0,"Timeline crop readback succeeds");
+                for(float v:pixels)require(std::abs(v-stages[slot])<2.f/16777215.f,"Snapshot preserves its moment despite subsequent clears");
+            }
+            require(d2_scene_depth_read(device.p,queue.p,depth.p,17,9,pixels.data())==0,"Source still usable after snapshots");
+            for(float v:pixels)require(std::abs(v-.05f)<2.f/16777215.f,"Source retains final clear; recording restores its state");
+        }
+        d2_depth_steps_destroy_after_gpu_idle(steps);
         float out=0;require(d2_scene_depth_read(device.p,queue.p,depth.p,66,1,&out)<0,"Invalid crop rejected");
     }
     const float epsilon=8.0f/16777215.0f;

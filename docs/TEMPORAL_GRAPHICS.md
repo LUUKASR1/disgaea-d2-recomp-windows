@@ -525,3 +525,33 @@ and lock remain unchanged.
 GPU validation checks winning draw ownership after overlapping draw reordering,
 original shader D24 depth versus its discard mask, and clear depth on an empty
 draw. The same Windows CI compiles the renderer adapter and packages the preview.
+
+### 0.1.35 — depth timeline inside the selected render frame
+
+In game capture 6520, projected and original shader coverage/depth matched
+exactly for draws 39 (81 pixels) and 40 (133 pixels). Every survivor was deeper
+than final scene depth by up to approximately 0.008924. That does not establish
+whether the cause is pre-existing occlusion, a later scene draw, or a HUD write.
+
+F8 selection now records up to three GPU-local D24 depth-plane snapshots on the
+original render command list: immediately after each of the two selected world
+candidate draws, and immediately before the recognized final HUD block. Source
+resource state is restored after each copy. CPU readback happens only when the
+frame is frozen. GPU snapshots are reset only after the renderer's existing idle
+fence; frozen data is retained through the next-frame dump. Frame and draw guards
+prevent the next frame from replacing a selected snapshot.
+
+`depth-timeline.json` compares original shader survivor depth with after-draw,
+before-HUD and final depth. It counts changes on those same survivor pixels
+between the three moments. Comparisons are explicitly unavailable when candidate
+selection does not match, a copy/read fails, or a final HUD boundary cannot be
+recognized. A difference is not automatically labeled a HUD defect or alpha
+failure: depth can already be closer at the instant the selected draw executes.
+
+This remains capture-only diagnostics. It does not change normal rendering,
+remove depth writes or feed DLSS/FG. Up to three full-source GPU snapshots are
+allocated/reused; capture mode can temporarily affect performance. Tests extend
+the existing WARP D24 suite with sequential .8/.4/.2 snapshots followed by a .05
+final clear, typed/typeless formats, cropped readback, duplicate-slot rejection,
+resource-state restoration and safe reuse after GPU completion. The audited SDK
+patch and lock remain unchanged.

@@ -93,6 +93,8 @@ static unsigned d2_geometry_view_rejection(const D3D12DrawRecord* r,u32 parity){
     return candidates?0u:1024u;
 }
 
+#include "depth_timeline_adapter.inc"
+
 static void d2_temporal_observe(u32 count,u32 hud_start){
     if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_WAITING || !count)return;
     D2TemporalFrame* frame=&d2_temporal_frames[d2_temporal_next];
@@ -288,6 +290,7 @@ static void d2_temporal_reference(u32 fi){
     d2_reference_attempted=1;
     const D2TemporalFrame* current=&d2_temporal_frames[d2_temporal_next^1];
     if(!current->valid || current->frame!=s_d3d.frame_count || !s_d3d.render_targets[fi])return;
+    d2_depth_timeline_read_selected();
     size_t depth_pixels=(size_t)s_d3d.width*s_d3d.height;
     d2_scene_depth_data=depth_pixels<=8388608?(float*)calloc(depth_pixels,sizeof(float)):NULL;
     d2_scene_depth_result=d2_scene_depth_data?
@@ -525,6 +528,7 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
     D2MotionPixel* pixels=pixels_count<=8388608?(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel)):NULL;
     int result=!vertices || !pixels?(int)E_OUTOFMEMORY:count?
         d2_motion_raster_gpu(s_d3d.device,s_d3d.cmd_queue,draws,count,s_d3d.width,s_d3d.height,pixels):0;
+    d2_depth_timeline_dump(index,current);
     if(vertices && pixels && count)d2_motion_draws_dump(index,current,draws,draw_samples,count,pixels,result);
     unsigned long long covered=0,moving=0,invalid=0;double max_x=0,max_y=0;int images=0;
     if(result==0 && count)for(size_t p=0;p<pixels_count;p++){
@@ -708,7 +712,7 @@ static void d2_temporal_dump(u32 index){
     d2_projection_dump(index,current,previous);
     d2_motion_dump(index,current,previous);
     d2_raster_dump(index,current,previous);
-    d2_alpha_clear_snapshots();
+    d2_alpha_clear_snapshots();d2_depth_timeline_free_pixels();
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);
 }
