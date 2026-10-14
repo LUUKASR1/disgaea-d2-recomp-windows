@@ -91,18 +91,16 @@ static int d2_hud_replay(u32 start,u32 count,unsigned pass)
 static int d2_posthud_supported(u32 start,u32 count,const char** reason)
 {
     if(start>=count){*reason=d2_hud_boundary_reason;return 0;}
-    /* Stencil-dependent HUD requires a separate stencil reconstruction path. */
-    for(u32 d=start;d<count;d++)if(s_d3d.draws[d].d2_zs.stencil ||
-        s_d3d.draws[d].d2_zs.front || s_d3d.draws[d].d2_zs.back){
-        *reason=s_d3d.draws[d].d2_zs.stencil?"hud-stencil-enabled":"hud-stencil-state";
-        return 0;
-    }
+    /* Depth and stencil are reconstructed before replay. */
     return 1;
 }
 
 static int d2_posthud_present(u32 frame,u32 start,u32 count)
 {
     for(u32 d=start;d<count;d++)if(!d2_posthud_pipeline(frame,d-start))return -1;
+    int stencil=0;
+    for(u32 d=start;d<count;d++)if(s_d3d.draws[d].d2_zs.stencil)stencil=1;
+    d2_posthud_stencil(frame,stencil);
     ID3D12GraphicsCommandList* list=d2_posthud_begin(frame,d2_graphics_output(frame));
     if(d2_hud_draws(list,start,count,frame,1)!=0)return -1;
     return d2_posthud_end(frame);

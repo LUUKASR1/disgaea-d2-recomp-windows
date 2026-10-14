@@ -53,7 +53,11 @@ int main(){try{
     pd.DepthStencilState.FrontFace={D3D12_STENCIL_OP_KEEP,D3D12_STENCIL_OP_KEEP,D3D12_STENCIL_OP_KEEP,D3D12_COMPARISON_FUNC_ALWAYS};pd.DepthStencilState.BackFace=pd.DepthStencilState.FrontFace;
     auto& blend=pd.BlendState.RenderTarget[0];blend.BlendEnable=TRUE;blend.SrcBlend=D3D12_BLEND_SRC_ALPHA;blend.DestBlend=D3D12_BLEND_INV_SRC_ALPHA;
     blend.BlendOp=D3D12_BLEND_OP_ADD;blend.SrcBlendAlpha=D3D12_BLEND_ONE;blend.DestBlendAlpha=D3D12_BLEND_INV_SRC_ALPHA;blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;blend.RenderTargetWriteMask=15;
-    Ref<ID3D12PipelineState> hud,depth_only;ok(device->CreateGraphicsPipelineState(&pd,IID_ID3D12PipelineState,reinterpret_cast<void**>(hud.put())));
+    Ref<ID3D12PipelineState> hud,depth_only,stencil_hud;
+    pd.DepthStencilState.StencilEnable=TRUE;pd.DepthStencilState.StencilReadMask=255;pd.DepthStencilState.StencilWriteMask=0;
+    pd.DepthStencilState.FrontFace.StencilFunc=D3D12_COMPARISON_FUNC_EQUAL;pd.DepthStencilState.BackFace=pd.DepthStencilState.FrontFace;
+    ok(device->CreateGraphicsPipelineState(&pd,IID_ID3D12PipelineState,reinterpret_cast<void**>(stencil_hud.put())));
+    pd.DepthStencilState.StencilEnable=FALSE;ok(device->CreateGraphicsPipelineState(&pd,IID_ID3D12PipelineState,reinterpret_cast<void**>(hud.put())));
     pd.BlendState.RenderTarget[0].RenderTargetWriteMask=0;pd.DepthStencilState.DepthFunc=D3D12_COMPARISON_FUNC_ALWAYS;
     ok(device->CreateGraphicsPipelineState(&pd,IID_ID3D12PipelineState,reinterpret_cast<void**>(depth_only.put())));
     auto draw=[&](ID3D12GraphicsCommandList* command,ID3D12PipelineState* pso,D3D12_RECT rect,const float* tint){
@@ -88,16 +92,23 @@ int main(){try{
             transition(list.p,scene[frame].p,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_RENDER_TARGET);
             float background[4]={.2f+iteration*.1f,.4f,.6f,1};list->ClearRenderTargetView(rh,background,0,nullptr);
             list->ClearDepthStencilView(dh,D3D12_CLEAR_FLAG_DEPTH|D3D12_CLEAR_FLAG_STENCIL,.9f,0,0,nullptr);
+            const UINT8 stencil_values[3]={0,0xA5,0xFF};UINT8 stencil_value=stencil_values[iteration];
+            list->ClearDepthStencilView(dh,D3D12_CLEAR_FLAG_STENCIL,1,stencil_value,0,nullptr);
+            D3D12_RECT bottom{0,(LONG)c.rh/2,(LONG)c.rw,(LONG)c.rh};
+            list->ClearDepthStencilView(dh,D3D12_CLEAR_FLAG_STENCIL,1,stencil_value^255,1,&bottom);
+            list->OMSetStencilRef(stencil_value);
             list->OMSetRenderTargets(1,&rh,FALSE,&dh);D3D12_VIEWPORT viewport{0,0,(float)c.rw,(float)c.rh,0,1};list->RSSetViewports(1,&viewport);
             const float near_depth[4]={0,0,0,.25f};draw(list.p,depth_only.p,{(LONG)c.rw/2,0,(LONG)c.rw,(LONG)c.rh},near_depth);
             require(d2_posthud_snapshot(frame,list.p,scene[frame].p,depth.p)==0,"Snapshot prior to HUD");
             const float green[4]={0,1,0,.5f},red[4]={1,0,0,.5f};UINT old_x=17*c.rw/c.ow,old_right=(c.ow-18)*c.rw/c.ow;
-            draw(list.p,hud.p,{(LONG)old_x,0,(LONG)old_x+1,(LONG)c.rh},green);
+            draw(list.p,stencil_hud.p,{(LONG)old_x,0,(LONG)old_x+1,(LONG)c.rh},green);
             draw(list.p,hud.p,{(LONG)old_right,0,(LONG)old_right+1,(LONG)c.rh},red);
             transition(list.p,scene[frame].p,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COMMON);submit();
-            d2_posthud_keep(frame,0,hud.p);require(d2_posthud_pipeline(frame,0)==hud.p,"Retained original pipeline");
+            d2_posthud_keep(frame,0,stencil_hud.p);require(d2_posthud_pipeline(frame,0)==stencil_hud.p,"Retained original pipeline");
             require(d2_graphics_present(frame,d2_posthud_scene(frame))==0,"Upscale scene without internal HUD");
+            d2_posthud_stencil(frame,1);
             auto* command=static_cast<ID3D12GraphicsCommandList*>(d2_posthud_begin(frame,d2_graphics_output(frame)));require(command!=nullptr,"Begin output HUD");
+            command->OMSetStencilRef(stencil_value);
             draw(command,static_cast<ID3D12PipelineState*>(d2_posthud_pipeline(frame,0)),{17,0,18,(LONG)c.oh},green);
             draw(command,hud.p,{(LONG)c.ow-18,0,(LONG)c.ow-17,(LONG)c.oh},red);
             require(d2_posthud_end(frame)==0,"Submit output HUD");wait();
@@ -118,10 +129,10 @@ int main(){try{
             list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);transition(list.p,output,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);submit();
             unsigned char* pixels=nullptr;D3D12_RANGE range{0,(SIZE_T)bytes};ok(readback->Map(0,&range,reinterpret_cast<void**>(&pixels)));
             for(UINT y:{0u,c.oh/2,c.oh-1})for(UINT x:{16u,17u,18u,c.ow-18})for(UINT channel=0;channel<4;channel++){
-                float expected=background[channel];if(x==17 && channel<3)expected=.5f*background[channel]+(channel==1?.5f:0);
+                float expected=background[channel];if(x==17 && y<c.oh/2 && channel<3)expected=.5f*background[channel]+(channel==1?.5f:0);
                 int actual=pixels[y*footprint.Footprint.RowPitch+x*4+channel];require(std::abs(actual-(int)std::round(expected*255))<=3,"Output-pixel HUD width / depth / stale internal HUD leak");
             }
-            readback->Unmap(0,nullptr);std::printf("PASS output HUD %ux%u -> %ux%u mode=%s frame=%u: 1px HUD and depth preserved\n",c.rw,c.rh,c.ow,c.oh,c.mode,iteration);
+            readback->Unmap(0,nullptr);std::printf("PASS output HUD %ux%u -> %ux%u mode=%s frame=%u: 1px HUD, depth and all stencil bits preserved\n",c.rw,c.rh,c.ow,c.oh,c.mode,iteration);
             ok(swap->Present(0,0));wait();
         }
         wait();d2_posthud_shutdown();d2_graphics_shutdown();DestroyWindow(window);

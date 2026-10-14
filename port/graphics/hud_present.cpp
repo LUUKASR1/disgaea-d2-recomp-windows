@@ -34,9 +34,11 @@ struct State {
     Ref<ID3D12DescriptorHeap> rtv,dsv,srv;
     Ref<ID3D12RootSignature> root;
     Ref<ID3D12PipelineState> depth_pso;
+    std::array<Ref<ID3D12PipelineState>,8> stencil_pso;
+    std::array<bool,2> stencil_needed{false,false};
     std::array<bool,2> snapped{false,false};
     ID3D12Resource* recording_output=nullptr;int recording_frame=-1;
-    void release(UINT frame){for(auto* p:pipelines[frame])if(p)p->Release();pipelines[frame].clear();snapped[frame]=false;}
+    void release(UINT frame){for(auto* p:pipelines[frame])if(p)p->Release();pipelines[frame].clear();snapped[frame]=false;stencil_needed[frame]=false;}
     ~State(){release(0);release(1);}
 };
 std::unique_ptr<State> gpu;
@@ -56,6 +58,14 @@ float main(float4 position:SV_POSITION):SV_Depth {
     uint2 pixel=min(uint2(position.xy*float2(inputSize)/float2(outputSize)),inputSize-1);
     return sourceDepth.Load(int3(pixel,0));
 })";
+const char* stencil_ps=R"(
+Texture2D<uint2> sourceStencil:register(t0);
+cbuffer Sizes:register(b0){uint2 inputSize;uint2 outputSize;uint bit;}
+void main(float4 position:SV_POSITION) {
+    uint2 pixel=min(uint2(position.xy*float2(inputSize)/float2(outputSize)),inputSize-1);
+    if((sourceStencil.Load(int3(pixel,0)).y & bit)==0) discard;
+}
+)";
 int fail(const std::exception& e){std::fprintf(stderr,"[D2POSTHUD] %s\n",e.what());return -1;}
 }
 extern "C" int d2_posthud_enabled(void){
@@ -64,6 +74,7 @@ extern "C" int d2_posthud_enabled(void){
     return enabled;
 }
 extern "C" void d2_posthud_frame(UINT frame){if(gpu && frame<2)gpu->release(frame);}
+extern "C" void d2_posthud_stencil(UINT frame,int needed){if(gpu && frame<2)gpu->stencil_needed[frame]=needed!=0;}
 extern "C" int d2_posthud_prepare(void* device,void* queue,void* color,void* depth,void* output){
     try{
         if(!device||!queue||!color||!depth||!output)throw std::runtime_error("Post-HUD GPU inputs missing");
@@ -94,14 +105,19 @@ extern "C" int d2_posthud_prepare(void* device,void* queue,void* color,void* dep
         auto dh=s->dsv->GetCPUDescriptorHandleForHeapStart();UINT dstride=s->device->GetDescriptorHandleIncrementSize(h.Type);
         D3D12_DEPTH_STENCIL_VIEW_DESC view{};view.Format=DXGI_FORMAT_D24_UNORM_S8_UINT;view.ViewDimension=D3D12_DSV_DIMENSION_TEXTURE2D;
         for(auto& resource:s->output_depth){s->device->CreateDepthStencilView(resource.p,&view,dh);dh.ptr+=dstride;}
-        h.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;h.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        h.NumDescriptors=4;h.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;h.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         check(s->device->CreateDescriptorHeap(&h,IID_ID3D12DescriptorHeap,reinterpret_cast<void**>(s->srv.put())),"Post-HUD depth SRV heap");
         auto sh=s->srv->GetCPUDescriptorHandleForHeapStart();UINT stride=s->device->GetDescriptorHandleIncrementSize(h.Type);
         D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R24_UNORM_X8_TYPELESS;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
         srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;
-        for(auto& resource:s->depth){s->device->CreateShaderResourceView(resource.p,&srv,sh);sh.ptr+=stride;}
+        for(auto& resource:s->depth){
+            srv.Format=DXGI_FORMAT_R24_UNORM_X8_TYPELESS;srv.Texture2D.PlaneSlice=0;
+            s->device->CreateShaderResourceView(resource.p,&srv,sh);sh.ptr+=stride;
+            srv.Format=DXGI_FORMAT_X24_TYPELESS_G8_UINT;srv.Texture2D.PlaneSlice=1;
+            s->device->CreateShaderResourceView(resource.p,&srv,sh);sh.ptr+=stride;
+        }
         D3D12_DESCRIPTOR_RANGE range{};range.RangeType=D3D12_DESCRIPTOR_RANGE_TYPE_SRV;range.NumDescriptors=1;
-        D3D12_ROOT_PARAMETER params[2]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants.Num32BitValues=4;
+        D3D12_ROOT_PARAMETER params[2]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants.Num32BitValues=5;
         params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[1].DescriptorTable={1,&range};
         D3D12_ROOT_SIGNATURE_DESC rd{};rd.NumParameters=2;rd.pParameters=params;
         Ref<ID3DBlob> blob,error;check(D3D12SerializeRootSignature(&rd,D3D_ROOT_SIGNATURE_VERSION_1,blob.put(),error.put()),"Post-HUD depth root signature");
@@ -117,6 +133,17 @@ extern "C" int d2_posthud_prepare(void* device,void* queue,void* color,void* dep
         p.DepthStencilState.FrontFace={D3D12_STENCIL_OP_KEEP,D3D12_STENCIL_OP_KEEP,D3D12_STENCIL_OP_KEEP,D3D12_COMPARISON_FUNC_ALWAYS};
         p.DepthStencilState.BackFace=p.DepthStencilState.FrontFace;
         check(s->device->CreateGraphicsPipelineState(&p,IID_ID3D12PipelineState,reinterpret_cast<void**>(s->depth_pso.put())),"Post-HUD depth pipeline");
+        Ref<ID3DBlob> stencil;
+        check(D3DCompile(stencil_ps,std::strlen(stencil_ps),"HUD stencil PS",nullptr,nullptr,"main","ps_5_0",0,0,stencil.put(),error.put()),"Post-HUD stencil PS");
+        p.PS={stencil->GetBufferPointer(),stencil->GetBufferSize()};
+        p.DepthStencilState.DepthEnable=FALSE;p.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ZERO;
+        p.DepthStencilState.StencilEnable=TRUE;p.DepthStencilState.StencilReadMask=255;
+        p.DepthStencilState.FrontFace.StencilPassOp=D3D12_STENCIL_OP_REPLACE;
+        p.DepthStencilState.BackFace=p.DepthStencilState.FrontFace;
+        for(UINT bit=0;bit<8;bit++){
+            p.DepthStencilState.StencilWriteMask=static_cast<UINT8>(1u<<bit);
+            check(s->device->CreateGraphicsPipelineState(&p,IID_ID3D12PipelineState,reinterpret_cast<void**>(s->stencil_pso[bit].put())),"Post-HUD stencil pipeline");
+        }
         check(s->device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,s->allocator[0].p,nullptr,
             IID_ID3D12GraphicsCommandList,reinterpret_cast<void**>(s->list.put())),"Post-HUD command list");check(s->list->Close(),"Post-HUD initial close");
         gpu=std::move(s);std::fprintf(stderr,"[D2POSTHUD] initialized render=%ux%u output=%ux%u\n",gpu->rw,gpu->rh,gpu->ow,gpu->oh);return 0;
@@ -158,8 +185,16 @@ extern "C" void* d2_posthud_begin(UINT frame,void* target){
         list->RSSetViewports(1,&viewport);list->RSSetScissorRects(1,&rect);
         list->SetGraphicsRootSignature(gpu->root.p);list->SetPipelineState(gpu->depth_pso.p);list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ID3D12DescriptorHeap* heaps[]={gpu->srv.p};list->SetDescriptorHeaps(1,heaps);
-        auto sh=gpu->srv->GetGPUDescriptorHandleForHeapStart();sh.ptr+=frame*gpu->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        auto sh=gpu->srv->GetGPUDescriptorHandleForHeapStart();sh.ptr+=frame*2*gpu->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         const UINT sizes[4]={gpu->rw,gpu->rh,gpu->ow,gpu->oh};list->SetGraphicsRoot32BitConstants(0,4,sizes,0);list->SetGraphicsRootDescriptorTable(1,sh);list->DrawInstanced(3,1,0,0);
+        if(gpu->stencil_needed[frame]){
+            sh.ptr+=gpu->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            list->SetGraphicsRootDescriptorTable(1,sh);list->OMSetStencilRef(255);
+            for(UINT bit=0;bit<8;bit++){
+                list->SetPipelineState(gpu->stencil_pso[bit].p);
+                list->SetGraphicsRoot32BitConstant(0,1u<<bit,4);list->DrawInstanced(3,1,0,0);
+            }
+        }
         barrier(list,output,D3D12_RESOURCE_STATE_PRESENT,D3D12_RESOURCE_STATE_RENDER_TARGET);
         auto rh=gpu->rtv->GetCPUDescriptorHandleForHeapStart();rh.ptr+=frame*gpu->rtv_stride;
         gpu->device->CreateRenderTargetView(output,nullptr,rh);list->OMSetRenderTargets(1,&rh,FALSE,&dh);

@@ -11,6 +11,7 @@ int d2_posthud_snapshot(uint32_t frame,void* list,void* color,void* depth);
 void* d2_posthud_scene(uint32_t frame);
 void d2_posthud_keep(uint32_t frame,uint32_t index,void* pipeline);
 void* d2_posthud_pipeline(uint32_t frame,uint32_t index);
+void d2_posthud_stencil(uint32_t frame,int needed);
 void* d2_posthud_begin(uint32_t frame,void* output);
 int d2_posthud_end(uint32_t frame);
 void d2_posthud_shutdown(void);
