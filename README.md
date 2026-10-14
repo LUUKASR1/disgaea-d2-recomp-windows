@@ -2,11 +2,30 @@
 
 # Disgaea D2 WINPORT (PROJETO EM DESENVOLVIMENTO)
 
-## Começar no Windows
+## Launcher experimental 0.1.28 disponível
 
-Baixe o instalador ou a versão portátil em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). O launcher atual é o **0.1.10-preview**. A primeira preparação gera e compila o jogo no seu computador; as sessões seguintes reutilizam essa build.
+[Baixar o executável Windows x64](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/download/v0.1.28-graphics-preview/DisgaeaD2Launcher-HUD-Output-Preview.exe) · [Notas e ZIP da versão](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/tag/v0.1.28-graphics-preview)
 
-Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313** e do PKG de atualização **US 1.40**. DLCs são opcionais e precisam dos seus próprios arquivos e licenças. A entrada direta de ISO ainda não está implementada.
+Abra o EXE e forneça sua própria ISO compatível do jogo americano, atualização US 1.40 e DLCs opcionais conforme solicitado. A primeira preparação ocorre no seu PC e pode baixar ferramentas/compilar automaticamente. Nenhum arquivo do jogo ou código recompilado do jogo acompanha a distribuição.
+
+Esta **pré-release experimental** oferece resolução interna/saída, FSR 1 espacial, opções de HUD, seleção de Hz e VRR quando suportado. **DLSS e Frame Generation ainda não estão implementados.** Capturas F8 são diagnósticos parciais e podem pausar o jogo; mantenha-as desligadas para jogar normalmente. A validação real do novo raster geométrico continua pendente.
+
+O perfil `DisgaeaD2Recomp-Graphics-Preview` é separado da versão anterior. Previews gráficas anteriores reutilizam a preparação e os saves desse perfil. Não apague suas pastas de saves. A documentação abaixo da 0.1.10 descreve o fluxo anterior por pasta extraída.
+
+### Experimental launcher 0.1.28
+
+[Download the Windows x64 EXE](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/download/v0.1.28-graphics-preview/DisgaeaD2Launcher-HUD-Output-Preview.exe) · [Release notes and ZIP](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/tag/v0.1.28-graphics-preview)
+
+Run the EXE and supply your own compatible US game ISO, US 1.40 update and optional DLCs. First-run preparation runs locally and may download tools/build automatically. No game files or recompiled game code are bundled.
+
+This experimental prerelease includes internal/output resolution, spatial FSR 1, HUD options, refresh-rate selection and supported VRR. **DLSS and Frame Generation are not implemented.** F8 captures are partial diagnostics and can pause gameplay; disable them for ordinary play. Real-game validation of the latest geometry raster is pending. The graphics preview uses a separate profile; existing graphics previews reuse its preparation and saves. The 0.1.10 guide below describes the older extracted-folder flow.
+
+
+## Guia anterior — Windows 0.1.10
+
+Baixe o instalador ou a versão portátil em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). Esta seção descreve o launcher anterior **0.1.10-preview**. A primeira preparação gera e compila o jogo no seu computador; as sessões seguintes reutilizam essa build.
+
+Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313** e do PKG de atualização **US 1.40**. DLCs são opcionais e precisam dos seus próprios arquivos e licenças. A entrada direta de ISO está disponível na preview 0.1.28 acima; a 0.1.10 usa pasta extraída.
 
 1. Instale `DisgaeaD2Launcher-Setup-Windows-x64.exe` e abra o launcher. Se usar o ZIP portátil, extraia tudo e mantenha a pasta `_internal` junto do executável.
 2. Clique em **Jogar**, selecione a pasta do jogo (ou `PS3_GAME`) e a atualização 1.40; inclua seus PKGs de DLC, se desejar. Também pode selecionar esses arquivos na aba **Preparação**.
@@ -18,11 +37,11 @@ Se o launcher apontar um arquivo ausente ou vazio, restaure-o da sua própria c�
 
 A aba **Vídeo** oferece resolução de exibição em janela, tela cheia sem bordas e VSync. A resolução de exibição amplia a imagem; a resolução interna permanece original. As opções são aplicadas na próxima abertura do jogo.
 
-## Getting started on Windows
+## Previous guide — Windows 0.1.10
 
-Download the installer or portable package from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). The current launcher is **0.1.10-preview**. The first preparation generates and compiles the game on your computer; later sessions reuse that build.
+Download the installer or portable package from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). This section describes the previous **0.1.10-preview** launcher. The first preparation generates and compiles the game on your computer; later sessions reuse that build.
 
-You need your own **extracted** US game copy (**BLUS31313**) and the **US 1.40** update PKG. DLCs are optional and require your own files and licenses. Direct ISO input is not implemented yet.
+You need your own **extracted** US game copy (**BLUS31313**) and the **US 1.40** update PKG. DLCs are optional and require your own files and licenses. Direct ISO input is available in preview 0.1.28 above; 0.1.10 uses an extracted folder.
 
 1. Install `DisgaeaD2Launcher-Setup-Windows-x64.exe` and open the launcher. For the portable ZIP, extract everything and keep `_internal` next to the executable.
 2. Click **Jogar**, select the game folder (or `PS3_GAME`) and the 1.40 update; add your DLC PKGs if desired. These files can also be selected in the **Preparação** tab.
