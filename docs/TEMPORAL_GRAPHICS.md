@@ -157,3 +157,33 @@ Para continuar: 720p interno e saída, upscaling desligado, capturas habilitadas
 Girar a câmera e pressionar F8 durante o movimento. Enviar projection-check.json;
 o relatório detalhado e vp_99362655.asm ficam disponíveis para a análise.
 DLSS e FG seguem indisponíveis enquanto faltam câmera e movimento completos.
+
+## 0.1.24 — F8 espera por mudança de transformação
+
+Com captura habilitada, pressione F8 primeiro e depois gire a câmera dentro
+de dez segundos. A coleta fica armada, mantendo apenas o par mais recente,
+até encontrar mudança significativa dos registros 256–259 de um draw 99362655
+com mesma assinatura e primeiro ponto inalterado. Ruído pequeno e valores
+não finitos não selecionam um par. Isso detecta mudança de transformação;
+não prova identidade de objeto nem movimento exclusivo da câmera.
+
+Enquanto aguarda, copia somente sete float4 necessários ao shader conhecido
+(256–259, 466, 512 e 513), os atributos do primeiro vértice e metadados.
+Para outros shaders conserva apenas 512/513. Os registros ausentes não são
+serializados como zeros: temporal-probe.json informa captured_rows e
+capture_scope=transform-only. Não existem leituras GPU ou gravações nesse loop.
+
+Ao selecionar, congela o par antes dos dumps/readbacks. A captura das imagens
+é feita no frame apresentado seguinte; capture_image_frame identifica esse
+frame separado de current_frame/previous_frame da observação selecionada.
+A requisição mantém um único índice e marcador de conclusão.
+
+projection-check.json inclui selection_status=transform-changed ou
+timeout-no-transform-change. No prazo expirado captura o diagnóstico sem
+afirmar sucesso; não espera indefinidamente. Se o jogo fechar antes de completar
+a coleta, não há garantia de relatório completo. Aguarde a captura terminar.
+
+Testes cobrem espera estática, seleção/congelamento, emissão única, prazo
+exato de dez segundos e rejeição de ruído/NaN. A seleção e seu desempenho
+no jogo real continuam pendentes. F8 ainda pode causar pausa pelos readbacks
+posteriores. DLSS e Frame Generation continuam indisponíveis.

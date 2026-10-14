@@ -1,10 +1,11 @@
 /* Diagnostic snapshots only: never treat draw order as persistent object identity. */
 #include "temporal_probe.h"
 #include "projection.h"
+#include "auto_probe.h"
 #define D2_TEMP_SAMPLES 4
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
-    int has_vertex;float attributes[64];
+    int has_vertex;float attributes[64];unsigned char copied[D2_TEMP_ROWS];unsigned copied_rows;
     float constants[D2_TEMP_ROWS*4];
 } D2TemporalSample;
 typedef struct {
@@ -13,7 +14,7 @@ typedef struct {
 } D2TemporalFrame;
 static D2TemporalFrame d2_temporal_frames[2];
 static unsigned d2_temporal_next;
-static unsigned d2_temporal_phase,d2_temporal_index;
+static D2AutoProbe d2_auto_probe;
 static char d2_temporal_directory[512];
 static int d2_temporal_enabled(void){
     static int enabled=-1;
@@ -22,14 +23,15 @@ static int d2_temporal_enabled(void){
 }
 static int d2_temporal_request(u32* index,HWND window){
     if(!d2_temporal_enabled())return d2_capture_next(index,window);
-    if(d2_temporal_phase){*index=d2_temporal_index;return d2_temporal_phase==2;}
+    if(d2_auto_probe.phase){*index=d2_auto_probe.index;return d2_auto_capture(&d2_auto_probe,GetTickCount64());}
     if(!d2_capture_next(index,window))return 0;
-    d2_temporal_index=*index;d2_temporal_phase=1;d2_temporal_next=0;
+    d2_auto_arm(&d2_auto_probe,*index,GetTickCount64());d2_temporal_next=0;
+    fprintf(stderr,"[D2TEMP] armed capture=%u; rotate camera within 10 seconds\n",*index);
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
-    return 0; /* First frame samples only; the next presented frame owns the capture. */
+    return 0; /* Observe until a stable scene sample changes transform or timeout. */
 }
 static void d2_temporal_observe(u32 count,u32 hud_start){
-    if(!d2_temporal_enabled() || !d2_temporal_phase || !count)return;
+    if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_WAITING || !count)return;
     D2TemporalFrame* frame=&d2_temporal_frames[d2_temporal_next];
     frame->valid=0;frame->count=0;frame->frame=s_d3d.frame_count;QueryPerformanceCounter(&frame->time);
     if(s_d3d.vp_cb_mapped){
@@ -46,7 +48,14 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
             sample->draw=d;sample->shader=r->d2_capture_vs_hash;sample->fp=r->fp_addr;
             sample->vertices=r->vertex_count;sample->texture=r->tex[0].raw;sample->cb_slot=r->cb_slot;
             const void* bank=(const char*)s_d3d.vp_cb_mapped+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE;
-            memcpy(sample->constants,bank,sizeof(sample->constants));
+            memset(sample->copied,0,sizeof(sample->copied));sample->copied_rows=0;
+            const unsigned rows[]={256,257,258,259,466,512,513};
+            for(unsigned row_index=0;row_index<7;row_index++){
+                unsigned row=rows[row_index];
+                if(sample->shader!=0x99362655u && row<512)continue;
+                memcpy(sample->constants+row*4,(const float*)bank+row*4,4*sizeof(float));
+                sample->copied[row]=1;sample->copied_rows++;
+            }
             sample->has_vertex=s_d3d.vp_vb_mapped && r->vertex_count>0 && r->vb_byte_offset%256u==0 &&
                 r->vb_byte_offset/256u<MAX_VERTICES;
             if(sample->has_vertex){
@@ -56,8 +65,22 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
         }
         frame->valid=1;
     }
+    const D2TemporalFrame* previous=&d2_temporal_frames[d2_temporal_next^1];
+    int changed=0;
+    if(previous->valid && frame->valid)for(u32 i=0;i<frame->count && !changed;i++){
+        const D2TemporalSample* sample=&frame->samples[i];
+        if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
+        for(u32 j=0;j<previous->count;j++){
+            const D2TemporalSample* old=&previous->samples[j];
+            if(old->shader!=sample->shader || old->fp!=sample->fp || old->vertices!=sample->vertices ||
+               old->texture!=sample->texture || !old->has_vertex || memcmp(old->attributes,sample->attributes,4*sizeof(float)))continue;
+            if(d2_transform_changed(old->constants+256*4,sample->constants+256*4)){changed=1;break;}
+        }
+    }
     d2_temporal_next^=1;
-    d2_temporal_phase++;
+    d2_auto_observed(&d2_auto_probe,changed,GetTickCount64());
+    if(d2_auto_probe.phase==D2_AUTO_READY)fprintf(stderr,"[D2TEMP] selection=%s capture=%u\n",
+        d2_auto_probe.changed?"transform-changed":"timeout-no-transform-change",d2_auto_probe.index);
 }
 static D2ConstantReads d2_temporal_reads(u32 hash,int* available){
     D2ConstantReads reads={0};*available=0;
@@ -83,11 +106,11 @@ static void d2_temporal_json_frame(FILE* file,const D2TemporalFrame* frame){
         const D2TemporalSample* sample=&frame->samples[i];int available=0;
         D2ConstantReads reads=d2_temporal_reads(sample->shader,&available);
         fprintf(file,"%s{\"draw\":%u,\"shader\":\"%08X\",\"fp\":\"%08X\",\"vertices\":%u,\"texture0\":\"%08X\","
-            "\"constant_slot\":%u,\"shader_reads_available\":%s,\"indirect_reads\":%s,\"referenced_rows\":%u,\"constants\":[",
+            "\"constant_slot\":%u,\"shader_reads_available\":%s,\"indirect_reads\":%s,\"referenced_rows\":%u,\"captured_rows\":%u,\"capture_scope\":\"transform-only\",\"constants\":[",
             i?",":"",sample->draw,sample->shader,sample->fp,sample->vertices,sample->texture,sample->cb_slot,
-            available?"true":"false",reads.indirect?"true":"false",reads.count);
+            available?"true":"false",reads.indirect?"true":"false",reads.count,sample->copied_rows);
         unsigned shown=0;
-        for(unsigned row=0;row<D2_TEMP_ROWS;row++)if(reads.used[row]){
+        for(unsigned row=0;row<D2_TEMP_ROWS;row++)if(reads.used[row] && sample->copied[row]){
             const float* v=sample->constants+row*4;
             fprintf(file,"%s{\"row\":%u,\"values\":[",shown++?",":"",row);
             for(unsigned k=0;k<4;k++){if(isfinite(v[k]))fprintf(file,"%s%.9g",k?",":"",(double)v[k]);else fprintf(file,"%snull",k?",":"");}
@@ -111,8 +134,11 @@ static void d2_projection_dump(u32 index,const D2TemporalFrame* current,const D2
     FILE* file=d2_capture_fopen(path,"wb");if(!file)return;
     fprintf(file,"{\"schema\":1,\"capture_index\":%u,\"purpose\":\"same-point-transform-validation\","
         "\"motion_vectors_available\":false,\"object_identity_available\":false,\"current_frame\":%llu,\"previous_frame\":%llu,"
-        "\"render_width\":%u,\"render_height\":%u,\"samples\":[",index,
-        (unsigned long long)current->frame,(unsigned long long)previous->frame,s_d3d.width,s_d3d.height);
+        "\"render_width\":%u,\"render_height\":%u,\"automatic_selection\":true,\"selection_status\":\"%s\","
+        "\"capture_image_frame\":%llu,\"samples\":[",index,
+        (unsigned long long)current->frame,(unsigned long long)previous->frame,s_d3d.width,s_d3d.height,
+        !d2_temporal_enabled()?"not-armed":d2_auto_probe.changed?"transform-changed":"timeout-no-transform-change",
+        (unsigned long long)s_d3d.frame_count);
     unsigned shown=0;
     for(u32 i=0;i<current->count;i++){
         const D2TemporalSample* sample=&current->samples[i];
@@ -148,7 +174,7 @@ static void d2_temporal_dump(u32 index){
     const char* base=d2_capture_directory();char path[512];
     snprintf(d2_temporal_directory,sizeof(d2_temporal_directory),"%s/frame_%02u",base?base:"rsxcap",index);
     snprintf(path,sizeof(path),"%s/temporal-probe.json",d2_temporal_directory);
-    FILE* file=d2_capture_fopen(path,"wb");d2_temporal_phase=0;if(!file)return;
+    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;if(!file)return;
     LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);
     double milliseconds=previous->valid && current->valid && frequency.QuadPart>0
         ?(double)(current->time.QuadPart-previous->time.QuadPart)*1000.0/(double)frequency.QuadPart:0;
