@@ -10,7 +10,7 @@ import zipfile
 
 LIMIT = 8
 CAPTURE_ENV = ('D2_CAPTURE_EVENT', 'D2_CAPTURE_MASK_STATE', 'D2_CAPTURE_F8',
-               'RSX_CAP', 'RSX_CAP_DIR')
+               'RSX_CAP', 'RSX_CAP_DIR', 'D2_SCENERY_FEEDBACK_FILE')
 
 
 class WinEvent:
@@ -67,7 +67,8 @@ class CaptureSession:
 
     def environment(self, original):
         env = clean_capture_environment(original)
-        env.update(D2_CAPTURE_EVENT=self.name, D2_CAPTURE_MASK_STATE='1', RSX_CAP_DIR=str(self.directory))
+        env.update(D2_CAPTURE_EVENT=self.name, D2_CAPTURE_MASK_STATE='1', RSX_CAP_DIR=str(self.directory),
+                   D2_SCENERY_FEEDBACK_FILE=str(self.directory.parent / 'scenery-feedback-v1.bin'))
         return env
 
     def started(self):

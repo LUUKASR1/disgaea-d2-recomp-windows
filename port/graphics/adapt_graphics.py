@@ -130,7 +130,7 @@ def generate(source, output):
         '                d2_post_ready=1;d2_post_reason="snapshot-not-reached";\n'
         '            }else d2_post_reason="resource-prepare-failed";\n'
         '        }\n'
-        '    }\n    d2_depth_timeline_prepare();\n\n    /* Transition render target to RENDER_TARGET state */')
+        '    }\n    d2_scenery_prepare();\n    d2_depth_timeline_prepare();\n\n    /* Transition render target to RENDER_TARGET state */')
     text = replace(text, '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if (!dr->is_vp) continue;''', '''            for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {

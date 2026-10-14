@@ -658,3 +658,49 @@ samples. Windows CI adds this suite to the prior fourteen graphics suites and
 compiles the audited renderer adapter. Normal rendering and the SDK lock/patch
 are unchanged. Capture work and report size can increase; live scene motion,
 dynamic sprites/effects, temporal history and DLSS/FG remain pending.
+
+
+### 0.1.39 — material-proxy clusters and useful-density feedback
+
+Game capture 3964 retained 97,189 pixels across seven static candidates (10.55%
+of the screen), with no mask, original depth, owner or motion errors. There were
+792 world records but only eight sample slots. Selection now surveys eligible
+main-target world geometry before recognized HUD, instead of taking the first
+eligible draws. The survey scans at most the audited renderer's 393,216 vertices
+and 2,048 records, retaining a full-position fingerprint inventory, including
+out-of-view eligible records. Incomplete inventories fail closed. Pairing requires
+one matching fingerprint in each inventory **and** full selected geometry equality;
+hashing can reject a collision but cannot establish object identity.
+
+Candidates are clustered by vertex shader hash, fragment program address,
+texture-0 address and logarithmic vertex-count bucket. These are runtime material
+and geometry proxies; neither object type nor camera distance is identified.
+Each group supplies its highest-scoring representative first. When there are more
+than eight groups, the eight highest-scoring groups win; otherwise remaining slots
+are filled by other high-scoring draws. Ties use ascending draw index. This keeps
+diversity within the existing eight-world/twelve-total sample budget.
+
+Score is clipped projected triangle area multiplied by `0.2 + 0.8 * useful_rate`.
+Area is an estimate (overlap, culling, transparency and occlusion are not removed).
+Cold groups use rate 0.5. After a valid original-shader/pre-HUD-depth capture,
+useful density is retained pixels divided by isolated original-shader surviving
+pixels, aggregated once per group. Existing estimates use a 0.75/0.25 exponential
+average. Invalid owners, motion or depth mismatches suppress learning. Missing
+masks do not provide observations. The 20% score floor permits renewed selection
+after occlusion; it is not a guarantee that every group will be explored.
+
+Up to 256 group observations persist in the preview profile's optional
+`captures/scenery-feedback-v1.bin`, with version, bounded count, semantic checks
+and checksum. A missing/truncated/invalid cache is ignored. Runtime addresses can
+change between runs, so previous groups may not match and then use cold-start
+scores. Normal launches strip the feedback environment variable and do not survey
+or update history. Earlier preview captures do not prepopulate this new cache.
+
+`motion-alpha-depth-check.json` reports selection policy, group count, inventory
+completeness, history loaded/updated and per-draw score/area/prior observations.
+Original draw-owned masks, verified pre-HUD depth and unknown-pixel semantics are
+unchanged. The two per-draw timeline slots now follow selected representatives.
+Tests add inventory/area/ranking and clustering/history suites to the fifteen
+existing graphics suites. The audited SDK lock and consolidated patch stay intact.
+These are capture diagnostics; complete scene visibility, blend contribution,
+dynamic objects, temporal integration, DLSS and frame generation remain pending.

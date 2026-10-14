@@ -30,20 +30,9 @@ static void d2_depth_timeline_prepare(void){
     d2_steps_frame=s_d3d.frame_count;d2_steps_count=0;d2_steps_before_hud=0;
     const char* old_reason=d2_hud_boundary_reason;
     d2_steps_hud_boundary=d2_hud_find_boundary(s_d3d.draw_count);d2_hud_boundary_reason=old_reason;
-    u32 parity=(u32)s_d3d.vp_parity;
-    /* Same preferred/fallback world geometry policy as temporal_observe.
-       Reports require an exact selected-frame/draw match, never draw order alone. */
-    for(unsigned pass=0;pass<2;pass++)for(u32 d=0;d<s_d3d.draw_count && d<MAX_DRAWS &&
-        d<d2_steps_hud_boundary && d2_steps_count<2;d++){
-        const D3D12DrawRecord* r=&s_d3d.draws[d];
-        if(!r->is_vp||r->is_clear||r->rt_off||r->rt_mrt[0]||r->rt_mrt[1]||r->rt_mrt[2]||
-           r->d2_capture_vs_hash!=0x99362655u||r->cb_slot>=MAX_DRAWS||!s_d3d.vp_cb_mapped)continue;
-        unsigned reject=d2_geometry_rejection(r);
-        if(!(reject & ~(64u|128u)))reject|=d2_geometry_view_rejection(r,parity);
-        unsigned structural=reject & ~(64u|128u);
-        if((pass==0 && structural)||(pass==1 && !structural))continue;
-        d2_steps_draw[d2_steps_count++]=d;
-    }
+    if(d2_scenery_survey.valid && d2_scenery_survey.frame==s_d3d.frame_count)
+        for(unsigned i=0;i<d2_scenery_survey.ranked_count && i<2;i++)
+            d2_steps_draw[d2_steps_count++]=d2_scenery_survey.ranked[i].draw;
     d2_steps_active=1;
 }
 static void d2_depth_timeline_before_draw(u32 draw){
