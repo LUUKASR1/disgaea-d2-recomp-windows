@@ -1,3 +1,4 @@
+#include "motion_gap_adapter.inc"
 /* Original shader masks are selected by exact frozen draw/frame/size, and then
    by the winning raster draw owner at each pixel. Never union candidate masks. */
 static void d2_alpha_depth_dump(u32 index,const D2TemporalFrame* current,const D2MotionPixel* pixels,
@@ -127,5 +128,6 @@ static void d2_alpha_depth_dump(u32 index,const D2TemporalFrame* current,const D
         }
         fprintf(json,"]}\n");fclose(json);
     }
+    d2_motion_gap_dump(index,current,pixels,depth_filtered,masks,draw_samples,count,size,epsilon);
     free(output);
 }

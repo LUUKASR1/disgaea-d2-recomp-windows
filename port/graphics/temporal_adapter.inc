@@ -7,6 +7,7 @@
 #include "motion_visibility.h"
 #include "scene_depth.h"
 #include "motion_mask.h"
+#include "motion_gap.h"
 #include "static_pair.h"
 #include "scenery_survey.h"
 #include "scenery_feedback.h"

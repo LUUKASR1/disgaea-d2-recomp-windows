@@ -704,3 +704,23 @@ Tests add inventory/area/ranking and clustering/history suites to the fifteen
 existing graphics suites. The audited SDK lock and consolidated patch stay intact.
 These are capture diagnostics; complete scene visibility, blend contribution,
 dynamic objects, temporal integration, DLSS and frame generation remain pending.
+
+
+### 0.1.40 — classify remaining candidate-field gaps
+
+Preview 0.1.39 game captures 2630/4120 retained 748,864/740,275 pixels (81.26%/
+80.32%) with eight matched shader masks, complete 792-record inventories and no
+mask/depth/owner/motion errors. The second capture used eight learned history
+records. Different camera positions mean these are not a controlled comparison.
+
+`motion-gap-check.json` partitions every render pixel by the first conservative
+filter stage: retained candidate, no selected candidate, missing pre-HUD depth,
+pre-HUD depth rejection, missing original mask, owning shader coverage rejection,
+original depth mismatch or invalid evidence. `motion-gap-classification.bmp` uses
+the RGB legend in the JSON. Reasons do not identify object type; missing shader
+coverage alone does not prove alpha discard. A valid stationary vector remains
+retained. Unknown pixels remain unknown. The report also counts retained pixels
+owned by blend-enabled draws; blend contribution remains unvalidated even where
+alpha and depth agree. This diagnostic adds no new motion acceptance and changes
+neither sample selection nor normal rendering. It runs only during explicit
+capture. The new classification test joins the previous 17 graphics suites.
