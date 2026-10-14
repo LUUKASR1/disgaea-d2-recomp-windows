@@ -52,7 +52,7 @@ static D2ConstantReads d2_temporal_reads(u32 hash,int* available){
             reads=d2_constant_reads((const char*)assembly->lpVtbl->GetBufferPointer(assembly));*available=1;
             char path[600];snprintf(path,sizeof(path),"%s/vp_%08X.asm",d2_temporal_directory,hash);
             FILE* shader=d2_capture_fopen(path,"wb");
-            if(shader){fwrite(assembly->lpVtbl->GetBufferPointer(assembly),1,assembly->lpVtbl->GetBufferSize(assembly),shader);fclose(shader);}
+            if(shader){fwrite(assembly->lpVtbl->GetBufferPointer(assembly),1,strlen((const char*)assembly->lpVtbl->GetBufferPointer(assembly)),shader);fclose(shader);}
             assembly->lpVtbl->Release(assembly);
         }
         break;
