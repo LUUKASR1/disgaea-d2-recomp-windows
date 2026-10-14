@@ -8,6 +8,18 @@ extern "C" {
 /* Copies plane 0 of borrowed D24/R24G8 depth, restoring DEPTH_WRITE.
    Full source subresource is copied; output is the requested top-left crop. */
 int d2_scene_depth_read(void* device,void* queue,void* depth,uint32_t width,uint32_t height,float* output);
+/* Select only a successfully read, recognized pre-HUD snapshot of this frame
+   and raster size. Command-list-end/final depth must never serve as fallback. */
+typedef struct {
+    const float* pixels;uint64_t frame;uint32_t width,height;
+    int boundary_verified,available;
+} D2PreHudDepth;
+static inline const float* d2_pre_hud_depth_select(const D2PreHudDepth* snapshot,
+    uint64_t frame,uint32_t width,uint32_t height){
+    if(!snapshot || !snapshot->pixels || !snapshot->available || !snapshot->boundary_verified ||
+       snapshot->frame!=frame || !width || !height || snapshot->width!=width || snapshot->height!=height)return 0;
+    return snapshot->pixels;
+}
 /* Diagnostic categories, NOT proof of visibility: 0 invalid, 1 equal,
    2 candidate deeper than final depth, 3 candidate nearer. */
 static inline int d2_depth_relation(float candidate,float scene,float epsilon){
@@ -17,7 +29,7 @@ static inline int d2_depth_relation(float candidate,float scene,float epsilon){
     if(fabsf(difference)<=epsilon)return 1;
     return difference>0?2:3;
 }
-/* A kept diagnostic candidate is finite and coincident in final depth.
+/* A kept diagnostic candidate is finite and coincident in the supplied depth.
    This is NOT alpha replay, persistent object identity, or scene visibility. */
 static inline int d2_depth_filter_pixel(const D2MotionPixel* source,float scene,float epsilon,D2MotionPixel* filtered){
     if(!filtered)return 0;

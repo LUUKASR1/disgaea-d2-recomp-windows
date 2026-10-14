@@ -556,3 +556,36 @@ the existing WARP D24 suite with sequential .8/.4/.2 snapshots followed by a .05
 final clear, typed/typeless formats, cropped readback, duplicate-slot rejection,
 resource-state restoration and safe reuse after GPU completion. The audited SDK
 patch and lock remain unchanged.
+
+### 0.1.36 — pre-HUD depth for candidate motion filtering
+
+Game capture 1721 recognized a final HUD block at draw 214. Draw 1's 61,481
+original shader pixels all matched after-draw depth; 5,047 became deeper before
+HUD and none changed across HUD. Draw 2's 888 pixels all matched after-draw
+ depth; 715 became deeper before HUD, then all 888 changed across the HUD block.
+Only 173 of that draw's original survivor pixels remained coincident before HUD;
+none remained coincident in final depth. These are per-draw observations, not a
+prediction of combined raster counts or proof of full scene visibility.
+
+The candidate motion depth filter now consumes **only** a successfully read
+snapshot before a recognized final HUD block, with exact frozen-frame and raster
+size matches. Final depth and the unclassified command-list-end snapshot cannot
+be substituted. If pre-HUD depth is unavailable, `depth_filter_applied` stays
+false. No guest depth-write state is changed.
+
+`motion-raster.json` explicitly labels `depth_filter_source`, the pre-HUD frame,
+pre-HUD depth relation counts, and the number of candidates kept before HUD that
+final depth would reject. Existing `candidate_depth_*` counters and
+`motion-depth-classification.bmp` remain final-frame diagnostics, labeled as
+such. `motion-pre-hud-depth-classification.bmp` shows pre-HUD relations (green
+coincident, red deeper, blue nearer). `motion-depth-filtered-coverage.bmp` and
+`motion-depth-filtered-vectors.bmp` now use verified pre-HUD depth. Per-draw
+original-shader and depth-timeline diagnostics remain available.
+
+WARP tests verify that a .2 scene-depth snapshot retains a motion sample despite
+later .05 final depth, which would reject that same sample. Selection tests reject
+unknown HUD boundaries, failed/missing readback, stale frames and mismatched
+raster dimensions. The audited SDK lock/patch are unchanged. This is still a
+capture-only partial candidate field; original alpha-mask integration, full
+visibility, scene-wide motion, persistent object identity and DLSS/FG remain
+pending. Normal rendering is preserved.

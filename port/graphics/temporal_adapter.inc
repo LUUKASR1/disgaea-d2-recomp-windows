@@ -561,13 +561,22 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
         int relation=d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon);
         if(relation==1)depth_equal++;else if(relation==2)depth_deeper++;else if(relation==3)depth_nearer++;else depth_invalid++;
     }
-    unsigned long long filtered_kept=0,filtered_rejected=0;int filtered_images=0;
-    D2MotionPixel* filtered=depth_compared?(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel)):NULL;
+    const float* pre_hud_depth=d2_depth_timeline_pre_hud(current);
+    int pre_hud_compared=result==0 && count && pre_hud_depth!=NULL;
+    char pre_hud_frame_text[32]="null";
+    if(pre_hud_depth)snprintf(pre_hud_frame_text,sizeof(pre_hud_frame_text),"%llu",(unsigned long long)current->frame);
+    unsigned long long pre_hud_relations[4]={0},filtered_kept=0,filtered_rejected=0,kept_but_final_rejected=0;
+    int filtered_images=0;
+    D2MotionPixel* filtered=pre_hud_compared?(D2MotionPixel*)calloc(pixels_count,sizeof(D2MotionPixel)):NULL;
+    if(pre_hud_compared)for(size_t p=0;p<pixels_count;p++)if(pixels[p].coverage>.5f)
+        pre_hud_relations[d2_depth_relation(pixels[p].depth,pre_hud_depth[p],depth_epsilon)]++;
     if(filtered)for(size_t p=0;p<pixels_count;p++){
-        if(d2_depth_filter_pixel(&pixels[p],d2_scene_depth_data[p],depth_epsilon,&filtered[p]))filtered_kept++;
-        else if(pixels[p].coverage>.5f)filtered_rejected++;
+        if(d2_depth_filter_pixel(&pixels[p],pre_hud_depth[p],depth_epsilon,&filtered[p])){
+            filtered_kept++;
+            if(depth_compared && d2_depth_relation(pixels[p].depth,d2_scene_depth_data[p],depth_epsilon)!=1)kept_but_final_rejected++;
+        }else if(pixels[p].coverage>.5f)filtered_rejected++;
     }
-    int depth_image=0;char path[600];
+    int depth_image=0,pre_hud_image=0;char path[600];
     if(filtered){
         u8* image=(u8*)calloc(pixels_count,4);
         if(image){
@@ -587,6 +596,19 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             snprintf(path,sizeof(path),"%s/motion-depth-filtered-vectors.bmp",d2_temporal_directory);
             cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
             filtered_images=filtered_images && d2_hud_bmp_complete(path);free(image);
+        }
+    }
+    if(pre_hud_compared){
+        u8* image=(u8*)calloc(pixels_count,4);
+        if(image){
+            for(size_t p=0;p<pixels_count;p++)if(pixels[p].coverage>.5f){
+                int relation=d2_depth_relation(pixels[p].depth,pre_hud_depth[p],depth_epsilon);
+                if(relation==1)image[p*4+1]=255;else if(relation==2)image[p*4]=255;else if(relation==3)image[p*4+2]=255;
+                image[p*4+3]=255;
+            }
+            snprintf(path,sizeof(path),"%s/motion-pre-hud-depth-classification.bmp",d2_temporal_directory);
+            cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4u,DXGI_FORMAT_R8G8B8A8_UNORM);
+            pre_hud_image=d2_hud_bmp_complete(path);free(image);
         }
     }
     if(depth_compared){
@@ -635,11 +657,17 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             "\"reference_image_available\":%s,\"reference_matches_current_frame\":%s,"
             "\"reference_space\":\"internal-full-frame\","
             "\"scene_depth_available\":%s,\"scene_depth_frame\":%s,\"scene_depth_gpu_result\":%d,"
-            "\"scene_depth_compared\":%s,\"depth_epsilon\":%.9g,"
+            "\"scene_depth_compared\":%s,\"candidate_depth_comparison_source\":\"final-frame\",\"depth_epsilon\":%.9g,"
             "\"candidate_depth_equal_pixels\":%llu,\"candidate_deeper_pixels\":%llu,"
             "\"candidate_nearer_pixels\":%llu,\"depth_comparison_invalid_pixels\":%llu,"
             "\"depth_classification_image_written\":%s,\"depth_visibility_validated\":false,"
             "\"depth_filter_applied\":%s,\"depth_filter_policy\":\"coincident-only\","
+            "\"depth_filter_source\":\"%s\",\"depth_filter_final_fallback_allowed\":false,"
+            "\"pre_hud_depth_available\":%s,\"pre_hud_depth_frame\":%s,\"pre_hud_depth_compared\":%s,"
+            "\"pre_hud_depth_invalid_pixels\":%llu,\"pre_hud_depth_equal_pixels\":%llu,"
+            "\"pre_hud_depth_deeper_pixels\":%llu,\"pre_hud_depth_nearer_pixels\":%llu,"
+            "\"pre_hud_depth_classification_image_written\":%s,\"final_depth_used_for_diagnostics_only\":true,"
+            "\"pre_hud_kept_but_final_depth_rejected_pixels\":%llu,"
             "\"depth_filtered_pixels\":%llu,\"depth_filtered_rejected_pixels\":%llu,"
             "\"depth_filtered_images_written\":%s,\"depth_filter_is_visibility_proof\":false,"
             "\"render_width\":%u,\"render_height\":%u,\"draw_count\":%u,\"vertices\":%u,\"rejected_samples\":%u,"
@@ -657,7 +685,10 @@ static void d2_raster_dump(u32 index,const D2TemporalFrame* current,const D2Temp
             d2_reference_available && d2_reference_frame==current->frame?"true":"false",
             d2_scene_depth_available?"true":"false",d2_scene_depth_frame_text,d2_scene_depth_result,
             depth_compared?"true":"false",(double)depth_epsilon,depth_equal,depth_deeper,depth_nearer,depth_invalid,
-            depth_image?"true":"false",filtered?"true":"false",filtered_kept,filtered_rejected,
+            depth_image?"true":"false",filtered?"true":"false",
+            pre_hud_depth?"before-recognized-hud":"unavailable",pre_hud_depth?"true":"false",pre_hud_frame_text,pre_hud_compared?"true":"false",
+            pre_hud_relations[0],pre_hud_relations[1],pre_hud_relations[2],pre_hud_relations[3],pre_hud_image?"true":"false",
+            kept_but_final_rejected,filtered_kept,filtered_rejected,
             filtered_images?"true":"false",s_d3d.width,s_d3d.height,count,total_vertices,rejected,
             result?"gpu-error":!count?"no-static-geometry-pairs":invalid?"invalid-pixels":!covered?"no-visible-candidate-pixels":"candidate-raster-ready",
             result,covered,moving,invalid,max_x,max_y,images?"true":"false",

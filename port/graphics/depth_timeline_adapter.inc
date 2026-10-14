@@ -4,6 +4,7 @@ static ID3D12Resource* d2_steps_source;
 static u64 d2_steps_frame;
 static u32 d2_steps_draw[2],d2_steps_hud_boundary;
 static unsigned d2_steps_count;
+static u32 d2_steps_width,d2_steps_height;
 static int d2_steps_before_hud;
 static int d2_steps_active,d2_steps_recorded[3],d2_steps_result[3],d2_steps_available[3];
 static float* d2_steps_pixels[3];
@@ -25,6 +26,7 @@ static void d2_depth_timeline_prepare(void){
     }
     d2_depth_steps_reset_after_gpu_idle(d2_depth_steps);
     memset(d2_steps_recorded,0,sizeof(d2_steps_recorded));memset(d2_steps_result,0,sizeof(d2_steps_result));
+    d2_steps_width=s_d3d.width;d2_steps_height=s_d3d.height;
     d2_steps_frame=s_d3d.frame_count;d2_steps_count=0;d2_steps_before_hud=0;
     const char* old_reason=d2_hud_boundary_reason;
     d2_steps_hud_boundary=d2_hud_find_boundary(s_d3d.draw_count);d2_hud_boundary_reason=old_reason;
@@ -65,13 +67,18 @@ static void d2_depth_timeline_end_commands(void){
 }
 static void d2_depth_timeline_read_selected(void){
     if(!d2_steps_active || d2_steps_frame!=s_d3d.frame_count)return;
-    size_t size=(size_t)s_d3d.width*s_d3d.height;
+    size_t size=(size_t)d2_steps_width*d2_steps_height;
     for(unsigned i=0;i<3;i++)if(d2_steps_recorded[i]){
         d2_steps_pixels[i]=size<=8388608?(float*)calloc(size,sizeof(float)):NULL;
         d2_steps_result[i]=d2_steps_pixels[i]?d2_depth_steps_read(d2_depth_steps,s_d3d.cmd_queue,i,
-            s_d3d.width,s_d3d.height,d2_steps_pixels[i]):(int)E_OUTOFMEMORY;
+            d2_steps_width,d2_steps_height,d2_steps_pixels[i]):(int)E_OUTOFMEMORY;
         d2_steps_available[i]=d2_steps_result[i]==0;
     }
+}
+static const float* d2_depth_timeline_pre_hud(const D2TemporalFrame* current){
+    D2PreHudDepth snapshot={d2_steps_pixels[2],d2_steps_frame,d2_steps_width,d2_steps_height,
+        d2_steps_active && d2_steps_before_hud && d2_steps_recorded[2],d2_steps_available[2]};
+    return d2_pre_hud_depth_select(&snapshot,current->frame,s_d3d.width,s_d3d.height);
 }
 static void d2_depth_timeline_dump(u32 index,const D2TemporalFrame* current){
     char path[600];snprintf(path,sizeof(path),"%s/depth-timeline.json",d2_temporal_directory);

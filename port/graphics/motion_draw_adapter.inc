@@ -8,6 +8,7 @@ static void d2_motion_draws_dump(u32 index,const D2TemporalFrame* current,const 
     fprintf(json,"{\"schema\":1,\"purpose\":\"per-draw-geometry-alpha-depth-comparison\","
         "\"capture_index\":%u,\"current_frame\":%llu,\"render_width\":%u,\"render_height\":%u,"
         "\"reference_matches_frame\":%s,\"depth_epsilon\":%.9g,\"scene_depth_available\":%s,"
+        "\"scene_depth_comparison_source\":\"final-frame\",\"final_depth_used_for_diagnostics_only\":true,"
         "\"combined_owner_tags_available\":%s,\"owner_scope\":\"this-capture-only\","
         "\"applied_to_motion_field\":false,\"full_scene_visibility_validated\":false,"
         "\"motion_vectors_available\":false,\"normal_rendering_changed\":false,\"samples\":[",

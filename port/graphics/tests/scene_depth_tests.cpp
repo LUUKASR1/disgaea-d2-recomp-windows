@@ -59,8 +59,24 @@ int main(){try{
                 require(d2_depth_steps_read(steps,queue.p,slot,17,9,pixels.data())==0,"Timeline crop readback succeeds");
                 for(float v:pixels)require(std::abs(v-stages[slot])<2.f/16777215.f,"Snapshot preserves its moment despite subsequent clears");
             }
+            std::vector<float> pre_hud=pixels;
+            D2PreHudDepth snapshot{pre_hud.data(),123,17,9,1,1};
+            const float* selected=d2_pre_hud_depth_select(&snapshot,123,17,9);
+            require(selected==pre_hud.data(),"Matching verified pre-HUD snapshot selected");
+            D2MotionPixel candidate{12,-7,2,.2f},filtered{};
+            for(unsigned p=0;p<17*9;p++)require(d2_depth_filter_pixel(&candidate,selected[p],8.f/16777215.f,&filtered) &&
+                filtered.delta_x==12 && filtered.delta_y==-7 && filtered.coverage==1,"Pre-HUD depth retains scene motion despite later closer writes");
+            snapshot.boundary_verified=0;require(!d2_pre_hud_depth_select(&snapshot,123,17,9),"Unclassified command-list-end snapshot cannot substitute for pre-HUD depth");
+            snapshot.boundary_verified=1;snapshot.available=0;require(!d2_pre_hud_depth_select(&snapshot,123,17,9),"Failed readback cannot feed filter");
+            snapshot.available=1;require(!d2_pre_hud_depth_select(&snapshot,124,17,9),"Other-frame snapshot rejected");
+            require(!d2_pre_hud_depth_select(&snapshot,123,18,9),"Different raster width rejected");
+            require(!d2_pre_hud_depth_select(&snapshot,123,17,10),"Different raster height rejected");
+            snapshot.pixels=nullptr;require(!d2_pre_hud_depth_select(&snapshot,123,17,9),"Absent snapshot has no final-depth fallback");
             require(d2_scene_depth_read(device.p,queue.p,depth.p,17,9,pixels.data())==0,"Source still usable after snapshots");
-            for(float v:pixels)require(std::abs(v-.05f)<2.f/16777215.f,"Source retains final clear; recording restores its state");
+            for(float v:pixels){
+                require(std::abs(v-.05f)<2.f/16777215.f,"Source retains final clear; recording restores its state");
+                require(!d2_depth_filter_pixel(&candidate,v,8.f/16777215.f,&filtered),"Final depth would incorrectly remove the same scene motion sample");
+            }
         }
         d2_depth_steps_destroy_after_gpu_idle(steps);
         float out=0;require(d2_scene_depth_read(device.p,queue.p,depth.p,66,1,&out)<0,"Invalid crop rejected");
