@@ -6,6 +6,7 @@
 #include "motion_raster.h"
 #include "motion_visibility.h"
 #include "scene_depth.h"
+#include "alpha_replay.h"
 #define D2_GEOMETRY_LIMIT 4096
 #define D2_TEMP_SAMPLES 4
 typedef struct {
@@ -29,6 +30,7 @@ static float* d2_scene_depth_data;
 static int d2_scene_depth_available,d2_scene_depth_result;
 static u64 d2_scene_depth_frame;
 static char d2_scene_depth_frame_text[32]="null";
+static void d2_alpha_clear_pipelines(void);
 static int d2_temporal_enabled(void){
     static int enabled=-1;
     if(enabled<0){const char* e=getenv("D2_CAPTURE_MASK_STATE");enabled=e && strcmp(e,"1")==0;}
@@ -45,6 +47,7 @@ static int d2_temporal_request(u32* index,HWND window){
     snprintf(d2_scene_depth_frame_text,sizeof(d2_scene_depth_frame_text),"null");
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"null");
     fprintf(stderr,"[D2TEMP] armed capture=%u; rotate camera within 10 seconds\n",*index);
+    d2_alpha_clear_pipelines();
     memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
     return 0; /* Observe until a stable scene sample changes transform or timeout. */
 }
@@ -158,6 +161,112 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
         d2_auto_probe.changed?"transform-changed":"timeout-no-transform-change",d2_auto_probe.index);
 }
 
+/* Retain the pipeline actually submitted, never rebuild it from guest memory. */
+static ID3D12PipelineState* d2_alpha_pipelines[MAX_DRAWS];
+static u64 d2_alpha_pipeline_frames[MAX_DRAWS];
+static void d2_alpha_clear_pipelines(void){
+    for(unsigned d=0;d<MAX_DRAWS;d++)if(d2_alpha_pipelines[d]){
+        d2_alpha_pipelines[d]->lpVtbl->Release(d2_alpha_pipelines[d]);d2_alpha_pipelines[d]=NULL;
+    }
+}
+static void d2_alpha_record_pso(u32 draw,ID3D12PipelineState* pso){
+    if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_WAITING || draw>=MAX_DRAWS)return;
+    if(pso)pso->lpVtbl->AddRef(pso);
+    if(d2_alpha_pipelines[draw])d2_alpha_pipelines[draw]->lpVtbl->Release(d2_alpha_pipelines[draw]);
+    d2_alpha_pipelines[draw]=pso;d2_alpha_pipeline_frames[draw]=s_d3d.frame_count;
+}
+typedef struct {const D3D12DrawRecord* record;u32 draw,parity;ID3D12PipelineState* pso;} D2AlphaBinding;
+static void d2_alpha_bind(void* command_list,void* user){
+    ID3D12GraphicsCommandList* list=(ID3D12GraphicsCommandList*)command_list;
+    const D2AlphaBinding* b=(const D2AlphaBinding*)user;const D3D12DrawRecord* r=b->record;
+    list->lpVtbl->SetPipelineState(list,b->pso);
+    list->lpVtbl->SetGraphicsRootSignature(list,s_d3d.vp_root_sig);
+    ID3D12DescriptorHeap* heaps[]={s_d3d.srv_heap};list->lpVtbl->SetDescriptorHeaps(list,1,heaps);
+    D3D12_GPU_DESCRIPTOR_HANDLE srv=s_d3d.srv_heap->lpVtbl->GetGPUDescriptorHandleForHeapStart(s_d3d.srv_heap);
+    srv.ptr+=(u64)(DRAW_SRV_BASE+b->draw*4)*s_d3d.srv_inc;
+    list->lpVtbl->SetGraphicsRootDescriptorTable(list,1,srv);
+    list->lpVtbl->SetGraphicsRootConstantBufferView(list,0,
+        s_d3d.vp_cb->lpVtbl->GetGPUVirtualAddress(s_d3d.vp_cb)+((u64)b->parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE);
+    list->lpVtbl->SetGraphicsRootConstantBufferView(list,2,
+        s_d3d.vp_fpcb->lpVtbl->GetGPUVirtualAddress(s_d3d.vp_fpcb)+((u64)b->parity*MAX_DRAWS+r->cb_slot)*VP_FPCB_STRIDE);
+    D3D12_VERTEX_BUFFER_VIEW vb={s_d3d.vp_vb->lpVtbl->GetGPUVirtualAddress(s_d3d.vp_vb)+(u64)b->parity*MAX_VERTICES*256u,
+        MAX_VERTICES*256u,256u};
+    list->lpVtbl->IASetVertexBuffers(list,0,1,&vb);
+    list->lpVtbl->IASetPrimitiveTopology(list,D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    list->lpVtbl->OMSetStencilRef(list,r->d2_stencil_ref);
+    list->lpVtbl->DrawInstanced(list,r->vertex_count,1,r->vb_byte_offset/256u,0);
+}
+static const char* d2_alpha_unsupported(const D2TemporalSample* sample){
+    if(!sample->geometry_count)return "geometry-ineligible";
+    if(sample->draw>=MAX_DRAWS || !d2_alpha_pipelines[sample->draw] ||
+       d2_alpha_pipeline_frames[sample->draw]!=s_d3d.frame_count)return "original-pipeline-unavailable";
+    const D3D12DrawRecord* r=&s_d3d.draws[sample->draw];
+    if(r->cb_slot!=sample->cb_slot || r->vertex_count!=sample->vertices || r->d2_capture_vs_hash!=sample->shader ||
+       r->fp_addr!=sample->fp)return "record-changed";
+    unsigned depth_func=((r->d2_zs.depth>>2)&7u)+1u;
+    if((r->d2_zs.depth&3u)!=3u || (depth_func!=2u && depth_func!=4u))return "depth-write-or-compare-unsupported";
+    if(r->d2_zs.stencil)return "stencil-unsupported";
+    const char* depth_off=getenv("DEPTH_OFF");if(depth_off && atoi(depth_off))return "depth-override";
+    if(!s_d3d.vp_cb || !s_d3d.vp_vb || !s_d3d.vp_fpcb || !s_d3d.srv_heap || !s_d3d.vp_root_sig)return "bindings-unavailable";
+    /* Render-to-texture inputs can have changed after this draw was submitted.
+       Do not label their final-frame contents as the original draw's inputs. */
+    for(unsigned u=0;u<4;u++)if(r->tex[u].set){
+        if(r->tex_rt[u]>=0)return "mutable-render-target-input";
+        for(int j=0;j<s_subvp_n;j++)if(s_subvp[j].res && s_subvp[j].w==r->tex[u].w && s_subvp[j].h==r->tex[u].h)
+            return "possible-mutable-subviewport-input";
+    }
+    return NULL;
+}
+static void d2_alpha_reference(const D2TemporalFrame* current){
+    char path[600];snprintf(path,sizeof(path),"%s/alpha-replay.json",d2_temporal_directory);
+    FILE* json=d2_capture_fopen(path,"wb");if(!json){d2_alpha_clear_pipelines();return;}
+    fprintf(json,"{\"schema\":1,\"purpose\":\"original-shader-per-draw-coverage\",\"frame\":%llu,"
+        "\"reference_matches_frame\":%s,\"render_width\":%u,\"render_height\":%u,"
+        "\"coverage_method\":\"isolated-depth-write\",\"applied_to_motion_field\":false,"
+        "\"full_scene_visibility_validated\":false,\"blend_contribution_validated\":false,"
+        "\"motion_vectors_available\":false,\"normal_rendering_changed\":false,\"samples\":[",
+        (unsigned long long)current->frame,d2_reference_available && d2_reference_frame==current->frame?"true":"false",
+        s_d3d.width,s_d3d.height);
+    size_t size=(size_t)s_d3d.width*s_d3d.height;unsigned shown=0;
+    for(unsigned i=0;i<current->count;i++){
+        const D2TemporalSample* sample=&current->samples[i];if(sample->shader!=0x99362655u)continue;
+        const char* reason=d2_alpha_unsupported(sample);int result=0,image_written=0;unsigned long long survivors=0;
+        unsigned char* mask=NULL;
+        if(!reason){
+            mask=size<=8388608?(unsigned char*)calloc(size,1):NULL;
+            if(!mask){reason="allocation-failed";result=(int)E_OUTOFMEMORY;}
+            else{
+                D2AlphaBinding binding={&s_d3d.draws[sample->draw],sample->draw,(u32)(s_d3d.vp_parity^1),d2_alpha_pipelines[sample->draw]};
+                void* keep[256];unsigned n=0;
+                keep[n++]=binding.pso;keep[n++]=s_d3d.vp_root_sig;keep[n++]=s_d3d.srv_heap;
+                keep[n++]=s_d3d.vp_vb;keep[n++]=s_d3d.vp_cb;keep[n++]=s_d3d.vp_fpcb;
+                for(unsigned t=0;t<VP_TEX_SLOTS;t++)if(s_d3d.vp_tex[t].res)keep[n++]=s_d3d.vp_tex[t].res;
+                if(s_d3d.tex_resource)keep[n++]=s_d3d.tex_resource;
+                result=d2_alpha_replay(s_d3d.device,s_d3d.cmd_queue,s_d3d.width,s_d3d.height,d2_alpha_bind,&binding,keep,n,mask);
+                if(result)reason="gpu-error";
+                else{
+                    for(size_t p=0;p<size;p++)survivors+=mask[p]!=0;
+                    unsigned char* image=(unsigned char*)calloc(size,4);
+                    if(image){
+                        for(size_t p=0;p<size;p++){image[p*4]=image[p*4+1]=image[p*4+2]=mask[p];image[p*4+3]=255;}
+                        snprintf(path,sizeof(path),"%s/alpha-draw-%u-coverage.bmp",d2_temporal_directory,sample->draw);
+                        cap_write_bmp(path,image,s_d3d.width,s_d3d.height,s_d3d.width*4,DXGI_FORMAT_R8G8B8A8_UNORM);
+                        image_written=d2_hud_bmp_complete(path);free(image);
+                    }
+                }
+            }
+        }
+        fprintf(json,"%s{\"draw\":%u,\"status\":\"%s\",\"gpu_result\":%d,"
+            "\"original_pipeline_replayed\":%s,\"original_shader_alpha_test_replayed\":%s,"
+            "\"surviving_pixels\":%llu,\"coverage_image_written\":%s,\"image\":",
+            shown++?",":"",sample->draw,reason?reason:"replayed",result,reason?"false":"true",reason?"false":"true",
+            survivors,image_written?"true":"false");
+        if(image_written)fprintf(json,"\"alpha-draw-%u-coverage.bmp\"",sample->draw);else fprintf(json,"null");
+        fprintf(json,"}");free(mask);
+    }
+    fprintf(json,"]}\n");fclose(json);d2_alpha_clear_pipelines();
+}
+
 /* Called after frame submission/observation, before any subsequent game frame. */
 static void d2_temporal_reference(u32 fi){
     if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_READY || d2_reference_attempted)return;
@@ -191,6 +300,7 @@ static void d2_temporal_reference(u32 fi){
        width!=(int32_t)s_d3d.width || height!=(int32_t)s_d3d.height)return;
     d2_reference_available=1;d2_reference_frame=current->frame;
     snprintf(d2_reference_frame_text,sizeof(d2_reference_frame_text),"%llu",(unsigned long long)d2_reference_frame);
+    d2_alpha_reference(current);
     fprintf(stderr,"[D2MOTION] selected reference frame=%llu captured before next frame\n",
         (unsigned long long)d2_reference_frame);
 }
@@ -569,7 +679,7 @@ static void d2_temporal_dump(u32 index){
     const char* base=d2_capture_directory();char path[512];
     snprintf(d2_temporal_directory,sizeof(d2_temporal_directory),"%s/frame_%02u",base?base:"rsxcap",index);
     snprintf(path,sizeof(path),"%s/temporal-probe.json",d2_temporal_directory);
-    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;if(!file)return;
+    FILE* file=d2_capture_fopen(path,"wb");d2_auto_probe.phase=D2_AUTO_IDLE;d2_alpha_clear_pipelines();if(!file)return;
     LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);
     double milliseconds=previous->valid && current->valid && frequency.QuadPart>0
         ?(double)(current->time.QuadPart-previous->time.QuadPart)*1000.0/(double)frequency.QuadPart:0;

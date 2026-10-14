@@ -108,6 +108,8 @@ def generate(source, output):
     text = text[:start] + capture + text[end:]
     text = replace(text, 'static void render_frame(void)\n{',
         '#include "hud_adapter.inc"\n#include "temporal_adapter.inc"\n\nstatic void render_frame(void)\n{')
+    text = replace(text, '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);',
+        '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);\n                d2_alpha_record_pso(d,dpso);')
     text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
         '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',

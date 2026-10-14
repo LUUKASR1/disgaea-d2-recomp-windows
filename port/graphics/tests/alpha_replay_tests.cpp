@@ -1,0 +1,71 @@
+#include "alpha_replay.h"
+#include <windows.h>
+#include <d3d12.h>
+#include <dxgi1_4.h>
+#include <d3dcompiler.h>
+#include <vector>
+#include <cstdio>
+#include <stdexcept>
+#include <cstring>
+template<class T>struct Ref{T* p=nullptr;~Ref(){if(p)p->Release();}T** put(){return &p;}T* operator->(){return p;}};
+void check(HRESULT h){if(FAILED(h))throw std::runtime_error("D3D12 setup failed");}
+void require(bool b,const char* s){if(!b)throw std::runtime_error(s);}
+struct Binding{ID3D12PipelineState* pso;ID3D12RootSignature* root;ID3D12Resource* vb;bool alpha=true,draw=true;};
+void record(void* lp,void* bp){
+    auto list=static_cast<ID3D12GraphicsCommandList*>(lp);auto b=static_cast<Binding*>(bp);
+    list->SetPipelineState(b->pso);list->SetGraphicsRootSignature(b->root);
+    float params[4]={b->alpha?1.f:0.f,0,5,0};list->SetGraphicsRoot32BitConstants(0,4,params,0);
+    D3D12_VERTEX_BUFFER_VIEW vb{b->vb->GetGPUVirtualAddress(),6*4*sizeof(float),4*sizeof(float)};
+    list->IASetVertexBuffers(0,1,&vb);list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    if(b->draw)list->DrawInstanced(6,1,0,0);
+}
+int main(){try{
+    Ref<IDXGIFactory4> factory;Ref<IDXGIAdapter> warp;Ref<ID3D12Device> device;Ref<ID3D12CommandQueue> queue;
+    check(CreateDXGIFactory1(IID_IDXGIFactory4,(void**)factory.put()));check(factory->EnumWarpAdapter(IID_IDXGIAdapter,(void**)warp.put()));
+    check(D3D12CreateDevice(warp.p,D3D_FEATURE_LEVEL_11_0,IID_ID3D12Device,(void**)device.put()));
+    D3D12_COMMAND_QUEUE_DESC q{};check(device->CreateCommandQueue(&q,IID_ID3D12CommandQueue,(void**)queue.put()));
+    const char shader[]=R"(
+cbuffer Alpha:register(b1){float4 test;}
+struct V {float4 position:SV_Position;float2 uv:TEXCOORD0;};
+V vs(float4 p:POSITION){V o;o.position=p;o.uv=p.xy*.5+.5;return o;}
+float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?1:0;
+    if(test.x!=0 && test.z==5 && alpha<=test.y)discard;
+    return float4(0,0,0,0);}
+)";
+    Ref<ID3DBlob> vs,ps,blob,error;
+    check(D3DCompile(shader,sizeof(shader)-1,nullptr,nullptr,nullptr,"vs","vs_5_0",0,0,vs.put(),error.put()));
+    check(D3DCompile(shader,sizeof(shader)-1,nullptr,nullptr,nullptr,"ps","ps_5_0",0,0,ps.put(),error.put()));
+    D3D12_ROOT_PARAMETER param{};param.ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    param.Constants.ShaderRegister=1;param.Constants.Num32BitValues=4;
+    D3D12_ROOT_SIGNATURE_DESC rd{};rd.NumParameters=1;rd.pParameters=&param;rd.Flags=D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    check(D3D12SerializeRootSignature(&rd,D3D_ROOT_SIGNATURE_VERSION_1,blob.put(),error.put()));
+    Ref<ID3D12RootSignature> root;check(device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(),IID_ID3D12RootSignature,(void**)root.put()));
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};pd.pRootSignature=root.p;
+    pd.VS={vs->GetBufferPointer(),vs->GetBufferSize()};pd.PS={ps->GetBufferPointer(),ps->GetBufferSize()};
+    D3D12_INPUT_ELEMENT_DESC element{"POSITION",0,DXGI_FORMAT_R32G32B32A32_FLOAT,0,0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0};
+    pd.InputLayout={&element,1};pd.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pd.SampleMask=UINT_MAX;pd.SampleDesc.Count=1;pd.NumRenderTargets=1;
+    pd.RTVFormats[0]=DXGI_FORMAT_R8G8B8A8_UNORM;pd.DSVFormat=DXGI_FORMAT_D24_UNORM_S8_UINT;
+    pd.RasterizerState.FillMode=D3D12_FILL_MODE_SOLID;pd.RasterizerState.CullMode=D3D12_CULL_MODE_NONE;pd.RasterizerState.DepthClipEnable=TRUE;
+    auto& blend=pd.BlendState.RenderTarget[0];blend.SrcBlend=blend.SrcBlendAlpha=D3D12_BLEND_ONE;
+    blend.DestBlend=blend.DestBlendAlpha=D3D12_BLEND_ZERO;blend.BlendOp=blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;
+    blend.LogicOp=D3D12_LOGIC_OP_NOOP;blend.RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_ALL;
+    pd.DepthStencilState.DepthEnable=TRUE;pd.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ALL;
+    pd.DepthStencilState.DepthFunc=D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    pd.DepthStencilState.FrontFace.StencilFailOp=pd.DepthStencilState.FrontFace.StencilDepthFailOp=pd.DepthStencilState.FrontFace.StencilPassOp=D3D12_STENCIL_OP_KEEP;
+    pd.DepthStencilState.FrontFace.StencilFunc=D3D12_COMPARISON_FUNC_ALWAYS;pd.DepthStencilState.BackFace=pd.DepthStencilState.FrontFace;
+    Ref<ID3D12PipelineState> pso;check(device->CreateGraphicsPipelineState(&pd,IID_ID3D12PipelineState,(void**)pso.put()));
+    Ref<ID3D12Resource> vb;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
+    D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=6*4*sizeof(float);
+    buffer.Height=1;buffer.DepthOrArraySize=1;buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_ID3D12Resource,(void**)vb.put()));
+    float vertices[6][4]={{-1,-1,.4f,1},{-1,1,.4f,1},{1,1,.4f,1},{-1,-1,.4f,1},{1,1,.4f,1},{1,-1,.4f,1}};
+    void* mapped=nullptr;D3D12_RANGE none{0,0};check(vb->Map(0,&none,&mapped));std::memcpy(mapped,vertices,sizeof(vertices));vb->Unmap(0,nullptr);
+    Binding binding{pso.p,root.p,vb.p};void* borrowed[]={pso.p,root.p,vb.p};std::vector<unsigned char> mask(32*16);
+    auto replay=[&]{require(d2_alpha_replay(device.p,queue.p,32,16,record,&binding,borrowed,3,mask.data())==0,"Alpha replay succeeds");};
+    replay();for(unsigned y=0;y<16;y++)for(unsigned x=0;x<32;x++)require((mask[y*32+x]!=0)==((x>=8&&x<16)||x>=24),"Discard leaves only surviving quarters despite all-black shader color");
+    binding.alpha=false;replay();for(auto p:mask)require(p==255,"Disabling alpha test retains full quad");
+    binding.draw=false;replay();for(auto p:mask)require(p==0,"No draw does not fabricate coverage");
+    require(d2_alpha_replay(device.p,queue.p,0,16,record,&binding,borrowed,3,mask.data())<0,"Invalid size rejected");
+    puts("PASS original shader alpha/discard depth mask: zero color, uniform toggle, empty draw");return 0;
+}catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}

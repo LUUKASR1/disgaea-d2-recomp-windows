@@ -450,3 +450,36 @@ O render normal e os controles DLSS/FG não mudam.
 Para testar: mesmo F8 em 720p. Enviar motion-raster-check.json,
 motion-depth-filtered-coverage.bmp e selected-reference.bmp.
 Verificar contagens e sobreposição antes do replay de alpha/discard original.
+
+### 0.1.33 — original shader alpha/discard replay (diagnostic)
+
+The 0.1.32 game capture retained 21,144 coincident-depth pixels and rejected
+5,390 deeper pixels. Alpha/discard remains independent of that depth test.
+This preview adds `alpha-replay.json` and `alpha-draw-N-coverage.bmp` for each
+selected world draw. The replay runs in the selected frame, before the next
+frame can overwrite the descriptors, vertex upload or constant slots.
+
+While F8 selection is armed, the adapter retains the **actual submitted** guest
+fragment pipeline. It does not rebuild a shader from potentially changed guest
+memory. The replay binds the original SRV window, root signature, full vertex
+attributes and VP/FP constant slots, using isolated RGBA8 and D24 targets.
+A pixel is a survivor when the shader writes depth below the cleared value of
+1, including shaders that output black or zero alpha. LESS/LESS_EQUAL, depth
+write ALL, stencil disabled and regular immutable texture inputs are required.
+Unsupported depth state, fallback pipelines, mutable render-target inputs and
+possible subviewport inputs are reported explicitly; they cannot fabricate a
+successful alpha mask.
+
+These are **per-draw shader-survival masks**, not a final scene visibility mask.
+They are not yet intersected with the motion raster: that requires preserving
+which candidate draw owns each motion pixel. Blending over the real scene,
+stencil occlusion, dynamic object identity, complete scene coverage, temporal
+jitter/reset and DLSS/FG integration remain pending. The existing depth-filter
+images keep their 0.1.32 meaning. Normal gameplay has no extra replay/readback;
+F8 capture can pause while the diagnostic GPU work completes.
+
+Validation adds a WARP shader test with discard, a uniform toggle and an empty
+draw. The shader writes black for every survivor, so color-based coverage would
+fail the test. Windows CI also compiles the adapter against the unchanged,
+audited SDK. For the game test, rotate the camera after F8 and inspect the new
+JSON and per-draw images alongside `selected-reference.bmp`.
