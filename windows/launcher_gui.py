@@ -268,7 +268,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     refresh_combo.pack(anchor='w', pady=(0,10)); entries.append(refresh_combo)
     for text, variable in (
 
-        ('Permitir VRR / G-SYNC / FreeSync quando suportado', vrr)):
+        ('Permitir VRR / G-SYNC / FreeSync quando suportado', vrr),):
         toggle = tk.Checkbutton(video, text=text, variable=variable, bg=CARD, fg=TEXT,
             selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11), anchor='w')
         toggle.pack(anchor='w', pady=8); entries.append(toggle)
