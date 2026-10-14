@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cmath>
 #include <limits>
+#include <initializer_list>
 #include <stdexcept>
 void require(bool b,const char* s){if(!b)throw std::runtime_error(s);}
 int main(){try{
