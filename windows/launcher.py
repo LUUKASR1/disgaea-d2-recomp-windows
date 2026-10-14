@@ -16,7 +16,7 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.41-static-layer-preview'
+VERSION = '0.1.42-sprite-discovery-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
@@ -248,6 +248,7 @@ class Backend:
         self.home = Path(home)
         self.notify = notify
         self.capture_enabled = False
+        self.capture_goal = "scenery"
         self.capture_session = None
         self.last_capture_report = None
 
@@ -655,7 +656,7 @@ class Backend:
         session = None
         self.last_capture_report = None
         if self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
-            session = CaptureSession(self.home, VERSION, settings)
+            session = CaptureSession(self.home, VERSION, settings, capture_goal=self.capture_goal)
             env = session.environment(env)
         self.capture_session = session
         env.pop('D2_GAME_ISO', None)

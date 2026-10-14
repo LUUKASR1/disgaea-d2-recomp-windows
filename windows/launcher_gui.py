@@ -80,6 +80,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
     hud_after_upscale = tk.BooleanVar(value=settings['hud_after_upscale'])
     capture_enabled = tk.BooleanVar(value=False)
+    capture_goal = tk.StringVar(value="Cenário — girar câmera")
     capture_status = tk.StringVar(value='Captura desativada.')
     status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
     build_status = tk.StringVar(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
@@ -174,6 +175,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             return
         busy = True
         backend.capture_enabled = capture_enabled.get()
+        backend.capture_goal = "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
         for widget in buttons + entries:
             widget.configure(state='disabled')
         progress.start(12)
@@ -358,11 +360,18 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     capture_button = None
     if home.name == 'DisgaeaD2Recomp-Graphics-Preview':
         diagnostic = card(page)
-        label(diagnostic, 'CAPTURA E SEPARAÇÃO EXPERIMENTAL DA HUD', 12, GOLD, True)
+        label(diagnostic, 'CAPTURAS EXPERIMENTAIS: CENÁRIO E SPRITES', 12, GOLD, True)
         toggle = tk.Checkbutton(diagnostic, text='Habilitar captura na próxima abertura do jogo',
             variable=capture_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
             activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
         toggle.pack(anchor='w', pady=4); entries.append(toggle)
+        label(diagnostic, 'Objetivo da captura', 10, MUTED)
+        goal_combo = ttk.Combobox(diagnostic, textvariable=capture_goal,
+            values=('Cenário — girar câmera', 'Sprites — movimentar personagem'),
+            state='readonly', style='D2.TCombobox', width=40)
+        goal_combo.pack(anchor='w', pady=4); entries.append(goal_combo)
+        label(diagnostic, 'Para investigar sprites, mantenha a câmera parada e pressione F8 durante o movimento do personagem. Escolha o objetivo antes de abrir o jogo.', 10, MUTED)
+
         label(diagnostic, 'Com o jogo aberto, pressione F8 ou clique em Capturar frame. Até oito capturas por sessão. Pode haver uma pausa breve durante a gravação.', 10, MUTED)
         label(diagnostic, 'Nas cenas reconhecidas, o relatório inclui cena sem HUD, HUD isolada, recomposição e comparação de pixels. A imagem normal do jogo continua sendo a referência.', 10, MUTED)
         def request_capture():

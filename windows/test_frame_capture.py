@@ -14,8 +14,18 @@ class FakeEvent:
 
 
 class CaptureTests(unittest.TestCase):
+    def test_sprite_goal_is_explicit_and_scoped_to_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = CaptureSession(directory, 'test', {}, FakeEvent, capture_goal='sprites')
+            self.assertEqual(session.environment({})['D2_CAPTURE_GOAL'], 'sprites')
+            self.assertEqual(json.loads((session.directory / 'session.json').read_text())['capture_goal'], 'sprites')
+            self.assertEqual(clean_capture_environment(session.environment({'PATH': 'tools'})), {'PATH': 'tools'})
+            session.event.close()
+            with self.assertRaises(ValueError):
+                CaptureSession(directory, 'test', {}, FakeEvent, capture_goal='unknown')
+
     def test_normal_environment_and_session_requests(self):
-        original = {'PATH': 'tools', 'RSX_CAP': '1:100', 'd2_capture_event': 'old', 'D2_CAPTURE_F8': '1', 'D2_SCENERY_FEEDBACK_FILE': 'inherited'}
+        original = {'PATH': 'tools', 'RSX_CAP': '1:100', 'd2_capture_event': 'old', 'D2_CAPTURE_F8': '1', 'D2_SCENERY_FEEDBACK_FILE': 'inherited', 'D2_CAPTURE_GOAL': 'sprites'}
         self.assertEqual(clean_capture_environment(original), {'PATH': 'tools'})
         with tempfile.TemporaryDirectory() as directory:
             session = CaptureSession(directory, 'test', {}, FakeEvent)

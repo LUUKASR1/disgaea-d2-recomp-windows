@@ -10,7 +10,7 @@ import zipfile
 
 LIMIT = 8
 CAPTURE_ENV = ('D2_CAPTURE_EVENT', 'D2_CAPTURE_MASK_STATE', 'D2_CAPTURE_F8',
-               'RSX_CAP', 'RSX_CAP_DIR', 'D2_SCENERY_FEEDBACK_FILE')
+               'RSX_CAP', 'RSX_CAP_DIR', 'D2_SCENERY_FEEDBACK_FILE', 'D2_CAPTURE_GOAL')
 
 
 class WinEvent:
@@ -44,7 +44,10 @@ def clean_capture_environment(original):
 
 
 class CaptureSession:
-    def __init__(self, home, version, settings, event_factory=WinEvent):
+    def __init__(self, home, version, settings, event_factory=WinEvent, capture_goal="scenery"):
+        if capture_goal not in ("scenery", "sprites"):
+            raise ValueError("Objetivo de captura inválido.")
+        self.capture_goal = capture_goal
         self.lock = threading.Lock()
         self.running = False
         self.pending = False
@@ -58,7 +61,7 @@ class CaptureSession:
             raise RuntimeError('O caminho da captura é longo demais. Use uma pasta local mais curta.')
         self.directory.mkdir(parents=True)
         (self.directory / 'session.json').write_text(json.dumps({
-            'schema': 1, 'launcher': version, 'settings': settings, 'limit': LIMIT,
+            'schema': 1, 'capture_goal': capture_goal, 'launcher': version, 'settings': settings, 'limit': LIMIT,
             'image': 'internal-scene-with-HUD', 'created': datetime.now().isoformat(),
             'hud_replay': 'experimental-capture-only',
             'description': 'Capturas pontuais e reprodução isolada da HUD quando reconhecida. A renderização normal permanece como referência.'
@@ -67,7 +70,7 @@ class CaptureSession:
 
     def environment(self, original):
         env = clean_capture_environment(original)
-        env.update(D2_CAPTURE_EVENT=self.name, D2_CAPTURE_MASK_STATE='1', RSX_CAP_DIR=str(self.directory),
+        env.update(D2_CAPTURE_EVENT=self.name, D2_CAPTURE_GOAL=self.capture_goal, D2_CAPTURE_MASK_STATE='1', RSX_CAP_DIR=str(self.directory),
                    D2_SCENERY_FEEDBACK_FILE=str(self.directory.parent / 'scenery-feedback-v1.bin'))
         return env
 

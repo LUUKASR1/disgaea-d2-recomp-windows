@@ -9,6 +9,7 @@
 #include "motion_mask.h"
 #include "motion_gap.h"
 #include "motion_layers.h"
+#include "sprite_probe.h"
 #include "static_pair.h"
 #include "scenery_survey.h"
 #include "scenery_feedback.h"
@@ -127,6 +128,7 @@ static unsigned d2_geometry_view_rejection(const D3D12DrawRecord* r,u32 parity){
 #include "scenery_feedback_adapter.inc"
 #include "scenery_survey_adapter.inc"
 #include "depth_timeline_adapter.inc"
+#include "sprite_probe_adapter.inc"
 
 static void d2_temporal_observe(u32 count,u32 hud_start){
     if(!d2_temporal_enabled() || d2_auto_probe.phase!=D2_AUTO_WAITING || !count)return;
@@ -203,20 +205,29 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
         frame->valid=1;
     }
     const D2TemporalFrame* previous=&d2_temporal_frames[d2_temporal_next^1];
-    int changed=0;
+    int changed=0;unsigned reference_pairs=0;
     if(previous->valid && frame->valid)for(u32 i=0;i<frame->count && !changed;i++){
         const D2TemporalSample* sample=&frame->samples[i];
         if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
         D2StaticPair pair=d2_temporal_static_pair(frame,previous,i);
         if(pair.previous_index>=0){
             const D2TemporalSample* old=&previous->samples[pair.previous_index];
-            if(d2_transform_changed(old->constants+256*4,sample->constants+256*4))changed=1;
+            if(d2_sprite_transform_finite(old->constants+256*4) && d2_sprite_transform_finite(sample->constants+256*4)){
+                reference_pairs++;
+                if(d2_transform_changed(old->constants+256*4,sample->constants+256*4))changed=1;
+            }
         }
+    }
+    int sprite_changed=d2_sprite_observe(count,hud_start,(u32)(s_d3d.vp_parity^1),d2_temporal_next);
+    if(d2_sprite_goal()){
+        d2_sprite_frames[d2_temporal_next].reference_pairs=reference_pairs;
+        d2_sprite_frames[d2_temporal_next].reference_unchanged=reference_pairs>0 && !changed;
+        changed=reference_pairs>0 && !changed && sprite_changed;
     }
     d2_temporal_next^=1;
     d2_auto_observed(&d2_auto_probe,changed,GetTickCount64());
     if(d2_auto_probe.phase==D2_AUTO_READY)fprintf(stderr,"[D2TEMP] selection=%s capture=%u\n",
-        d2_auto_probe.changed?"transform-changed":"timeout-no-transform-change",d2_auto_probe.index);
+        d2_auto_probe.changed?(d2_sprite_goal()?"small-geometry-moved-with-static-reference":"transform-changed"):"timeout-no-eligible-change",d2_auto_probe.index);
 }
 
 /* Retain the pipeline actually submitted, never rebuild it from guest memory. */
@@ -431,7 +442,7 @@ static void d2_projection_dump(u32 index,const D2TemporalFrame* current,const D2
         "\"render_width\":%u,\"render_height\":%u,\"automatic_selection\":true,\"selection_status\":\"%s\","
         "\"capture_image_frame\":%llu,\"samples\":[",index,
         (unsigned long long)current->frame,(unsigned long long)previous->frame,s_d3d.width,s_d3d.height,
-        !d2_temporal_enabled()?"not-armed":d2_auto_probe.changed?"transform-changed":"timeout-no-transform-change",
+        !d2_temporal_enabled()?"not-armed":d2_auto_probe.changed?(d2_sprite_goal()?"small-geometry-moved-with-static-reference":"transform-changed"):"timeout-no-eligible-change",
         (unsigned long long)s_d3d.frame_count);
     unsigned shown=0;
     for(u32 i=0;i<current->count;i++){
@@ -791,6 +802,7 @@ static void d2_temporal_dump(u32 index){
     d2_projection_dump(index,current,previous);
     d2_motion_dump(index,current,previous);
     d2_raster_dump(index,current,previous);
+    d2_sprite_dump(index,current);
     d2_alpha_clear_snapshots();d2_depth_timeline_free_pixels();
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);

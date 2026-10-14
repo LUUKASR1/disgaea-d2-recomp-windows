@@ -755,3 +755,35 @@ or DLSS. This is not a union of unvalidated masks: every admitted alternative
 passes its own shader/depth and scene depth tests. The new suite tests rejected
 front recovery, stationary vectors, occluded rear rejection, unavailable masks,
 conflicting motion and baseline preservation, joining the prior 18 graphics suites.
+
+
+### 0.1.42 — sprite discovery with stationary scenery references
+
+The preview launcher adds an explicit capture goal: scenery/camera rotation or
+sprites/character movement. The goal is immutable for a running capture session,
+recorded in session.json and stripped from normal-launch environments. In sprite
+mode, automatic capture waits for a uniquely signed small draw's attribute-0
+center and geometry to change while its transform rows and at least one paired
+static scenery reference remain unchanged. This is evidence from known world
+transform rows, not an independently identified camera or object registry.
+
+`sprite-discovery-check.json` surveys eligible small main-target vertex-program
+draws before the recognized HUD, up to the renderer's 2,048-record bound and 96
+vertices per draw. Larger batches and legacy paths are counted as excluded. Each
+record carries shader/fragment/texture/topology/vertex-count signature, full
+position/UV fingerprints, center and the first six current/previous positions and
+UVs when a signature is unique in both consecutive inventories. World shader
+99362655 also records projected clip positions using the validated transform.
+Other shader projections are explicitly unavailable. Nonfinite values are never
+used to arm movement capture. Duplicate signatures remain unpaired; an atlas
+shared by two characters cannot establish identity. UV changes can expose sprite
+animation but do not establish correspondence across animations.
+
+This is discovery data, not sprite classification or motion acceptance. No
+heuristic signature matching is applied to DLSS or normal rendering. Existing
+static-layer reports are retained. Test instructions: choose sprite goal before
+opening the game, keep the camera still and press F8 during character movement.
+Timeout reports remain useful but may contain no eligible changed record. The
+new signature discovery suite covers reordering, duplicate signatures in either
+inventory, stationary/moving centers and invalid geometry. Launcher tests cover
+explicit goal propagation and environment cleanup.
