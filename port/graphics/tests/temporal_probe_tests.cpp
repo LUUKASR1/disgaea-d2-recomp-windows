@@ -5,7 +5,7 @@
 #include <stdexcept>
 static void require(bool b,const char* s){if(!b)throw std::runtime_error(s);}
 int main(){try{
-    auto reads=d2_constant_reads("dcl_constantbuffer cb0[514], immediateIndexed\n"
+    auto reads=d2_constant_reads("dcl_constantbuffer cb0[260], immediateIndexed\n"
         "dp4 o0.x, v0, cb0[256]\ndp4 o0.y, v0, cb0[257]\n"
         "dp4 o0.z, v0, cb0[258]\ndp4 o0.w, v0, cb0[259]\nadd r0, cb0[256], cb0[513]\n");
     require(reads.count==5 && !reads.indirect,"Read sets must skip declarations and deduplicate");
