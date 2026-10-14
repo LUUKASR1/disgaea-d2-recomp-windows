@@ -120,3 +120,40 @@ Não há shaders/código do jogo incluídos no repositório ou no launcher.
 Cada amostra inclui os 16 atributos float4 do primeiro vértice, quando o offset
 e a memória são válidos. Isso permite avaliar a transformação de posição com
 entradas reais do mesmo draw; não fornece identificação persistente do objeto.
+
+## 0.1.23 — regra de posição e coleta de um par por F8
+
+O disassembly enviado pelo usuário mostra a saída de posição de VP 99362655:
+produto dos atributos de posição com c256–c259, ajuste c466.z, escala c512 e
+offset c513. A implementação preserva a correção xy pelo quociente bias/w,
+w e z ajustados pelo bias e a escala/offset de saída. Pontos singulares,
+atrás da câmera e resultados não finitos são rejeitados.
+
+projection-check.json é um relatório compacto com clip e deslocamento de
+um mesmo ponto sob a transformação anterior e atual, em pixels de renderização.
+O sinal usa UV anterior menos atual, com eixo Y para baixo. A correspondência
+por shader/FP/textura/contagem não é identidade de objeto. Esse deslocamento
+não é um campo de motion vectors, nem implementa movimento de personagens.
+
+A coleta temporal deixa de copiar bancos em todos os frames. F8 arma o par:
+o primeiro frame apresentado copia as amostras; o segundo copia as suas
+amostras e recebe a captura/imagens, dump e marcador de conclusão.
+A gravação/disassembly/readbacks ficam depois das duas observações. Cada
+requisição consome um único índice do limite de oito capturas. Sem requisição
+pendente não há cópia temporal. Capturas desabilitadas mantêm esse diagnóstico
+inativo. F8 ainda pode causar uma pausa pelos readbacks; o custo restante do
+modo de captura precisa ser medido, pois ainda conserva metadados RSX.
+
+O usuário observou lentidão com capturas ligadas e normalização ao desligá-las
+na 0.1.22. Isso associa o efeito ao modo diagnóstico, mas não prova que a cópia
+temporal fosse a única causa. A redução deve ser validada no jogo real.
+
+Testes comparam a função CPU com uma referência HLSL no D3D12 WARP, usando
+identidade, translação, rotação e correção de bias. Também verificam sinal/escala
+de UV, deslocamento nulo e rejeição de singularidades. Não são uma comparação
+com o resultado renderizado do shader proprietário do jogo.
+
+Para continuar: 720p interno e saída, upscaling desligado, capturas habilitadas.
+Girar a câmera e pressionar F8 durante o movimento. Enviar projection-check.json;
+o relatório detalhado e vp_99362655.asm ficam disponíveis para a análise.
+DLSS e FG seguem indisponíveis enquanto faltam câmera e movimento completos.

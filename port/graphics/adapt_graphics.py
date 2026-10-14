@@ -116,7 +116,7 @@ def generate(source, output):
         '    int d2_post_ready=0,d2_post_snapshotted=0;\n'
         '    const char* d2_post_reason=d2_posthud_enabled()?"not-evaluated":"option-disabled";\n'
         '    int d2_capture_requested=s_present_this_frame && s_d3d.draw_count>0 &&\n'
-        '        d2_capture_next(&d2_capture_index,s_d3d.hwnd);\n'
+        '        d2_temporal_request(&d2_capture_index,s_d3d.hwnd);\n'
         '    if(d2_capture_requested || (d2_posthud_enabled() && s_present_this_frame)) {\n'
         '        for(u32 d=0;d<s_d3d.draw_count && d<MAX_DRAWS;d++) s_d3d.draws[d].d2_hud_pso=NULL;\n'
         '        d2_hud_start=d2_hud_find_boundary(s_d3d.draw_count);\n'

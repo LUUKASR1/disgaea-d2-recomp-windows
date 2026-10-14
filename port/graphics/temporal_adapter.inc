@@ -1,5 +1,6 @@
 /* Diagnostic snapshots only: never treat draw order as persistent object identity. */
 #include "temporal_probe.h"
+#include "projection.h"
 #define D2_TEMP_SAMPLES 4
 typedef struct {
     u32 draw,shader,fp,vertices,texture,cb_slot;
@@ -12,14 +13,23 @@ typedef struct {
 } D2TemporalFrame;
 static D2TemporalFrame d2_temporal_frames[2];
 static unsigned d2_temporal_next;
+static unsigned d2_temporal_phase,d2_temporal_index;
 static char d2_temporal_directory[512];
 static int d2_temporal_enabled(void){
     static int enabled=-1;
     if(enabled<0){const char* e=getenv("D2_CAPTURE_MASK_STATE");enabled=e && strcmp(e,"1")==0;}
     return enabled;
 }
+static int d2_temporal_request(u32* index,HWND window){
+    if(!d2_temporal_enabled())return d2_capture_next(index,window);
+    if(d2_temporal_phase){*index=d2_temporal_index;return d2_temporal_phase==2;}
+    if(!d2_capture_next(index,window))return 0;
+    d2_temporal_index=*index;d2_temporal_phase=1;d2_temporal_next=0;
+    memset(d2_temporal_frames,0,sizeof(d2_temporal_frames));
+    return 0; /* First frame samples only; the next presented frame owns the capture. */
+}
 static void d2_temporal_observe(u32 count,u32 hud_start){
-    if(!d2_temporal_enabled())return;
+    if(!d2_temporal_enabled() || !d2_temporal_phase || !count)return;
     D2TemporalFrame* frame=&d2_temporal_frames[d2_temporal_next];
     frame->valid=0;frame->count=0;frame->frame=s_d3d.frame_count;QueryPerformanceCounter(&frame->time);
     if(s_d3d.vp_cb_mapped){
@@ -47,6 +57,7 @@ static void d2_temporal_observe(u32 count,u32 hud_start){
         frame->valid=1;
     }
     d2_temporal_next^=1;
+    d2_temporal_phase++;
 }
 static D2ConstantReads d2_temporal_reads(u32 hash,int* available){
     D2ConstantReads reads={0};*available=0;
@@ -95,13 +106,49 @@ static void d2_temporal_json_frame(FILE* file,const D2TemporalFrame* frame){
     }
     fprintf(file,"]}");
 }
+static void d2_projection_dump(u32 index,const D2TemporalFrame* current,const D2TemporalFrame* previous){
+    char path[600];snprintf(path,sizeof(path),"%s/projection-check.json",d2_temporal_directory);
+    FILE* file=d2_capture_fopen(path,"wb");if(!file)return;
+    fprintf(file,"{\"schema\":1,\"capture_index\":%u,\"purpose\":\"same-point-transform-validation\","
+        "\"motion_vectors_available\":false,\"object_identity_available\":false,\"current_frame\":%llu,\"previous_frame\":%llu,"
+        "\"render_width\":%u,\"render_height\":%u,\"samples\":[",index,
+        (unsigned long long)current->frame,(unsigned long long)previous->frame,s_d3d.width,s_d3d.height);
+    unsigned shown=0;
+    for(u32 i=0;i<current->count;i++){
+        const D2TemporalSample* sample=&current->samples[i];
+        if(sample->shader!=0x99362655u || !sample->has_vertex)continue;
+        const D2TemporalSample* old=NULL;
+        for(u32 j=0;j<previous->count;j++){
+            const D2TemporalSample* candidate=&previous->samples[j];
+            if(candidate->shader==sample->shader && candidate->fp==sample->fp &&
+               candidate->vertices==sample->vertices && candidate->texture==sample->texture){old=candidate;break;}
+        }
+        float now[4]={0},before[4]={0},delta[2]={0};
+        int valid=d2_project_world(sample->constants+256*4,sample->constants+512*4,sample->constants+513*4,
+            sample->constants[466*4+2],sample->attributes,now);
+        int paired=old && old->has_vertex && valid &&
+            d2_project_world(old->constants+256*4,old->constants+512*4,old->constants+513*4,
+                old->constants[466*4+2],sample->attributes,before) &&
+            d2_same_point_delta(before,now,s_d3d.width,s_d3d.height,delta);
+        fprintf(file,"%s{\"draw\":%u,\"shader\":\"99362655\",\"position_valid\":%s,\"signature_match_is_not_object_identity\":true,"
+            "\"paired\":%s,\"transform_rows_changed\":%s,\"first_position_unchanged\":%s,"
+            "\"clip\":[%.9g,%.9g,%.9g,%.9g],\"same_point_delta_pixels\":",
+            shown++?",":"",sample->draw,valid?"true":"false",paired?"true":"false",
+            old && memcmp(old->constants+256*4,sample->constants+256*4,16*sizeof(float))?"true":"false",
+            old && old->has_vertex && !memcmp(old->attributes,sample->attributes,4*sizeof(float))?"true":"false",
+            valid?(double)now[0]:0,valid?(double)now[1]:0,valid?(double)now[2]:0,valid?(double)now[3]:0);
+        if(paired)fprintf(file,"[%.9g,%.9g]",(double)delta[0],(double)delta[1]);else fprintf(file,"null");
+        fprintf(file,"}");
+    }
+    fprintf(file,"]}\n");fclose(file);
+}
 static void d2_temporal_dump(u32 index){
     const D2TemporalFrame* current=&d2_temporal_frames[d2_temporal_next^1];
     const D2TemporalFrame* previous=&d2_temporal_frames[d2_temporal_next];
     const char* base=d2_capture_directory();char path[512];
     snprintf(d2_temporal_directory,sizeof(d2_temporal_directory),"%s/frame_%02u",base?base:"rsxcap",index);
     snprintf(path,sizeof(path),"%s/temporal-probe.json",d2_temporal_directory);
-    FILE* file=d2_capture_fopen(path,"wb");if(!file)return;
+    FILE* file=d2_capture_fopen(path,"wb");d2_temporal_phase=0;if(!file)return;
     LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);
     double milliseconds=previous->valid && current->valid && frequency.QuadPart>0
         ?(double)(current->time.QuadPart-previous->time.QuadPart)*1000.0/(double)frequency.QuadPart:0;
@@ -109,6 +156,7 @@ static void d2_temporal_dump(u32 index){
         "\"camera_matrices_identified\":false,\"object_identity_available\":false,\"observation_delta_ms\":%.6f,\"current\":",milliseconds);
     d2_temporal_json_frame(file,current);fprintf(file,",\"previous\":");d2_temporal_json_frame(file,previous);
     fprintf(file,"}\n");fclose(file);
+    d2_projection_dump(index,current,previous);
     fprintf(stderr,"[D2TEMP] capture frame=%llu previous=%llu samples=%u/%u; camera and motion not yet identified\n",
         (unsigned long long)current->frame,(unsigned long long)previous->frame,current->count,previous->count);
 }
