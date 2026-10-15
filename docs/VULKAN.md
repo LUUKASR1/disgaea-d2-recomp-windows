@@ -52,3 +52,15 @@ O shader próprio de teste multiplica textura e cor, descarta alpha abaixo de um
 Os testes GPU verificam todos os pixels de uma textura assimétrica, UV espelhado, alpha zero/parcial, descarte, largura ímpar e substituições repetidas. Pedidos inválidos não substituem a textura anterior. `--validation` habilita também a validação de sincronização Khronos. O probe schema 3 mostra quatro quadrantes e mantém a janela aberta por padrão. Registra mensagens WM_SIZE, minimização/restauração e WM_CLOSE; esses eventos não identificam qual tecla/botão originou o fechamento.
 
 O jogo continua em D3D12. Esta etapa usa apenas shaders e texturas de teste próprios, sem assets do jogo. A seleção Vulkan para jogar permanece desabilitada.
+
+## Etapa 4: profundidade e lista de desenhos
+
+O teste RGBA do usuário passou na RTX 5070 por 1.384 quadros e registrou eventos de tamanho, uma minimização, uma restauração e WM_CLOSE. Validação estava desabilitada; não houve confirmação visual das cores no relato.
+
+Cada imagem de apresentação agora tem um depth target próprio (D32 float, com D16 como alternativa consultada no dispositivo). O render pass limpa profundidade e cor e oferece seis pipelines: profundidade desligada/somente leitura/leitura e escrita, cada uma com blend ligado/desligado. A comparação quando habilitada é LESS_OR_EQUAL. Não há stencil nesta etapa.
+
+`draw(span<DrawCommand>)` aceita até 4.096 desenhos sequenciais no mesmo pass, usando faixas indexadas ou não indexadas dos buffers enviados. Viewport, scissor, alpha cutoff, blend e profundidade são definidos por desenho. Toda a lista é validada antes de adquirir a imagem ou submeter comandos. Os desenhos ainda compartilham uma textura/shader próprios; isso não traduz comandos RSX nem cria um backend jogável.
+
+Os testes offscreen conferem todos os pixels ao inverter a ordem de objetos opacos, alternar escrita de profundidade, sobrepor uma interface sem depth test, mudar clear depth e descartar fragmentos transparentes antes que escrevam profundidade. Também verificam que uma lista inválida não é parcialmente submetida e que a cena seguinte se recupera.
+
+O probe schema 4 apresenta fundo vermelho, objeto verde no centro e overlay azul no canto superior esquerdo. A ordem dos dois primeiros desenhos alterna a cada 120 quadros, sem mudar a imagem. Antes da janela Win32, outro renderer offscreen confere quatro quadros de 128×96 pixels e registra o adaptador usado nesse preflight separadamente. O jogo continua em Direct3D 12; shaders, texturas/formatos e estados RSX ainda exigem integração.

@@ -26,6 +26,16 @@ struct DrawParameters {
   Rect viewport{}, scissor{};
   // Negative disables discard; otherwise alpha below this value is discarded.
   float alpha_cutoff = -1.f;
+  float clear_depth = 1.f;
+};
+enum class DepthMode : uint32_t { disabled, read_only, read_write };
+struct DrawCommand {
+  uint32_t first = 0, count = 0;
+  bool indexed = false;
+  DepthMode depth = DepthMode::disabled; // Compare LESS_OR_EQUAL when enabled.
+  bool blend = true; // Straight alpha; false writes unblended RGBA.
+  Rect viewport{}, scissor{};
+  float alpha_cutoff = -1.f;
 };
 struct Info {
   std::string adapter;
@@ -50,8 +60,10 @@ public:
                    std::span<const uint32_t> indices = {});
   void setParameters(const DrawParameters &);
   // Tightly packed linear RGBA8, nearest sampling, clamp-to-edge, one mip.
-  void setTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba);
+  void setTexture(uint32_t width, uint32_t height,
+                  std::span<const uint8_t> rgba);
   bool draw();
+  bool draw(std::span<const DrawCommand> commands);
   std::vector<uint8_t> readPixels(); // RGBA8; offscreen targets only
   Info info() const;
 };

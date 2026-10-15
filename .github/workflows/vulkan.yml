@@ -26,6 +26,7 @@ jobs:
           build-vulkan/DisgaeaD2VulkanProbe --self-test --validation --report build-vulkan/validation.json
           build-vulkan/d2_vulkan_geometry_tests --validation
           build-vulkan/d2_vulkan_texture_tests --validation
+          build-vulkan/d2_vulkan_depth_tests --validation
           ctest --test-dir build-vulkan --output-on-failure
       - uses: actions/upload-artifact@v4
         if: always()

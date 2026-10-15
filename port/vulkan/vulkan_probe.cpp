@@ -11,36 +11,56 @@
 using d2::vulkan::Renderer;
 using d2::vulkan::Unavailable;
 namespace {
-unsigned verifyTexture(Renderer &renderer) {
+unsigned verifyScene(Renderer &renderer) {
   auto pixels = renderer.readPixels();
   for (unsigned y = 0; y < 96; y++)
     for (unsigned x = 0; x < 128; x++) {
-      unsigned quadrant = (y >= 48 ? 2 : 0) + (x >= 64 ? 1 : 0);
-      const std::array<int, 4> colors[] = {{{255, 0, 0, 255}},
-                                           {{0, 255, 0, 255}},
-                                           {{0, 0, 255, 255}},
-                                           {{128, 0, 127, 255}}};
+      std::array<int, 4> expected = x < 32 && y < 24
+                                        ? std::array<int, 4>{0, 0, 255, 255}
+                                    : x >= 32 && x < 96 && y >= 24 && y < 72
+                                        ? std::array<int, 4>{0, 255, 0, 255}
+                                        : std::array<int, 4>{255, 0, 0, 255};
       for (unsigned c = 0; c < 4; c++)
-        if (std::abs(int(pixels[(y * 128 + x) * 4 + c]) - colors[quadrant][c]) >
-            1)
-          throw std::runtime_error("Texture GPU readback mismatch");
+        if (pixels[(y * 128 + x) * 4 + c] != expected[c])
+          throw std::runtime_error("Depth scene readback mismatch");
     }
   return 128 * 96;
 }
-void texturedQuad(Renderer &renderer) {
-  const d2::vulkan::Vertex vertices[] = {
-      {{-1, -1, .5f, 1}, {1, 1, 1, 1}, {0, 0}},
-      {{1, -1, .5f, 1}, {1, 1, 1, 1}, {1, 0}},
-      {{1, 1, .5f, 1}, {1, 1, 1, 1}, {1, 1}},
-      {{-1, 1, .5f, 1}, {1, 1, 1, 1}, {0, 1}}};
-  const uint32_t indices[] = {0, 1, 2, 0, 2, 3};
-  const uint8_t rgba[] = {255, 0, 0,   255, 0,   255, 0, 255,
-                          255, 0, 255, 0,   255, 0,   0, 128};
-  renderer.setGeometry(vertices, indices);
-  renderer.setTexture(2, 2, rgba);
-  d2::vulkan::DrawParameters p;
-  p.clear_color = {0, 0, 1, 1};
-  renderer.setParameters(p);
+void prepareScene(Renderer &renderer) {
+  std::vector<d2::vulkan::Vertex> vertices;
+  auto quad = [&](float left, float top, float right, float bottom, float z,
+                  std::array<float, 4> color) {
+    d2::vulkan::Vertex q[] = {{{left, top, z, 1}, color},
+                              {{right, top, z, 1}, color},
+                              {{right, bottom, z, 1}, color},
+                              {{left, bottom, z, 1}, color}};
+    for (unsigned i : {0, 1, 2, 0, 2, 3})
+      vertices.push_back(q[i]);
+  };
+  quad(-1, -1, 1, 1, .8f, {1, 0, 0, 1});
+  quad(-.5f, -.5f, .5f, .5f, .2f, {0, 1, 0, 1});
+  quad(-1, -1, -.5f, -.5f, .95f, {0, 0, 1, 1});
+  quad(-1, -1, 1, 1, .1f,
+       {1, 1, 0, 0}); // Must discard before it can write depth.
+  renderer.setGeometry(vertices);
+}
+bool renderScene(Renderer &renderer, bool reversed) {
+  using namespace d2::vulkan;
+  DrawCommand backgroundDraw, foregroundDraw, hud, discard;
+  backgroundDraw.count = 6;
+  backgroundDraw.depth = DepthMode::read_write;
+  backgroundDraw.blend = false;
+  foregroundDraw = backgroundDraw;
+  foregroundDraw.first = 6;
+  hud = backgroundDraw;
+  hud.first = 12;
+  hud.depth = DepthMode::disabled;
+  discard = backgroundDraw;
+  discard.first = 18;
+  discard.alpha_cutoff = .5f;
+  DrawCommand commands[] = {discard, reversed ? foregroundDraw : backgroundDraw,
+                            reversed ? backgroundDraw : foregroundDraw, hud};
+  return renderer.draw(commands);
 }
 bool resized = false, closeRequested = false, wasMinimized = false;
 unsigned sizeEvents = 0, minimizeEvents = 0, restoreEvents = 0;
@@ -91,6 +111,8 @@ int main(int argc, char **argv) {
   std::string report = "DisgaeaD2-Vulkan-report.json";
   Renderer renderer;
   unsigned frames = 0, colored = 0;
+  unsigned preflightPixels = 0;
+  std::string preflightAdapter;
   int code = 0;
   std::string status = "passed", error;
 #ifdef _WIN32
@@ -141,13 +163,31 @@ int main(int argc, char **argv) {
 #ifdef _WIN32
     native = window;
 #endif
+#ifdef _WIN32
+    if (!selfTest) {
+      // Verify the diagnostic scene on the selected offscreen adapter before
+      // opening the visible presentation test. Report that adapter separately.
+      Renderer check;
+      check.start(nullptr, validation);
+      check.offscreen(128, 96);
+      prepareScene(check);
+      for (unsigned i = 0; i < 4; i++) {
+        renderScene(check, (i % 2) != 0);
+        preflightPixels = verifyScene(check);
+      }
+      check.close();
+      preflightAdapter = check.info().adapter;
+      if (check.info().validation_errors)
+        throw std::runtime_error("Preflight Vulkan validation errors");
+    }
+#endif
     renderer.start(native, validation);
-    texturedQuad(renderer);
+    prepareScene(renderer);
     if (selfTest) {
       renderer.offscreen(128, 96);
       for (unsigned i = 0; i < 4; i++) {
-        renderer.draw();
-        colored = verifyTexture(renderer);
+        renderScene(renderer, (i % 2) != 0);
+        colored = verifyScene(renderer);
         frames++;
       }
     }
@@ -178,7 +218,7 @@ int main(int argc, char **argv) {
             continue;
           resized = false;
         }
-        if (renderer.draw())
+        if (renderScene(renderer, ((frames / 120) % 2) != 0))
           frames++;
       }
     }
@@ -208,7 +248,7 @@ int main(int argc, char **argv) {
     std::cerr << "Could not write Vulkan report\n";
     return 1;
   }
-  file << "{\"schema\":3,\"renderer_stage\":\"rgba-textures\","
+  file << "{\"schema\":4,\"renderer_stage\":\"depth-draw-lists\","
           "\"validation_enabled\":"
        << (validation ? "true" : "false")
        << ",\"purpose\":\"native-vulkan-foundation\",\"game_"
@@ -220,10 +260,13 @@ int main(int argc, char **argv) {
        << ",\"frames\":" << frames << ",\"colored_readback_pixels\":" << colored
        << ",\"validation_errors\":" << info.validation_errors
        << ",\"present_mode\":" << info.present_mode
-       << ",\"scene\":\"rgba-quadrants\",\"wm_size_events\":" << sizeEvents
-       << ",\"minimize_events\":" << minimizeEvents
+       << ",\"scene\":\"depth-occlusion-overlay\",\"wm_size_events\":"
+       << sizeEvents << ",\"minimize_events\":" << minimizeEvents
        << ",\"restore_events\":" << restoreEvents
        << ",\"wm_close_received\":" << (closeRequested ? "true" : "false")
+       << ",\"draw_commands_per_frame\":4,\"preflight_pixels_verified\":"
+       << preflightPixels
+       << ",\"preflight_adapter\":" << jsonString(preflightAdapter)
        << ",\"error\":" << jsonString(error) << "}\n";
   std::cout << status << ": " << info.adapter << " frames=" << frames
             << " report=" << report << '\n';
