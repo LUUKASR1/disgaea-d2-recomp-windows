@@ -46,6 +46,12 @@ int main() {
         std::ifstream complete(dir/"complete.json"); std::string second((std::istreambuf_iterator<char>(complete)),{});
         require(second.find("complete") != std::string::npos && second.find("1280") != std::string::npos,"completion marker");
         complete.close();
+        const std::string draw_marker="{\"schema\":1,\"status\":\"complete\",\"purpose\":\"isolated-real-draw-packets\",\"captured\":2}";
+        {std::ofstream out(dir/"complete.json");out<<draw_marker;}
+        SetEnvironmentVariableA("D2_DRAW_CAPTURE","1");
+        d2_capture_finish(path.c_str(),43,28);
+        {std::ifstream marker(dir/"complete.json");std::string current((std::istreambuf_iterator<char>(marker)),{});require(current==draw_marker,"Presentation must preserve isolated draw completion");}
+        SetEnvironmentVariableA("D2_DRAW_CAPTURE",nullptr);
         d2_capture_shader("vp","disabled",8);
         require(!std::filesystem::exists(dir/"shaders"), "shader export must be opt-in");
         d2_capture_shutdown();

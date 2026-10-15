@@ -150,6 +150,7 @@ int main(int argc, char **argv) {
   int code = 1;
   std::string status = "failed", error;
   uint64_t different = 0, above = 0, nonzero = 0;
+  uint32_t unused_outputs = 0;
   unsigned maximum = 0, validation_errors = 0;
   uint32_t w = 0, h = 0;
   try {
@@ -186,16 +187,23 @@ int main(int argc, char **argv) {
     auto bytes = read(input / "packet.bin", 128, 128);
     d2::DrawPacket p;
     std::memcpy(&p, bytes.data(), sizeof(p));
-    require(p.magic == 0x31524444 && p.version == 1 && p.width && p.height &&
-                p.width <= 1920 && p.height <= 1080 && p.vertices &&
-                p.vertices <= 4096 && p.vertices % 3 == 0 && p.fragment_bytes &&
-                p.fragment_bytes <= 16384 && p.fragment_bytes % 16 == 0,
+    require(p.magic == 0x31524444 && (p.version == 1 || p.version == 2) &&
+                p.width && p.height && p.width <= 1920 && p.height <= 1080 &&
+                p.vertices && p.vertices <= 4096 && p.vertices % 3 == 0 &&
+                p.fragment_bytes && p.fragment_bytes <= 16384 &&
+                p.fragment_bytes % 16 == 0,
             "Invalid draw packet header");
     require(p.depth_enabled <= 1 && p.depth_write <= 1 &&
                 p.depth_compare >= 1 && p.depth_compare <= 8 && p.blend <= 1 &&
                 p.cull >= 1 && p.cull <= 3 && p.front_ccw <= 1 &&
                 p.depth_clip <= 1 && p.color_mask <= 15 && p.palette_clamp <= 1,
             "Unsupported packet raster fields");
+    if (p.version == 1) {
+      require(p.fragment_output_mask == 0, "Unknown legacy packet field");
+      p.fragment_output_mask = 1;
+    }
+    require((p.fragment_output_mask & 1u) && p.fragment_output_mask <= 15,
+            "Invalid reflected fragment output mask");
     require(std::all_of(std::begin(p.reserved), std::end(p.reserved),
                         [](auto v) { return v == 0; }),
             "Unknown packet extension");
@@ -217,11 +225,14 @@ int main(int argc, char **argv) {
     auto vs = compiler.compile(text(input / "vp.hlsl"), Stage::vertex),
          fp = compiler.compile(text(input / "fp.hlsl"), Stage::fragment);
     auto contract = d2::vulkan::validateRsxModule(fp.words, true);
-    require(
-        std::all_of(contract.outputs.begin(), contract.outputs.end(),
-                    [](auto n) { return n == 0; }),
-        "Fragment outputs exceed captured single target; replay unsupported");
+    uint32_t actual_mask = 0;
+    for (auto location : contract.outputs)
+      actual_mask |= 1u << location;
+    require(actual_mask == p.fragment_output_mask,
+            "Reflected shader outputs differ from capture");
+    unused_outputs = actual_mask & ~1u;
     RasterState state;
+    state.discard_unbound_outputs = (actual_mask & ~1u) != 0;
     state.cull = p.cull - 1;
     state.front_ccw = p.front_ccw != 0;
     state.depth_clamp = !p.depth_clip;
@@ -317,6 +328,8 @@ int main(int argc, char **argv) {
         (validation ? "true" : "false") +
         ",\"validation_errors\":" + std::to_string(validation_errors) +
         ",\"width\":" + std::to_string(w) + ",\"height\":" + std::to_string(h) +
+        ",\"bound_color_targets\":1,\"discarded_shader_output_mask\":" +
+        std::to_string(unused_outputs) +
         ",\"different_pixels\":" + std::to_string(different) +
         ",\"pixels_above_tolerance\":" + std::to_string(above) +
         ",\"maximum_channel_error\":" + std::to_string(maximum) +

@@ -75,7 +75,7 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     require(d2_alpha_replay(device.p,queue.p,0,16,record,&binding,borrowed,3,mask.data())<0,"Invalid size rejected");
     SetEnvironmentVariableA("D2_DRAW_CAPTURE","1");
     const char captured_vs[]="float4 main(float4 p:POSITION):SV_Position{return p;}";
-    const char captured_fp[]="cbuffer Alpha:register(b1){float4 test;}float4 main():SV_Target{return float4(test.x,0,1,1);}";
+    const char captured_fp[]="cbuffer Alpha:register(b1){float4 test;}struct Out{float4 a:SV_Target0;float4 b:SV_Target2;};Out main(){Out o;o.a=float4(test.x,0,1,1);o.b=float4(0,1,0,1);return o;}";
     Ref<ID3DBlob> cv,cp;
     check(D3DCompile(captured_vs,sizeof(captured_vs)-1,nullptr,nullptr,nullptr,"main","vs_5_0",0,0,cv.put(),error.put()));
     check(D3DCompile(captured_fp,sizeof(captured_fp)-1,nullptr,nullptr,nullptr,"main","ps_5_0",0,0,cp.put(),error.put()));
@@ -121,7 +121,7 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     require(rgba.size()==32*16*4,"Reference readback strips pitch padding");
     for(size_t i=0;i<rgba.size();i+=4)require(rgba[i]==255&&rgba[i+1]==0&&rgba[i+2]==255&&rgba[i+3]==255,"Original PSO renders magenta reference");
     std::ifstream packet_file(folder/"packet.bin",std::ios::binary);d2::DrawPacket packet;packet_file.read((char*)&packet,sizeof(packet));
-    require(bool(packet_file)&&packet.magic==0x31524444&&packet.vertices==6&&packet.fragment_bytes==16,"Portable packet header preserves sizes");
+    require(bool(packet_file)&&packet.magic==0x31524444&&packet.vertices==6&&packet.fragment_bytes==16&&packet.version==2&&packet.fragment_output_mask==5,"Portable packet header preserves sizes");
     require(std::filesystem::file_size(folder/"vertices.bin")==sizeof(expanded),"Full 16-attribute geometry exported");
     for(unsigned u=2;u<4;u++)require(std::filesystem::file_size(folder/("tex"+std::to_string(u)+".rgba"))==4,"Null SRV exports one zero texel");
     for(unsigned u=0;u<2;u++){
@@ -130,6 +130,11 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
         for(unsigned i=0;i<6;i++){unsigned char value=(unsigned char)(17+29*i);
             require(pixels[i*4]==value&&pixels[i*4+1]==(u?value+7:value)&&pixels[i*4+2]==(u?255:value)&&pixels[i*4+3]==(u?0:value),"GPU texture bytes and SRV remap preserved");}
     }
+    binding.draw=false;
+    require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
+        vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)==1,"Empty original reference must request another candidate");
+    {std::ifstream marker(folder/"draw.json");std::string text((std::istreambuf_iterator<char>(marker)),{});require(text.find("empty-reference")!=std::string::npos,"Empty reference is not labeled captured");}
+    binding.draw=true;
     d2_draw_frame_begin();require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
         vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)<0,"Missing descriptor is rejected rather than substituted");
     image.close();packet_file.close();

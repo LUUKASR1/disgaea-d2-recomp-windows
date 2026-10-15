@@ -48,7 +48,8 @@ struct Pipeline {
   Ref<ID3D12PipelineState> pso;
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
   std::string vertex, fragment;
-  bool single_output = false;
+  bool color_outputs_supported = false;
+  uint32_t output_mask = 0;
 };
 struct Srv {
   ID3D12Resource *resource = nullptr;
@@ -225,13 +226,15 @@ extern "C" void d2_draw_pipeline(void *pso, const void *description,
                              (void **)reflection.put()))) {
       D3D11_SHADER_DESC sd{};
       if (SUCCEEDED(reflection->GetDesc(&sd))) {
-        p->single_output = true;
+        p->color_outputs_supported = true;
         for (unsigned i = 0; i < sd.OutputParameters; i++) {
           D3D11_SIGNATURE_PARAMETER_DESC param{};
           if (FAILED(reflection->GetOutputParameterDesc(i, &param)) ||
               param.SystemValueType != D3D_NAME_TARGET ||
-              param.SemanticIndex != 0)
-            p->single_output = false;
+              param.SemanticIndex > 3)
+            p->color_outputs_supported = false;
+          else
+            p->output_mask |= 1u << param.SemanticIndex;
         }
       }
     }
@@ -246,7 +249,8 @@ extern "C" int d2_draw_pipeline_ready(void *pso) {
   if (!d2_draw_capture_enabled())
     return 0;
   auto it = pipelines.find(pso);
-  return it != pipelines.end() && it->second->single_output;
+  return it != pipelines.end() && (it->second->color_outputs_supported &&
+                                   (it->second->output_mask & 1u));
 }
 extern "C" void d2_draw_srv(uint32_t slot, void *resource, const void *view) {
   if (!d2_draw_capture_enabled() || !view || slot > 16384)
@@ -288,7 +292,8 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
       throw std::runtime_error("pipeline-source-unavailable");
     auto &program = *found->second;
     auto &pd = program.pd;
-    if (!program.single_output || pd.NumRenderTargets != 1 ||
+    if (!program.color_outputs_supported || !(program.output_mask & 1u) ||
+        pd.NumRenderTargets != 1 ||
         pd.RTVFormats[0] != DXGI_FORMAT_R8G8B8A8_UNORM ||
         pd.SampleDesc.Count != 1 || pd.DepthStencilState.StencilEnable ||
         pd.RasterizerState.DepthBias ||
@@ -306,6 +311,7 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
         ctx->borrowed.push_back(p);
       }
     d2::DrawPacket packet;
+    packet.fragment_output_mask = program.output_mask;
     packet.width = width;
     packet.height = height;
     packet.vertices = vertex_count;
@@ -444,6 +450,17 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
     check(device->GetDeviceRemovedReason());
     std::string base = folder;
     auto image = rgba(reference, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING);
+    uint64_t nonzero = 0;
+    for (size_t i = 0; i < image.size(); i += 4)
+      nonzero += image[i] || image[i + 1] || image[i + 2] || image[i + 3];
+    if (!nonzero) {
+      status(
+          folder,
+          "{\"schema\":1,\"status\":\"empty-reference\",\"frame\":" +
+              std::to_string(frame) + ",\"draw\":" + std::to_string(draw) +
+              ",\"nonzero_reference_pixels\":0,\"vulkan_replayed\":false}\n");
+      return 1; // Keep searching; an all-zero image is not useful evidence.
+    }
     write(base + "/reference.rgba", image.data(), image.size());
     for (unsigned u = 0; u < 4; u++) {
       auto pixels = bound[u].resource
@@ -458,14 +475,19 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
     write(base + "/vertex-constants.bin", vc, 8224);
     write(base + "/fragment-constants.bin", fc, fc_bytes);
     write(base + "/packet.bin", &packet, sizeof(packet));
-    status(folder,
-           "{\"schema\":1,\"status\":\"captured\",\"frame\":" +
-               std::to_string(frame) + ",\"draw\":" + std::to_string(draw) +
-               ",\"reference\":\"isolated-original-d3d12-pipeline\",\"clear_"
-               "rgba\":[0,0,0,0],\"clear_depth\":1,\"descriptor_scope\":\"fp-"
-               "t0-t3\","
-               "\"scene_visibility_validated\":false,\"vulkan_replayed\":false,"
-               "\"normal_rendering_changed\":false}\n");
+    status(
+        folder,
+        "{\"schema\":1,\"status\":\"captured\",\"frame\":" +
+            std::to_string(frame) + ",\"draw\":" + std::to_string(draw) +
+            ",\"nonzero_reference_pixels\":" + std::to_string(nonzero) +
+            ",\"shader_output_mask\":" + std::to_string(program.output_mask) +
+            ",\"bound_color_targets\":1,\"discarded_shader_output_mask\":" +
+            std::to_string(program.output_mask & ~1u) +
+            ",\"reference\":\"isolated-original-d3d12-pipeline\",\"clear_"
+            "rgba\":[0,0,0,0],\"clear_depth\":1,\"descriptor_scope\":\"fp-"
+            "t0-t3\","
+            "\"scene_visibility_validated\":false,\"vulkan_replayed\":false,"
+            "\"normal_rendering_changed\":false}\n");
     return 0;
   } catch (const std::exception &e) {
     try {

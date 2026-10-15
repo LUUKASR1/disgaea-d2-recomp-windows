@@ -1190,7 +1190,7 @@ public:
       throw std::runtime_error("MRT requires independentBlend on this device");
     for (const auto &program : programs)
       for (auto output : program.fp_contract.outputs)
-        if (output >= count)
+        if (output >= count && !raster_state.discard_unbound_outputs)
           throw std::runtime_error(
               "RSX shader output has no bound color target");
   }

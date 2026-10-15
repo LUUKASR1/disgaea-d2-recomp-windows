@@ -80,6 +80,9 @@ extern "C" void d2_capture_mkdir(const char* path) {
     auto p = wide(path); if (!p.empty()) CreateDirectoryW(p.c_str(), nullptr);
 }
 extern "C" void d2_capture_finish(const char* directory, uint64_t frame, uint32_t draws) {
+    // Presentation diagnostics must not replace the dedicated draw result.
+    char draw_capture[4] = {};
+    if (GetEnvironmentVariableA("D2_DRAW_CAPTURE", draw_capture, sizeof(draw_capture)) == 1 && draw_capture[0] == '1') return;
     std::string base = directory;
     bool complete = nonempty(base+"/manifest.txt") && nonempty(base+"/backbuffer.bmp");
     FILE* status = d2_capture_fopen((base+"/complete.json").c_str(), "wb");

@@ -8,10 +8,11 @@ import sys
 import tempfile
 
 exe = str(Path(sys.argv[1]).resolve())
+flags = ['--validation'] if '--validation' in sys.argv[2:] else []
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
     output = root / 'fixture'
-    run = subprocess.run([exe, '--self-test', '--output', str(output)], capture_output=True, text=True)
+    run = subprocess.run([exe, *flags, '--self-test', '--output', str(output)], capture_output=True, text=True)
     if run.returncode == 77:
         sys.exit(77)
     assert run.returncode == 0, run.stdout + run.stderr
@@ -23,7 +24,7 @@ with tempfile.TemporaryDirectory() as temp:
     changed = bytearray(original); changed[1] = 255
     reference.write_bytes(changed)
     def check(expected, status):
-        result = subprocess.run([exe, '--input', str(packet), '--output', str(output)], capture_output=True, text=True)
+        result = subprocess.run([exe, *flags, '--input', str(packet), '--output', str(output)], capture_output=True, text=True)
         assert result.returncode == expected, result.stdout + result.stderr
         assert json.loads(report.read_text())['status'] == status
     check(2, 'pixel-mismatch')
@@ -70,6 +71,17 @@ with tempfile.TemporaryDirectory() as temp:
                 oracle.extend((r, 0, 255 - r, 255))
         reference.write_bytes(oracle)
         check(0, 'exact-match')
+    # A reflected extra output must be ignored only to mirror the actual
+    # captured single-target D3D binding, never by silent ABI relaxation.
+    (packet / 'tex1.rgba').write_bytes(bytes(4))
+    fp.write_text('cbuffer C:register(b1){float4 color;}struct Out{float4 a:SV_TARGET0;float4 b:SV_TARGET2;};Out main(){Out o;o.a=float4(1,0,0,1)*color;o.b=float4(0,1,0,1);return o;}')
+    data = list(struct.unpack('<32I', saved)); data[29] = 5
+    header.write_bytes(struct.pack('<32I', *data)); reference.write_bytes(original)
+    check(0, 'exact-match')
+    assert json.loads(report.read_text())['discarded_shader_output_mask'] == 4
+    data[29] = 1; header.write_bytes(struct.pack('<32I', *data))
+    check(1, 'failed')  # Cannot pretend the extra shader output was absent.
+    data[29] = 5; header.write_bytes(struct.pack('<32I', *data))
     reference.unlink()
     check(1, 'failed')
 print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, missing input')

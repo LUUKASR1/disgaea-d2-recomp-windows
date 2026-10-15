@@ -23,7 +23,7 @@ static void d2_draw_bind(void* lp,void* bp){
 static void d2_draw_dump(u32 index,u32 count){
     const char* base=d2_capture_directory();if(!base)return;
     char dir[512],path[600];snprintf(dir,sizeof(dir),"%s/frame_%02u",base,index);d2_capture_mkdir(dir);
-    unsigned attempted=0,captured=0;u32 parity=(u32)(s_d3d.vp_parity^1);
+    unsigned attempted=0,captured=0,empty=0;u32 parity=(u32)(s_d3d.vp_parity^1);
     for(u32 d=0;d<count&&d<MAX_DRAWS&&attempted<8&&captured<4;d++){
         const D3D12DrawRecord* r=&s_d3d.draws[d];
         if(!r->is_vp||r->is_clear||!d2_draw_psos[d]||!d2_draw_pipeline_ready(d2_draw_psos[d])||r->rt_off||r->rt_mrt[0]||r->rt_mrt[1]||r->rt_mrt[2]||
@@ -39,11 +39,12 @@ static void d2_draw_dump(u32 index,u32 count){
         const void* vc=(const char*)s_d3d.vp_cb_mapped+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE;
         const void* fc=(const char*)s_d3d.vp_fpcb_mapped+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_FPCB_STRIDE;
         const char* palette=getenv("D2_PALETTE_CLAMP");
-        if(!d2_draw_export(s_d3d.device,s_d3d.cmd_queue,binding.pso,d2_draw_bind,&binding,path,s_d3d.frame_count,d,s_d3d.width,s_d3d.height,
-            vb,r->vertex_count,vc,fc,VP_FPCB_STRIDE,DRAW_SRV_BASE+d*4,palette&&strcmp(palette,"1")==0,keep,6))captured++;
+        int result=d2_draw_export(s_d3d.device,s_d3d.cmd_queue,binding.pso,d2_draw_bind,&binding,path,s_d3d.frame_count,d,s_d3d.width,s_d3d.height,
+            vb,r->vertex_count,vc,fc,VP_FPCB_STRIDE,DRAW_SRV_BASE+d*4,palette&&strcmp(palette,"1")==0,keep,6);
+        captured+=result==0;empty+=result==1;
     }
     snprintf(path,sizeof(path),"%s/complete.json",dir);FILE* json=d2_capture_fopen(path,"wb");
-    if(json){fprintf(json,"{\"schema\":1,\"status\":\"%s\",\"purpose\":\"isolated-real-draw-packets\",\"frame\":%llu,\"attempted\":%u,\"captured\":%u,\"vulkan_replayed\":false}\n",
-        captured?"complete":"failed",(unsigned long long)s_d3d.frame_count,attempted,captured);fclose(json);}
+    if(json){fprintf(json,"{\"schema\":1,\"status\":\"%s\",\"purpose\":\"isolated-real-draw-packets\",\"frame\":%llu,\"attempted\":%u,\"captured\":%u,\"empty_references\":%u,\"vulkan_replayed\":false}\n",
+        captured?"complete":"failed",(unsigned long long)s_d3d.frame_count,attempted,captured,empty);fclose(json);}
     d2_draw_release();
 }

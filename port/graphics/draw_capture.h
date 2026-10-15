@@ -14,6 +14,8 @@ void d2_draw_pipeline(void *pso, const void *description,
 int d2_draw_pipeline_ready(void *pso);
 void d2_draw_srv(uint32_t slot, void *resource, const void *view);
 void d2_draw_frame_begin(void);
+// 0: nonzero reference saved; 1: empty reference, continue selection; -1:
+// rejected.
 int d2_draw_export(void *device, void *queue, void *pso, D2AlphaRecord record,
                    void *user, const char *folder, uint64_t frame,
                    uint32_t draw, uint32_t width, uint32_t height,

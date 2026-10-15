@@ -76,6 +76,9 @@ enum class BlendOperation : uint32_t {
 struct RasterState {
   uint32_t cull = 0; // 0 none, 1 front, 2 back
   bool front_ccw = true, depth_clamp = false;
+  // Explicitly mirror a captured pipeline with fewer bound targets than
+  // declared FP outputs; default remains strict for ordinary probe callers.
+  bool discard_unbound_outputs = false;
   uint32_t color_mask = 15, depth_compare = 3; // Vulkan ordering: never..always
   BlendFactor src_color = BlendFactor::src_alpha,
               dst_color = BlendFactor::inv_src_alpha;

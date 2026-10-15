@@ -33,6 +33,7 @@ jobs:
           test -n "$VK_ICD_FILENAMES"
           build-shader/DisgaeaD2RsxGpuProbe --validation --output build-shader/rsx-gpu-check
           build-shader/DisgaeaD2DrawReplay --self-test --validation --output build-shader/draw-self-test
+          python3 port/vulkan/tests/draw_packet_tests.py build-shader/DisgaeaD2DrawReplay --validation
           ctest --test-dir build-shader --output-on-failure
           for file in build-shader/corpus-self-test/*.spv; do spirv-val --target-env vulkan1.1 "$file"; done
       - name: Package single-executable Windows shader checker and required licenses
