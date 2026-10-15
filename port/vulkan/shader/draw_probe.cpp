@@ -6,15 +6,33 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <stdexcept>
 using namespace d2::vulkan;
 using namespace d2::vulkan::shader;
 namespace fs = std::filesystem;
 namespace {
+std::string jsonString(const std::string &value) {
+  std::string result = "\"";
+  const char hex[] = "0123456789abcdef";
+  for (unsigned char c : value) {
+    if (c == '"' || c == '\\') {
+      result += '\\';
+      result += char(c);
+    } else if (c < 32) {
+      result += "\\u00";
+      result += hex[c >> 4];
+      result += hex[c & 15];
+    } else
+      result += char(c);
+  }
+  return result + "\"";
+}
 void require(bool b, const char *message) {
   if (!b)
     throw std::runtime_error(message);
@@ -146,9 +164,10 @@ void fixture(const fs::path &input) {
 } // namespace
 int main(int argc, char **argv) {
   fs::path input, output = "draw-vulkan-check";
-  bool synthetic = false, validation = false;
+  bool synthetic = false, validation = false, sequence_mode = false;
+  uint32_t sequence_count = 0;
   int code = 1;
-  std::string status = "failed", error;
+  std::string status = "failed", error, adapter;
   uint64_t different = 0, above = 0, nonzero = 0;
   uint32_t unused_outputs = 0;
   unsigned maximum = 0, validation_errors = 0;
@@ -160,13 +179,16 @@ int main(int argc, char **argv) {
         input = argv[++i];
       else if (a == "--output" && i + 1 < argc)
         output = argv[++i];
+      else if (a == "--sequence")
+        sequence_mode = true;
       else if (a == "--self-test")
         synthetic = true;
       else if (a == "--validation")
         validation = true;
       else
-        throw std::runtime_error("Usage: DisgaeaD2DrawReplay --input draw_N "
-                                 "[--output folder] [--validation]");
+        throw std::runtime_error(
+            "Usage: DisgaeaD2DrawReplay --input draw_N "
+            "[--sequence] [--output folder] [--validation]");
     }
     require(std::endian::native == std::endian::little,
             "Packet requires little endian host");
@@ -181,122 +203,196 @@ int main(int argc, char **argv) {
     }
     require(!input.empty() && !fs::is_symlink(fs::symlink_status(input)),
             "Select a regular draw directory");
-    require(text(input / "draw.json").find("\"status\":\"captured\"") !=
-                std::string::npos,
-            "Draw was rejected or not completed");
-    auto bytes = read(input / "packet.bin", 160);
-    require(bytes.size() == 128 || bytes.size() == 160, "Invalid packet size");
-    d2::DrawPacket p;
-    std::memcpy(&p, bytes.data(), bytes.size());
-    require(bytes.size() == (p.version == 3 ? 160u : 128u),
-            "Packet version/size mismatch");
-    require(p.magic == 0x31524444 &&
-                (p.version == 1 || p.version == 2 || p.version == 3) &&
-                p.width && p.height && p.width <= 1920 && p.height <= 1080 &&
-                p.vertices && p.vertices <= 4096 && p.vertices % 3 == 0 &&
-                p.fragment_bytes && p.fragment_bytes <= 16384 &&
-                p.fragment_bytes % 16 == 0,
-            "Invalid draw packet header");
-    require(p.depth_enabled <= 1 && p.depth_write <= 1 &&
-                p.depth_compare >= 1 && p.depth_compare <= 8 && p.blend <= 1 &&
-                p.cull >= 1 && p.cull <= 3 && p.front_ccw <= 1 &&
-                p.depth_clip <= 1 && p.color_mask <= 15 && p.palette_clamp <= 1,
-            "Unsupported packet raster fields");
-    if (p.version == 1) {
-      require(p.fragment_output_mask == 0, "Unknown legacy packet field");
-      p.fragment_output_mask = 1;
-    }
-    require((p.fragment_output_mask & 1u) && p.fragment_output_mask <= 15,
-            "Invalid reflected fragment output mask");
-    require(std::all_of(std::begin(p.reserved), std::end(p.reserved),
-                        [](auto v) { return v == 0; }),
-            "Unknown packet extension");
-    w = p.width;
-    h = p.height;
-    auto vertex =
-             read(input / "vertices.bin", 4096 * 256, size_t(p.vertices) * 256),
-         vc = read(input / "vertex-constants.bin", 8224, 8224),
-         fc = read(input / "fragment-constants.bin", 16384, p.fragment_bytes);
-    std::vector<RsxVertex> vertices(p.vertices);
-    std::memcpy(vertices.data(), vertex.data(), vertex.size());
-    std::array<std::array<float, 4>, 514> constants{};
-    std::memcpy(constants.data(), vc.data(), vc.size());
-    std::vector<std::array<float, 4>> fragment(p.fragment_bytes / 16);
-    std::memcpy(fragment.data(), fc.data(), fc.size());
-    auto reference =
-        read(input / "reference.rgba", 1920 * 1080 * 4, size_t(w) * h * 4);
-    Compiler compiler;
-    auto vs = compiler.compile(text(input / "vp.hlsl"), Stage::vertex),
-         fp = compiler.compile(text(input / "fp.hlsl"), Stage::fragment);
-    auto contract = d2::vulkan::validateRsxModule(fp.words, true);
-    uint32_t actual_mask = 0;
-    for (auto location : contract.outputs)
-      actual_mask |= 1u << location;
-    require(actual_mask == p.fragment_output_mask,
-            "Reflected shader outputs differ from capture");
-    unused_outputs = actual_mask & ~1u;
-    RasterState state;
-    state.discard_unbound_outputs = (actual_mask & ~1u) != 0;
-    state.cull = p.cull - 1;
-    state.front_ccw = p.front_ccw != 0;
-    state.depth_clamp = !p.depth_clip;
-    state.color_mask = p.color_mask;
-    state.depth_compare = p.depth_compare - 1;
-    // Disabled blending ignores unused/zero D3D blend enums.
-    if (p.blend) {
-      state.src_color = factor(p.src_color);
-      state.dst_color = factor(p.dst_color);
-      state.src_alpha = factor(p.src_alpha);
-      state.dst_alpha = factor(p.dst_alpha);
-      state.color_op = operation(p.color_op);
-      state.alpha_op = operation(p.alpha_op);
+    require(!(synthetic && sequence_mode), "Sequence needs captured inputs");
+    fs::path root = input;
+    d2::DrawSequence sequence;
+    if (sequence_mode) {
+      require(text(root / "sequence.json").find("\"status\":\"captured\"") !=
+                  std::string::npos,
+              "Sequence was not completed");
+      auto data =
+          read(root / "sequence.bin", sizeof(sequence), sizeof(sequence));
+      std::memcpy(&sequence, data.data(), sizeof(sequence));
+      require(sequence.magic == 0x31535144 && sequence.version == 1 &&
+                  sequence.reserved == 0 && sequence.count >= 2 &&
+                  sequence.count <= 4 && sequence.width &&
+                  sequence.width <= 1920 && sequence.height &&
+                  sequence.height <= 1080,
+              "Invalid sequence header");
+      for (unsigned i = 0; i < 4; i++)
+        require(i < sequence.count
+                    ? (sequence.draws[i] < 16384 &&
+                       (!i || sequence.draws[i] > sequence.draws[i - 1]))
+                    : sequence.draws[i] == 0,
+                "Invalid sequence order/reserved slot");
+      sequence_count = sequence.count;
     }
     Renderer r;
-    r.start(nullptr, validation);
-    r.setRsxProgram(vs.words, fp.words);
-    r.setRasterState(state);
-    r.offscreen(w, h);
-    for (unsigned u = 0; u < 16; u++) {
-      uint8_t black[4]{};
-      r.setTextureUnit(u, 1, 1, black);
-    }
-    for (unsigned u = 0; u < 4; u++) {
-      require(p.texture_width[u] && p.texture_height[u] &&
-                  p.texture_width[u] <= 4096 && p.texture_height[u] <= 4096 &&
-                  uint64_t(p.texture_width[u]) * p.texture_height[u] <= 4194304,
-              "Invalid texture dimensions");
-      require(p.texture_format[u] <= 3, "Unsupported texture format");
-      if (p.texture_format[u]) {
-        size_t size = size_t((p.texture_width[u] + 3) / 4) *
-                      ((p.texture_height[u] + 3) / 4) *
-                      (p.texture_format[u] == 1 ? 8 : 16);
-        auto blocks =
-            read(input / ("tex" + std::to_string(u) + ".bc"), 4194304, size);
-        r.setTextureUnitBlocks(u, p.texture_width[u], p.texture_height[u],
-                               p.texture_format[u], p.texture_mapping[u],
-                               blocks);
-      } else {
-        require(p.texture_mapping[u] == 0, "RGBA texture already remapped");
-        auto pixels =
-            read(input / ("tex" + std::to_string(u) + ".rgba"), 16777216,
-                 size_t(p.texture_width[u]) * p.texture_height[u] * 4);
-        r.setTextureUnit(u, p.texture_width[u], p.texture_height[u], pixels);
+    Compiler compiler;
+    std::vector<uint8_t> reference;
+    std::vector<uint32_t> first_vs, first_fp;
+    d2::DrawPacket first_packet;
+    for (unsigned index = 0; index < (sequence_mode ? sequence.count : 1u);
+         index++) {
+      if (sequence_mode) {
+        char name[32];
+        std::snprintf(name, sizeof(name), "draw_%03u", sequence.draws[index]);
+        input = root / name;
+        require(!fs::is_symlink(fs::symlink_status(input)),
+                "Draw directory symlink");
+        auto marker = text(input / "draw.json");
+        auto number = [&](const char *key) {
+          std::smatch m;
+          require(std::regex_search(marker, m,
+                                    std::regex(std::string("\"") + key +
+                                               "\"\\s*:\\s*([0-9]+)")),
+                  "Draw identity missing");
+          return std::stoull(m[1].str());
+        };
+        require(number("frame") == sequence.frame &&
+                    number("draw") == sequence.draws[index],
+                "Sequence draw identity/frame mismatch");
       }
-      r.setSamplerUnit(u, u != 0, u != 0 && !(u == 1 && p.palette_clamp));
+      require(text(input / "draw.json").find("\"status\":\"captured\"") !=
+                  std::string::npos,
+              "Draw was rejected or not completed");
+      auto bytes = read(input / "packet.bin", 160);
+      require(bytes.size() == 128 || bytes.size() == 160,
+              "Invalid packet size");
+      d2::DrawPacket p;
+      std::memcpy(&p, bytes.data(), bytes.size());
+      require(bytes.size() == (p.version == 3 ? 160u : 128u),
+              "Packet version/size mismatch");
+      require(p.magic == 0x31524444 &&
+                  (p.version == 1 || p.version == 2 || p.version == 3) &&
+                  p.width && p.height && p.width <= 1920 && p.height <= 1080 &&
+                  p.vertices && p.vertices <= 4096 && p.vertices % 3 == 0 &&
+                  p.fragment_bytes && p.fragment_bytes <= 16384 &&
+                  p.fragment_bytes % 16 == 0,
+              "Invalid draw packet header");
+      require(p.depth_enabled <= 1 && p.depth_write <= 1 &&
+                  p.depth_compare >= 1 && p.depth_compare <= 8 &&
+                  p.blend <= 1 && p.cull >= 1 && p.cull <= 3 &&
+                  p.front_ccw <= 1 && p.depth_clip <= 1 && p.color_mask <= 15 &&
+                  p.palette_clamp <= 1,
+              "Unsupported packet raster fields");
+      if (p.version == 1) {
+        require(p.fragment_output_mask == 0, "Unknown legacy packet field");
+        p.fragment_output_mask = 1;
+      }
+      require((p.fragment_output_mask & 1u) && p.fragment_output_mask <= 15,
+              "Invalid reflected fragment output mask");
+      require(std::all_of(std::begin(p.reserved), std::end(p.reserved),
+                          [](auto v) { return v == 0; }),
+              "Unknown packet extension");
+      w = p.width;
+      h = p.height;
+      auto vertex = read(input / "vertices.bin", 4096 * 256,
+                         size_t(p.vertices) * 256),
+           vc = read(input / "vertex-constants.bin", 8224, 8224),
+           fc = read(input / "fragment-constants.bin", 16384, p.fragment_bytes);
+      std::vector<RsxVertex> vertices(p.vertices);
+      std::memcpy(vertices.data(), vertex.data(), vertex.size());
+      std::array<std::array<float, 4>, 514> constants{};
+      std::memcpy(constants.data(), vc.data(), vc.size());
+      std::vector<std::array<float, 4>> fragment(p.fragment_bytes / 16);
+      std::memcpy(fragment.data(), fc.data(), fc.size());
+      if (!sequence_mode)
+        reference =
+            read(input / "reference.rgba", 1920 * 1080 * 4, size_t(w) * h * 4);
+      auto vs = compiler.compile(text(input / "vp.hlsl"), Stage::vertex),
+           fp = compiler.compile(text(input / "fp.hlsl"), Stage::fragment);
+      auto contract = d2::vulkan::validateRsxModule(fp.words, true);
+      uint32_t actual_mask = 0;
+      for (auto location : contract.outputs)
+        actual_mask |= 1u << location;
+      require(actual_mask == p.fragment_output_mask,
+              "Reflected shader outputs differ from capture");
+      unused_outputs = actual_mask & ~1u;
+      RasterState state;
+      state.discard_unbound_outputs = (actual_mask & ~1u) != 0;
+      state.cull = p.cull - 1;
+      state.front_ccw = p.front_ccw != 0;
+      state.depth_clamp = !p.depth_clip;
+      state.color_mask = p.color_mask;
+      state.depth_compare = p.depth_compare - 1;
+      // Disabled blending ignores unused/zero D3D blend enums.
+      if (p.blend) {
+        state.src_color = factor(p.src_color);
+        state.dst_color = factor(p.dst_color);
+        state.src_alpha = factor(p.src_alpha);
+        state.dst_alpha = factor(p.dst_alpha);
+        state.color_op = operation(p.color_op);
+        state.alpha_op = operation(p.alpha_op);
+      }
+      if (index == 0) {
+        first_packet = p;
+        first_vs = vs.words;
+        first_fp = fp.words;
+        r.start(nullptr, validation);
+        adapter = r.info().adapter;
+        r.setRsxProgram(vs.words, fp.words);
+        r.setRasterState(state);
+        r.offscreen(w, h);
+      } else {
+        require(w == first_packet.width && h == first_packet.height &&
+                    std::memcmp(&p.depth_enabled, &first_packet.depth_enabled,
+                                15 * sizeof(uint32_t)) == 0 &&
+                    p.fragment_output_mask ==
+                        first_packet.fragment_output_mask &&
+                    vs.words == first_vs && fp.words == first_fp,
+                "Sequence requires identical pipeline/shaders");
+      }
+      if (sequence_mode)
+        require(w == sequence.width && h == sequence.height,
+                "Sequence target mismatch");
+      for (unsigned u = 0; u < 16; u++) {
+        uint8_t black[4]{};
+        r.setTextureUnit(u, 1, 1, black);
+      }
+      for (unsigned u = 0; u < 4; u++) {
+        require(p.texture_width[u] && p.texture_height[u] &&
+                    p.texture_width[u] <= 4096 && p.texture_height[u] <= 4096 &&
+                    uint64_t(p.texture_width[u]) * p.texture_height[u] <=
+                        4194304,
+                "Invalid texture dimensions");
+        require(p.texture_format[u] <= 3, "Unsupported texture format");
+        if (p.texture_format[u]) {
+          size_t size = size_t((p.texture_width[u] + 3) / 4) *
+                        ((p.texture_height[u] + 3) / 4) *
+                        (p.texture_format[u] == 1 ? 8 : 16);
+          auto blocks =
+              read(input / ("tex" + std::to_string(u) + ".bc"), 4194304, size);
+          r.setTextureUnitBlocks(u, p.texture_width[u], p.texture_height[u],
+                                 p.texture_format[u], p.texture_mapping[u],
+                                 blocks);
+        } else {
+          require(p.texture_mapping[u] == 0, "RGBA texture already remapped");
+          auto pixels =
+              read(input / ("tex" + std::to_string(u) + ".rgba"), 16777216,
+                   size_t(p.texture_width[u]) * p.texture_height[u] * 4);
+          r.setTextureUnit(u, p.texture_width[u], p.texture_height[u], pixels);
+        }
+        r.setSamplerUnit(u, u != 0, u != 0 && !(u == 1 && p.palette_clamp));
+      }
+      DrawParameters parameters;
+      parameters.clear_color = {0, 0, 0, 0};
+      r.setParameters(parameters);
+      r.setRsxGeometry(vertices);
+      r.setRsxConstants(constants, fragment);
+      DrawCommand draw;
+      draw.count = p.vertices;
+      draw.blend = p.blend != 0;
+      draw.depth = !p.depth_enabled ? DepthMode::disabled
+                   : p.depth_write  ? DepthMode::read_write
+                                    : DepthMode::read_only;
+      auto commands = std::span<const DrawCommand>(&draw, 1);
+      require(index ? r.drawAppend(commands) : r.draw(commands),
+              "Draw was not submitted");
     }
-    DrawParameters parameters;
-    parameters.clear_color = {0, 0, 0, 0};
-    r.setParameters(parameters);
-    r.setRsxGeometry(vertices);
-    r.setRsxConstants(constants, fragment);
-    DrawCommand draw;
-    draw.count = p.vertices;
-    draw.blend = p.blend != 0;
-    draw.depth = !p.depth_enabled ? DepthMode::disabled
-                 : p.depth_write  ? DepthMode::read_write
-                                  : DepthMode::read_only;
-    require(r.draw(std::span<const DrawCommand>(&draw, 1)),
-            "Draw was not submitted");
+    if (sequence_mode)
+      reference = read(root / "sequence-reference.rgba", 1920 * 1080 * 4,
+                       size_t(w) * h * 4);
     auto rendered = r.readPixels();
     r.close();
     validation_errors = r.info().validation_errors;
@@ -352,7 +448,19 @@ int main(int argc, char **argv) {
         ",\"maximum_channel_error\":" + std::to_string(maximum) +
         ",\"nonzero_reference_pixels\":" + std::to_string(nonzero) +
         ",\"tolerance\":1}\n";
-    write(output / "draw-vulkan-report.json", json.data(), json.size());
+    json.insert(json.size() - 2, ",\"adapter\":" + jsonString(adapter));
+    if (sequence_mode) {
+      auto from = std::string("isolated-draw-d3d12-vulkan-comparison");
+      json.replace(json.find(from), from.size(),
+                   "selected-sequence-d3d12-vulkan-comparison");
+      json.insert(
+          json.size() - 2,
+          ",\"selected_draw_count\":" + std::to_string(sequence_count) +
+              ",\"coverage_scope\":\"selected-same-pipeline-subset-only\"");
+    }
+    write(output / (sequence_mode ? "sequence-vulkan-report.json"
+                                  : "draw-vulkan-report.json"),
+          json.data(), json.size());
     if (!error.empty())
       write(output / "error.txt", error.data(), error.size());
     else

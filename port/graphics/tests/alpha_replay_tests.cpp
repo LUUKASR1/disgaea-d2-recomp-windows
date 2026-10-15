@@ -24,6 +24,8 @@ void record(void* lp,void* bp){
     list->IASetVertexBuffers(0,1,&vb);list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     if(b->draw)list->DrawInstanced(6,1,0,0);
 }
+struct SequenceBinding { Binding first, second; unsigned calls=0; };
+void record_sequence(void* lp,void* bp){auto b=static_cast<SequenceBinding*>(bp);record(lp,&b->first);b->calls++;record(lp,&b->second);b->calls++;}
 int main(){try{
     Ref<IDXGIFactory4> factory;Ref<IDXGIAdapter> warp;Ref<ID3D12Device> device;Ref<ID3D12CommandQueue> queue;
     check(CreateDXGIFactory1(IID_IDXGIFactory4,(void**)factory.put()));check(factory->EnumWarpAdapter(IID_IDXGIAdapter,(void**)warp.put()));
@@ -131,6 +133,18 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
             require(pixels[i*4]==value&&pixels[i*4+1]==(u?value+7:value)&&pixels[i*4+2]==(u?255:value)&&pixels[i*4+3]==(u?0:value),"GPU texture bytes and SRV remap preserved");}
     }
     image.close();packet_file.close();
+    // Original D3D pipeline twice on shared depth: a farther blue quad must
+    // not overwrite the first magenta quad. Both callbacks execute.
+    Ref<ID3D12Resource> farther;check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_ID3D12Resource,(void**)farther.put()));
+    float far_vertices[6][4];std::memcpy(far_vertices,vertices,sizeof(vertices));for(auto& v:far_vertices)v[2]=.8f;
+    check(farther->Map(0,&none,&mapped));std::memcpy(mapped,far_vertices,sizeof(far_vertices));farther->Unmap(0,nullptr);
+    SequenceBinding sequence{binding,binding};sequence.second.vb=farther.p;sequence.second.alpha=false;
+    void* sequence_borrowed[]={captured.p,root.p,vb.p,farther.p};uint32_t sequence_ids[]={7,9},sequence_srvs[]={0,0};
+    require(d2_draw_sequence_reference(device.p,queue.p,record_sequence,&sequence,utf8.c_str(),42,32,16,sequence_ids,sequence_srvs,2,sequence_borrowed,4)==0,"Shared original sequence exported");
+    require(sequence.calls==2,"Both original callbacks executed");
+    {std::ifstream f(folder/"sequence-reference.rgba",std::ios::binary);std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(f)),{});require(bytes.size()==32*16*4,"Sequence RGBA size");for(size_t i=0;i<bytes.size();i+=4)require(bytes[i]==255&&bytes[i+1]==0&&bytes[i+2]==255&&bytes[i+3]==255,"Farther second draw cannot replace retained depth");}
+    {std::ifstream f(folder/"sequence.bin",std::ios::binary);d2::DrawSequence v;f.read((char*)&v,sizeof(v));require(bool(f)&&v.count==2&&v.draws[0]==7&&v.draws[1]==9&&v.frame==42,"Sequence ordering and frame preserved");}
+    sequence_ids[1]=7;require(d2_draw_sequence_reference(device.p,queue.p,record_sequence,&sequence,utf8.c_str(),42,32,16,sequence_ids,sequence_srvs,2,sequence_borrowed,4)<0,"Duplicate selected draw rejected");
     // BC readback must copy block rows, not texel rows/padding. Original
     // compressed bytes and SRV selectors are kept for Vulkan's decoder.
     for(unsigned fmt=1;fmt<=3;fmt++){

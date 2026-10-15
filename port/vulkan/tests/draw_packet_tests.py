@@ -6,6 +6,7 @@ import struct
 import math
 import sys
 import tempfile
+import shutil
 
 exe = str(Path(sys.argv[1]).resolve())
 flags = ['--validation'] if '--validation' in sys.argv[2:] else []
@@ -18,6 +19,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert run.returncode == 0, run.stdout + run.stderr
     packet = output / 'synthetic-input'
     report = output / 'draw-vulkan-report.json'
+    fixture_shader = (packet / 'fp.hlsl').read_text()
     assert json.loads(report.read_text())['status'] == 'exact-match'
     reference = packet / 'reference.rgba'
     original = reference.read_bytes()
@@ -116,6 +118,48 @@ with tempfile.TemporaryDirectory() as temp:
         header.write_bytes(struct.pack('<32I', *legacy))
         check(0, 'exact-match')
     header.write_bytes(saved)
+    # True shared-attachment sequence: different textures/constants/geometry,
+    # occlusion across submissions and blending over retained color.
+    seq = root / 'sequence'
+    seq.mkdir()
+    for index in range(2):
+        draw = seq / f'draw_{index:03d}'
+        shutil.copytree(packet, draw)
+        (draw / 'draw.json').write_text(json.dumps({'status':'captured','frame':42,'draw':index}, separators=(',',':')))
+        (draw / 'fp.hlsl').write_text(fixture_shader)
+        fields = list(struct.unpack('<40I', saved)); fields[6]=fields[7]=fields[9]=1
+        (draw / 'packet.bin').write_bytes(struct.pack('<40I', *fields))
+    second=seq/'draw_001'
+    (second/'tex0.rgba').write_bytes(bytes([0,0,255,255]))
+    (second/'fragment-constants.bin').write_bytes(struct.pack('<4f',1,1,1,.5))
+    vertices=bytearray((second/'vertices.bin').read_bytes())
+    def move_depth(z):
+        for j in range(6):struct.pack_into('<f',vertices,j*256+8,z)
+        (second/'vertices.bin').write_bytes(vertices)
+    (seq/'sequence.json').write_text('{"status":"captured"}')
+    seq_header=struct.pack('<6IQ4I',0x31535144,1,64,48,2,0,42,0,1,0,0)
+    (seq/'sequence.bin').write_bytes(seq_header)
+    def sequence_check(expected,status):
+        r=subprocess.run([exe,*flags,'--sequence','--input',str(seq),'--output',str(output)],capture_output=True,text=True)
+        assert r.returncode==expected,r.stdout+r.stderr
+        result=json.loads((output/'sequence-vulkan-report.json').read_text())
+        assert result['status']==status
+        if expected==0:assert result['selected_draw_count']==2
+        assert result['full_frame_equivalence_tested'] is False
+        assert result.get('validation_errors',0)==0
+    move_depth(.75);(seq/'sequence-reference.rgba').write_bytes(original)
+    sequence_check(0,'exact-match') # Hidden blue cannot erase red/depth.
+    move_depth(.25);(seq/'sequence-reference.rgba').write_bytes(bytes([127,0,128,255])*(64*48))
+    sequence_check(0,'exact-match') # Front alpha blends over prior red.
+    (second/'draw.json').write_text('{"status":"captured","frame":43,"draw":1}')
+    sequence_check(1,'failed')
+    assert not (output/'output.bmp').exists()
+    (second/'draw.json').write_text('{"status":"captured","frame":42,"draw":1}')
+    bad=bytearray(seq_header);struct.pack_into('<I',bad,36,0) # Duplicate IDs.
+    (seq/'sequence.bin').write_bytes(bad);sequence_check(1,'failed')
+    (seq/'sequence.bin').write_bytes(seq_header)
+    bad=list(struct.unpack('<40I',(second/'packet.bin').read_bytes()));bad[16]=3
+    (second/'packet.bin').write_bytes(struct.pack('<40I',*bad));sequence_check(1,'failed')
     reference.unlink()
     check(1, 'failed')
-print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, native BC1/2/3, component remap, legacy packets, missing input')
+print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, native BC1/2/3, component remap, legacy packets, shared-depth/color sequences, identity/order rejection, missing input')

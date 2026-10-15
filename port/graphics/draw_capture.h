@@ -23,6 +23,13 @@ int d2_draw_export(void *device, void *queue, void *pso, D2AlphaRecord record,
                    const void *fc, uint32_t fc_bytes, uint32_t first_srv,
                    uint32_t palette_clamp, void *const *borrowed,
                    uint32_t borrowed_count);
+// Replay selected callbacks on one owned color/depth pair. No per-draw clears.
+int d2_draw_sequence_reference(void *device, void *queue, D2AlphaRecord record,
+                               void *user, const char *folder, uint64_t frame,
+                               uint32_t width, uint32_t height,
+                               const uint32_t *draws,
+                               const uint32_t *first_srvs, uint32_t count,
+                               void *const *borrowed, uint32_t borrowed_count);
 #ifdef __cplusplus
 }
 #endif

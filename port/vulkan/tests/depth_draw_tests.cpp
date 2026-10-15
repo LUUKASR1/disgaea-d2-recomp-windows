@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
   try {
     r.start(nullptr, argc == 2 && std::string(argv[1]) == "--validation");
     r.offscreen(64, 48);
+    rejected([&] { r.drawAppend({}); });
     std::vector<Vertex> vertices;
     auto quad = [&](float left, float top, float right, float bottom, float z,
                     std::array<float, 4> color) {

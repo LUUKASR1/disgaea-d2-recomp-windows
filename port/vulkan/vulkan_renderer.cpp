@@ -140,7 +140,8 @@ class Renderer::Impl {
        bc_supported = false;
   RasterState raster_state{};
   std::array<VkSampler, 16> unit_samplers{};
-  VkRenderPass pass = VK_NULL_HANDLE;
+  VkRenderPass pass = VK_NULL_HANDLE, load_pass = VK_NULL_HANDLE;
+  bool offscreen_frame_ready = false;
   VkPipelineLayout layout = VK_NULL_HANDLE;
   std::array<VkPipeline, 6> pipelines{};
   struct DepthTarget {
@@ -381,7 +382,7 @@ class Renderer::Impl {
     depth.format = depth_format;
     depth.samples = VK_SAMPLE_COUNT_1_BIT;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -405,7 +406,10 @@ class Renderer::Impl {
         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     deps[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+    deps[0].srcStageMask |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+    deps[0].srcAccessMask |= VK_ACCESS_TRANSFER_READ_BIT;
+    deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     deps[1].srcSubpass = 0;
@@ -423,6 +427,15 @@ class Renderer::Impl {
     rp.dependencyCount = 2;
     rp.pDependencies = deps;
     OK(vkCreateRenderPass(device, &rp, nullptr, &pass));
+    if (!surface) {
+      for (uint32_t i = 0; i < color_count; ++i) {
+        attachments[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        attachments[i].initialLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      }
+      depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      depth.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      OK(vkCreateRenderPass(device, &rp, nullptr, &load_pass));
+    }
     if (rsxMode()) {
       for (auto &program : programs)
         makePipeline(&program);
@@ -519,6 +532,10 @@ class Renderer::Impl {
     if (pass)
       vkDestroyRenderPass(device, pass, nullptr);
     pass = VK_NULL_HANDLE;
+    if (load_pass)
+      vkDestroyRenderPass(device, load_pass, nullptr);
+    load_pass = VK_NULL_HANDLE;
+    offscreen_frame_ready = false;
     images.clear();
     if (swapchain)
       vkDestroySwapchainKHR(device, swapchain, nullptr);
@@ -1456,7 +1473,9 @@ public:
     command.alpha_cutoff = parameters.alpha_cutoff;
     return draw(std::span<const DrawCommand>(&command, 1));
   }
-  bool draw(std::span<const DrawCommand> commands) {
+  bool draw(std::span<const DrawCommand> commands, bool append = false) {
+    if (append && (surface || !load_pass || !offscreen_frame_ready))
+      throw std::runtime_error("Append requires an existing offscreen frame");
     if (commands.size() > 4096)
       throw std::runtime_error("Too many draw commands");
     if (!device || framebuffers.empty() || !texture_ready)
@@ -1518,7 +1537,7 @@ public:
                 clear[i].color.float32);
     clear.back().depthStencil.depth = parameters.clear_depth;
     VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    rp.renderPass = pass;
+    rp.renderPass = append ? load_pass : pass;
     rp.framebuffer = framebuffers.at(index);
     rp.renderArea.extent = extent;
     rp.clearValueCount = uint32_t(clear.size());
@@ -1608,6 +1627,8 @@ public:
       else
         check(r, "vkQueuePresentKHR");
     }
+    if (!surface)
+      offscreen_frame_ready = true;
     return true;
   }
   std::vector<uint8_t> readPixels(uint32_t attachment) {
@@ -1659,6 +1680,9 @@ void Renderer::setTextureUnitBlocks(uint32_t unit, uint32_t w, uint32_t h,
   impl_->uploadTexture(unit, w, h, blocks, format, mapping);
 }
 bool Renderer::draw() { return impl_->draw(); }
+bool Renderer::drawAppend(std::span<const DrawCommand> commands) {
+  return impl_->draw(commands, true);
+}
 bool Renderer::draw(std::span<const DrawCommand> commands) {
   return impl_->draw(commands);
 }

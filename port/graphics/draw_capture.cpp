@@ -5,6 +5,7 @@
 #include "draw_capture.h"
 #include "../vulkan/draw_packet.h"
 #include "capture.h"
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <d3d11shader.h>
@@ -544,6 +545,146 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
           folder,
           std::string("{\"schema\":1,\"status\":\"rejected\",\"reason\":\"") +
               e.what() + "\"" + texture_diagnostic + "}\n");
+    } catch (...) {
+    }
+    if (submitted && !completed)
+      ctx.release();
+    return -1;
+  }
+}
+
+extern "C" int
+d2_draw_sequence_reference(void *dp, void *qp, D2AlphaRecord record, void *user,
+                           const char *folder, uint64_t frame, uint32_t width,
+                           uint32_t height, const uint32_t *draws,
+                           const uint32_t *first_srvs, uint32_t count,
+                           void *const *borrowed, uint32_t borrowed_count) {
+  if (!d2_draw_capture_enabled() || !dp || !qp || !record || !folder ||
+      !draws || !first_srvs || count < 2 || count > 4 || !width || !height ||
+      width > 1920 || height > 1080 || borrowed_count > 256 ||
+      (!borrowed && borrowed_count))
+    return -1;
+  auto ctx = std::make_unique<Context>();
+  bool submitted = false, completed = false;
+  try {
+    for (uint32_t i = 0; i < count; i++)
+      if (draws[i] >= 16384 || (i && draws[i] <= draws[i - 1]))
+        throw std::runtime_error("Invalid sequence order");
+    if (size_t(width) * height * 4 > 268435456 - exported_bytes)
+      throw std::runtime_error("session-payload-budget-exceeded");
+    exported_bytes += size_t(width) * height * 4;
+    // Descriptor heaps do not own the referenced resources. Retain each
+    // sampled image independently, including on an unconfirmed GPU timeout.
+    for (uint32_t i = 0; i < count; i++) {
+      if (first_srvs[i] > 16380)
+        throw std::runtime_error("Invalid sequence SRV range");
+      for (unsigned u = 0; u < 4; u++) {
+        auto entry = srvs.find(first_srvs[i] + u);
+        if (entry == srvs.end())
+          throw std::runtime_error("Sequence descriptor unavailable");
+        if (entry->second.resource) {
+          entry->second.resource->AddRef();
+          ctx->retained.push_back(entry->second.resource);
+        }
+      }
+    }
+    auto device = (ID3D12Device *)dp;
+    auto queue = (ID3D12CommandQueue *)qp;
+    for (unsigned i = 0; i < borrowed_count; i++)
+      if (borrowed[i]) {
+        auto p = (IUnknown *)borrowed[i];
+        p->AddRef();
+        ctx->borrowed.push_back(p);
+      }
+    check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                         IID_ID3D12CommandAllocator,
+                                         (void **)ctx->allocator.put()));
+    check(device->CreateCommandList(
+        0, D3D12_COMMAND_LIST_TYPE_DIRECT, ctx->allocator.p, nullptr,
+        IID_ID3D12GraphicsCommandList, (void **)ctx->list.put()));
+    D3D12_HEAP_PROPERTIES heap{};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC desc{};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = desc.MipLevels = 1;
+    desc.SampleDesc.Count = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    D3D12_CLEAR_VALUE clear{};
+    clear.Format = desc.Format;
+    check(device->CreateCommittedResource(
+        &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clear, IID_ID3D12Resource, (void **)ctx->color.put()));
+    desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    clear.Format = desc.Format;
+    clear.DepthStencil.Depth = 1;
+    check(device->CreateCommittedResource(
+        &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &clear, IID_ID3D12Resource, (void **)ctx->depth.put()));
+    D3D12_DESCRIPTOR_HEAP_DESC hd{};
+    hd.NumDescriptors = 1;
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    check(device->CreateDescriptorHeap(&hd, IID_ID3D12DescriptorHeap,
+                                       (void **)ctx->rtv.put()));
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    check(device->CreateDescriptorHeap(&hd, IID_ID3D12DescriptorHeap,
+                                       (void **)ctx->dsv.put()));
+    auto rt = ctx->rtv->GetCPUDescriptorHandleForHeapStart(),
+         depth = ctx->dsv->GetCPUDescriptorHandleForHeapStart();
+    device->CreateRenderTargetView(ctx->color.p, nullptr, rt);
+    device->CreateDepthStencilView(ctx->depth.p, nullptr, depth);
+    float black[4]{};
+    ctx->list->ClearRenderTargetView(rt, black, 0, nullptr);
+    ctx->list->ClearDepthStencilView(depth, D3D12_CLEAR_FLAG_DEPTH, 1, 0, 0,
+                                     nullptr);
+    ctx->list->OMSetRenderTargets(1, &rt, FALSE, &depth);
+    D3D12_VIEWPORT vp{0, 0, float(width), float(height), 0, 1};
+    D3D12_RECT sc{0, 0, LONG(width), LONG(height)};
+    ctx->list->RSSetViewports(1, &vp);
+    ctx->list->RSSetScissorRects(1, &sc);
+    record(ctx->list.p, user);
+    auto reference =
+        copy(*ctx, device, ctx->color.p, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    check(ctx->list->Close());
+    check(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_ID3D12Fence,
+                              (void **)ctx->fence.put()));
+    ctx->event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!ctx->event)
+      throw std::runtime_error("event-failed");
+    ID3D12CommandList *lists[] = {ctx->list.p};
+    queue->ExecuteCommandLists(1, lists);
+    submitted = true;
+    check(queue->Signal(ctx->fence.p, 1));
+    check(ctx->fence->SetEventOnCompletion(1, ctx->event));
+    if (WaitForSingleObject(ctx->event, 30000) != WAIT_OBJECT_0)
+      throw std::runtime_error("gpu-timeout");
+    completed = true;
+    check(device->GetDeviceRemovedReason());
+    auto image = rgba(reference, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING);
+    std::string base = folder;
+    write(base + "/sequence-reference.rgba", image.data(), image.size());
+    d2::DrawSequence sequence;
+    sequence.width = width;
+    sequence.height = height;
+    sequence.frame = frame;
+    sequence.count = count;
+    std::copy(draws, draws + count, sequence.draws);
+    write(base + "/sequence.bin", &sequence, sizeof(sequence));
+    const char marker[] =
+        "{\"schema\":1,\"status\":\"captured\",\"purpose\":\"selected-same-"
+        "pipeline-sequence\",\"full_frame_equivalence_tested\":false}\n";
+    write(base + "/sequence.json", marker, sizeof(marker) - 1);
+    return 0;
+  } catch (const std::exception &e) {
+    try {
+      std::string marker =
+          std::string("{\"status\":\"rejected\",\"reason\":\"") + e.what() +
+          "\"}\n";
+      write(std::string(folder) + "/sequence.json", marker.data(),
+            marker.size());
     } catch (...) {
     }
     if (submitted && !completed)

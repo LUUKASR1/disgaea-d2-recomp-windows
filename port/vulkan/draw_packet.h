@@ -24,4 +24,12 @@ struct DrawPacket {
 };
 static_assert(sizeof(DrawPacket) == 160);
 static_assert(std::is_trivially_copyable_v<DrawPacket>);
+// A selected same-pipeline subset, never a full guest command stream.
+struct DrawSequence {
+  uint32_t magic = 0x31535144, version = 1;
+  uint32_t width = 0, height = 0, count = 0, reserved = 0;
+  uint64_t frame = 0;
+  uint32_t draws[4]{};
+};
+static_assert(sizeof(DrawSequence) == 48);
 } // namespace d2

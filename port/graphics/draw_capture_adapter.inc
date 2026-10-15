@@ -20,9 +20,15 @@ static void d2_draw_bind(void* lp,void* bp){
     list->lpVtbl->IASetVertexBuffers(list,0,1,&vb);list->lpVtbl->IASetPrimitiveTopology(list,D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     list->lpVtbl->DrawInstanced(list,r->vertex_count,1,r->vb_byte_offset/256u,0);
 }
+typedef struct {D2DrawBinding bindings[4];u32 count;} D2DrawSequenceBinding;
+static void d2_draw_sequence_bind(void* lp,void* bp){
+    const D2DrawSequenceBinding* sequence=(const D2DrawSequenceBinding*)bp;
+    for(u32 i=0;i<sequence->count;i++)d2_draw_bind(lp,(void*)&sequence->bindings[i]);
+}
 static void d2_draw_dump(u32 index,u32 count){
     const char* base=d2_capture_directory();if(!base)return;
     char dir[512],path[600];snprintf(dir,sizeof(dir),"%s/frame_%02u",base,index);d2_capture_mkdir(dir);
+    D2DrawBinding selected[4];
     unsigned attempted=0,captured=0,empty=0;u32 parity=(u32)(s_d3d.vp_parity^1);
     for(u32 d=0;d<count&&d<MAX_DRAWS&&attempted<8&&captured<4;d++){
         const D3D12DrawRecord* r=&s_d3d.draws[d];
@@ -41,10 +47,23 @@ static void d2_draw_dump(u32 index,u32 count){
         const char* palette=getenv("D2_PALETTE_CLAMP");
         int result=d2_draw_export(s_d3d.device,s_d3d.cmd_queue,binding.pso,d2_draw_bind,&binding,path,s_d3d.frame_count,d,s_d3d.width,s_d3d.height,
             vb,r->vertex_count,vc,fc,VP_FPCB_STRIDE,DRAW_SRV_BASE+d*4,palette&&strcmp(palette,"1")==0,keep,6);
+        if(result==0)selected[captured]=binding;
         captured+=result==0;empty+=result==1;
     }
+    /* Largest exact-PSO group. Selected subset only; skipped scene draws are
+       not reconstructed or claimed equivalent to the full game frame. */
+    u32 best=0,best_count=0;int sequence_result=-1;
+    for(u32 i=0;i<captured;i++){u32 n=0;for(u32 j=0;j<captured;j++)n+=selected[j].pso==selected[i].pso;
+        if(n>best_count){best=i;best_count=n;}}
+    if(best_count>=2){
+        D2DrawSequenceBinding sequence;sequence.count=0;u32 ids[4],first_srvs[4];void* keep[9];u32 n=0;
+        keep[n++]=s_d3d.vp_root_sig;keep[n++]=s_d3d.srv_heap;keep[n++]=s_d3d.vp_vb;keep[n++]=s_d3d.vp_cb;keep[n++]=s_d3d.vp_fpcb;
+        for(u32 i=0;i<captured;i++)if(selected[i].pso==selected[best].pso){
+            first_srvs[sequence.count]=DRAW_SRV_BASE+selected[i].draw*4;ids[sequence.count]=selected[i].draw;sequence.bindings[sequence.count++]=selected[i];keep[n++]=selected[i].pso;}
+        sequence_result=d2_draw_sequence_reference(s_d3d.device,s_d3d.cmd_queue,d2_draw_sequence_bind,&sequence,dir,s_d3d.frame_count,s_d3d.width,s_d3d.height,ids,first_srvs,sequence.count,keep,n);
+    }
     snprintf(path,sizeof(path),"%s/complete.json",dir);FILE* json=d2_capture_fopen(path,"wb");
-    if(json){fprintf(json,"{\"schema\":1,\"status\":\"%s\",\"purpose\":\"isolated-real-draw-packets\",\"frame\":%llu,\"attempted\":%u,\"captured\":%u,\"empty_references\":%u,\"vulkan_replayed\":false}\n",
-        captured?"complete":"failed",(unsigned long long)s_d3d.frame_count,attempted,captured,empty);fclose(json);}
+    if(json){fprintf(json,"{\"schema\":1,\"status\":\"%s\",\"purpose\":\"isolated-real-draw-packets\",\"frame\":%llu,\"attempted\":%u,\"captured\":%u,\"empty_references\":%u,\"sequence_draws\":%u,\"sequence_captured\":%s,\"vulkan_replayed\":false}\n",
+        captured?"complete":"failed",(unsigned long long)s_d3d.frame_count,attempted,captured,empty,best_count,sequence_result==0?"true":"false");fclose(json);}
     d2_draw_release();
 }

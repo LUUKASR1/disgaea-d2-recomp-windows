@@ -141,6 +141,8 @@ public:
                             std::span<const uint8_t> blocks);
   bool draw();
   bool draw(std::span<const DrawCommand> commands);
+  // Offscreen only. Append after a completed draw, retaining color and depth.
+  bool drawAppend(std::span<const DrawCommand> commands);
   std::vector<uint8_t>
   readPixels(uint32_t attachment = 0); // RGBA8; offscreen only
   Info info() const;
