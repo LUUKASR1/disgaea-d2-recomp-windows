@@ -15,7 +15,7 @@ struct Interface {
 struct Module {
   std::vector<uint32_t> words;
   std::string diagnostics;
-  Interface interface;
+  Interface metadata;
 };
 // Input is bounded HLSL emitted by the pinned RSX decompilers, not arbitrary
 // source with includes or external register spaces. Compilation is in-process.

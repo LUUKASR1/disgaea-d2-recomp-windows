@@ -80,7 +80,7 @@ std::string bufferedFragment() {
 }
 bool binding(const Module &m, unsigned set, unsigned number) {
   return std::any_of(
-      m.interface.resources.begin(), m.interface.resources.end(),
+      m.metadata.resources.begin(), m.metadata.resources.end(),
       [&](auto r) { return r.set == set && r.binding == number; });
 }
 bool has(const std::vector<uint32_t> &list, unsigned n) {
@@ -110,9 +110,9 @@ int main(int argc, char **argv) {
       return m;
     };
     auto vp = write("synthetic-vp", vertex(), Stage::vertex);
-    require(has(vp.interface.inputs, 0) && has(vp.interface.inputs, 3),
+    require(has(vp.metadata.inputs, 0) && has(vp.metadata.inputs, 3),
             "VP attribute locations are not preserved");
-    require(has(vp.interface.outputs, 0) && binding(vp, 0, 0),
+    require(has(vp.metadata.outputs, 0) && binding(vp, 0, 0),
             "VP COLOR0/uniform mapping failed");
     auto vertexTexture =
         write("synthetic-texture-vp", vertex(true), Stage::vertex);
@@ -123,11 +123,11 @@ int main(int argc, char **argv) {
     require(binding(buffered, 1, 1),
             "Buffered fragment constants mapping failed");
     auto fp = write("synthetic-fp", fragment(false), Stage::fragment);
-    require(has(fp.interface.inputs, 0), "FP COLOR0 location mismatch");
+    require(has(fp.metadata.inputs, 0), "FP COLOR0 location mismatch");
     auto tex = write("synthetic-texture-fp", fragment(true), Stage::fragment);
     require(binding(tex, 1, 32) && binding(tex, 1, 64),
             "FP texture/sampler binding mapping failed");
-    require(has(tex.interface.inputs, 3), "FP TEXCOORD0 location mismatch");
+    require(has(tex.metadata.inputs, 3), "FP TEXCOORD0 location mismatch");
     const std::string collision =
         R"(cbuffer Values:register(b0){float4 factor;} Texture2D image:register(t0); SamplerState sampler0:register(s0);
         struct PSInput{float4 uv:TEXCOORD0;};

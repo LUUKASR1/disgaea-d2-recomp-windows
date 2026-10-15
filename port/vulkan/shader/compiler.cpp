@@ -1,7 +1,9 @@
 #include "compiler.h"
 #ifdef _WIN32
-#include <bcrypt.h>
+// clang-format off: bcrypt requires Windows typedefs first.
 #include <windows.h>
+#include <bcrypt.h>
+// clang-format on
 #else
 #include <dlfcn.h>
 #endif
@@ -280,8 +282,8 @@ public:
     module.words.resize(binary->GetBufferSize() / 4);
     std::memcpy(module.words.data(), binary->GetBufferPointer(),
                 binary->GetBufferSize());
-    module.interface = inspect(module.words);
-    for (auto resource : module.interface.resources) {
+    module.metadata = inspect(module.words);
+    for (auto resource : module.metadata.resources) {
       bool range = resource.binding < 16 ||
                    (resource.binding >= 32 && resource.binding < 80) ||
                    (resource.binding >= 96 && resource.binding < 112);
