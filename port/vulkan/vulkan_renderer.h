@@ -60,7 +60,9 @@ public:
   Renderer &operator=(const Renderer &) = delete;
   void start(void *native_window, bool validation = false);
   void close() noexcept;
-  void offscreen(uint32_t width, uint32_t height);
+  // 1..4 RGBA8 color attachments, shared depth. MRT requires independentBlend.
+  // All declared RSX fragment outputs must have a bound attachment.
+  void offscreen(uint32_t width, uint32_t height, uint32_t color_targets = 1);
   bool resize(uint32_t width, uint32_t height, bool vsync);
   bool needsResize() const;
   void setGeometry(std::span<const Vertex>,
@@ -95,7 +97,8 @@ public:
                       std::span<const uint8_t> rgba);
   bool draw();
   bool draw(std::span<const DrawCommand> commands);
-  std::vector<uint8_t> readPixels(); // RGBA8; offscreen targets only
+  std::vector<uint8_t>
+  readPixels(uint32_t attachment = 0); // RGBA8; offscreen only
   Info info() const;
 };
 } // namespace d2::vulkan

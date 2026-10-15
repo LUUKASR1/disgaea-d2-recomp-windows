@@ -12,7 +12,9 @@ Para analisar localmente, extraia o ZIP, abra PowerShell na pasta do verificador
 
 O executável inclui DXC; não precisa de GPU Vulkan, Vulkan SDK ou compilador instalado. O relatório `corpus-check/corpus-vulkan-report.json` separa **falha de compilação** de **shader compilado com recursos fora do ABI do renderer**. Gera SPIR-V apenas para módulos compilados. Saídas: 0 = compilados sem lacunas detectadas no ABI individual; 1 = erro/falha de compilação; 2 = compilados com lacunas no ABI. Nem mesmo saída 0 prova renderização correta: pares VS/FP, estados de desenho, recursos e equivalência de pixels ainda precisam ser testados.
 
-O teste `--self-test` usa quatro fontes próprias, incluindo uma inválida e uma incompatível com o ABI, para verificar que o processamento continua e os resultados são classificados corretamente. Não utiliza shaders do jogo. Comparação automatizada de pixels com RPCS3 não está implementada. O RPCS3 segue como referência técnica de semântica RSX; nenhum código GPL foi incorporado.
+O teste `--self-test` usa cinco fontes próprias, incluindo uma inválida, uma incompatível com o ABI e uma com saídas MRT não contíguas, para verificar que o processamento continua e os resultados são classificados corretamente. Não utiliza shaders do jogo. Comparação automatizada de pixels com RPCS3 não está implementada. O RPCS3 segue como referência técnica de semântica RSX; nenhum código GPL foi incorporado.
+
+O relatório lista `fragment_output_locations` e `minimum_color_targets`. O renderer aceita 1–4 alvos RGBA8 offscreen, com profundidade compartilhada; MRT requer `independentBlend`. Um shader que declara saída 2 precisa de pelo menos três alvos vinculados. A apresentação na janela ainda usa somente um alvo. Essa compatibilidade individual não garante que os alvos, formatos e estados reais do jogo tenham sido reproduzidos.
 
 As fontes e amostras capturadas permanecem no computador do usuário e não fazem parte dos artefatos públicos. As licenças do compilador acompanham o pacote.
 

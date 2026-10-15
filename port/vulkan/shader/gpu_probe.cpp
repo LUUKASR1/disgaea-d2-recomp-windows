@@ -40,14 +40,15 @@ std::array<RsxVertex, 4> quad() {
 }
 struct Checks {
   uint64_t pixels = 0;
-  unsigned cases = 0, multi_cases = 0, validation_errors = 0;
+  unsigned cases = 0, multi_cases = 0, mrt_cases = 0, validation_errors = 0;
   std::string adapter;
   template <class Oracle>
   void verify(Renderer &r, Oracle expected,
-              std::span<const DrawCommand> commands = {}) {
+              std::span<const DrawCommand> commands = {},
+              uint32_t attachment = 0) {
     require(commands.empty() ? r.draw() : r.draw(commands),
             "RSX GPU draw failed");
-    auto rgba = r.readPixels();
+    auto rgba = r.readPixels(attachment);
     require(rgba.size() == width * height * 4, "Readback size mismatch");
     for (unsigned y = 0; y < height; y++)
       for (unsigned x = 0; x < width; x++) {
@@ -337,6 +338,114 @@ int main(int argc, char **argv) {
       verify(replaced);
       checks.finish(r);
     }
+    // Original fixtures: no captured game shaders or bytecode are embedded.
+    // Exercise all MRT outputs, not just pipeline creation or target 0.
+    for (unsigned targets : {2u, 3u, 4u}) {
+      std::string source =
+          "cbuffer PSConstants:register(b1){float4 colors[4];float4 alpha;}\n"
+          "struct Out{";
+      for (unsigned i = 0; i < targets; i++)
+        source += "float4 c" + std::to_string(i) + ":SV_TARGET" +
+                  std::to_string(i) + ";";
+      source += "};Out main(){Out o;if(colors[0].a<alpha.x)discard;";
+      for (unsigned i = 0; i < targets; i++)
+        source +=
+            "o.c" + std::to_string(i) + "=colors[" + std::to_string(i) + "];";
+      source += "return o;}";
+      auto mrt = compiler.compile(source, Stage::fragment);
+      Renderer r;
+      r.start(nullptr, validation);
+      r.setRsxProgram(vs.words, mrt.words);
+      auto single = r.addRsxProgram(vs.words, plain.words);
+      rejected([&] { r.offscreen(width, height, 0); });
+      rejected([&] { r.offscreen(width, height, 5); });
+      rejected([&] { r.offscreen(width, height, targets - 1); });
+      r.offscreen(width, height, targets); // Rejection must leave it usable.
+      rejected([&] { r.resize(width, height, false); });
+      r.setParameters(params);
+      auto vertices = quad();
+      for (auto &v : vertices)
+        v.attributes[3] = {1, 1, 1, 1};
+      r.setRsxGeometry(vertices, indices);
+      std::array<Row, 514> world{};
+      world[512] = {1, 1, 1, 1};
+      std::array<Row, 5> colors{{{1, 0, 0, 1},
+                                 {0, 1, 0, 1},
+                                 {1, 1, 0, 1},
+                                 {0, 1, 1, 1},
+                                 {.25f, 0, 0, 0}}};
+      const std::array<Pixel, 4> opaque{{{255, 0, 0, 255},
+                                         {0, 255, 0, 255},
+                                         {255, 255, 0, 255},
+                                         {0, 255, 255, 255}}};
+      DrawCommand command{};
+      command.count = 6;
+      command.indexed = true;
+      command.blend = false;
+      auto verify = [&](auto expected, std::span<const DrawCommand> commands) {
+        for (unsigned a = 0; a < targets; a++) {
+          checks.verify(
+              r, [&](unsigned, unsigned) { return expected(a); }, commands, a);
+          checks.mrt_cases++;
+        }
+      };
+      r.setRsxConstants(world, colors);
+      verify([&](unsigned a) { return opaque[a]; }, {&command, 1});
+      rejected([&] { r.readPixels(targets); });
+      for (unsigned i = 0; i < 4; i++)
+        colors[i][3] = .5f;
+      command.blend = true;
+      r.setRsxConstants(world, colors);
+      verify(
+          [&](unsigned a) {
+            auto p = opaque[a];
+            for (unsigned c = 0; c < 3; c++)
+              p[c] = (p[c] + (c == 2 ? 255 : 0) + 1) / 2;
+            p[3] = 255;
+            return p;
+          },
+          {&command, 1});
+      colors[0][3] = 0;
+      r.setRsxConstants(world, colors);
+      verify([](unsigned) { return Pixel{0, 0, 255, 255}; }, {&command, 1});
+      for (unsigned i = 0; i < 4; i++)
+        colors[i][3] = 1;
+      command.blend = false;
+      command.depth = DepthMode::read_write;
+      world[513][2] = .25f; // Far plane at z=.75.
+      r.setRsxConstants(world, colors);
+      auto near_colors = colors;
+      for (unsigned i = 0; i < 4; i++)
+        near_colors[i] = {1, 0, 1, 1};
+      world[513][2] = -.25f; // Near plane at z=.25.
+      auto near_state = r.createRsxConstants(world, near_colors);
+      std::array<DrawCommand, 2> commands{command, command};
+      commands[1].rsx_constants = near_state;
+      verify([](unsigned) { return Pixel{255, 0, 255, 255}; }, commands);
+      std::reverse(commands.begin(), commands.end());
+      verify([](unsigned) { return Pixel{255, 0, 255, 255}; }, commands);
+      // A later shader only writes attachment 0: other targets must preserve
+      // the first draw's colors, not receive undefined outputs or clear again.
+      commands = {command, command};
+      for (auto &c : commands)
+        c.depth = DepthMode::disabled;
+      commands[1].rsx_program = single;
+      verify(
+          [&](unsigned a) {
+            return a == 0 ? Pixel{255, 255, 255, 255} : opaque[a];
+          },
+          commands);
+      checks.finish(r);
+    }
+    {
+      auto too_many = compiler.compile(
+          "float4 main():SV_TARGET4{return float4(1,0,0,1);}", Stage::fragment);
+      Renderer r;
+      r.start(nullptr, validation);
+      rejected([&] { r.setRsxProgram(vs.words, too_many.words); });
+      checks.finish(r);
+    }
+
   } catch (const Unavailable &e) {
     error = e.what();
     code = 77;
@@ -347,7 +456,7 @@ int main(int argc, char **argv) {
   try {
     std::filesystem::create_directories(output);
     std::ofstream report(output / "rsx-gpu-report.json");
-    report << "{\"schema\":2,\"purpose\":\"synthetic-rsx-gpu-execution\","
+    report << "{\"schema\":3,\"purpose\":\"synthetic-rsx-gpu-execution\","
               "\"status\":\""
            << (code == 0    ? "passed"
                : code == 77 ? "unavailable"
@@ -358,7 +467,8 @@ int main(int argc, char **argv) {
            << ",\"validation_errors\":" << checks.validation_errors
            << ",\"cases_passed\":" << checks.cases
            << ",\"per_draw_cases_passed\":" << checks.multi_cases
-           << ",\"renderer_stage\":\"per-draw-programs-and-constants\""
+           << ",\"mrt_attachment_cases_passed\":" << checks.mrt_cases
+           << ",\"renderer_stage\":\"offscreen-multiple-color-targets\""
            << ",\"pixels_verified\":" << checks.pixels << "}\n";
     std::ofstream(output / "adapter.txt") << checks.adapter << '\n';
     if (!error.empty())

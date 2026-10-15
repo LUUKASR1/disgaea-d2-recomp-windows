@@ -32,6 +32,7 @@ void check(VkResult r, const char *call) {
 #define INSTANCE_FUNCTIONS(X)                                                  \
   X(vkDestroyInstance)                                                         \
   X(vkEnumeratePhysicalDevices)                                                \
+  X(vkGetPhysicalDeviceFeatures)                                               \
   X(vkGetPhysicalDeviceProperties)                                             \
   X(vkGetPhysicalDeviceFormatProperties)                                       \
       X(vkGetPhysicalDeviceQueueFamilyProperties)                              \
@@ -127,6 +128,15 @@ class Renderer::Impl {
   std::vector<VkFramebuffer> framebuffers;
   VkImage owned_image = VK_NULL_HANDLE;
   VkDeviceMemory image_memory = VK_NULL_HANDLE;
+  // Offscreen MRT attachments 1..3. Attachment 0 remains owned_image.
+  struct ColorTarget {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+  };
+  std::vector<ColorTarget> extra_colors;
+  uint32_t color_count = 1;
+  bool independent_blend = false;
   VkRenderPass pass = VK_NULL_HANDLE;
   VkPipelineLayout layout = VK_NULL_HANDLE;
   std::array<VkPipeline, 6> pipelines{};
@@ -284,8 +294,18 @@ class Renderer::Impl {
     attachment.alphaBlendOp = VK_BLEND_OP_ADD;
     VkPipelineColorBlendStateCreateInfo blend{
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = 1;
-    blend.pAttachments = &attachment;
+    std::vector<VkPipelineColorBlendAttachmentState> color_blends(color_count,
+                                                                  attachment);
+    // A shader may omit a bound target. Preserve its clear/previous contents,
+    // instead of allowing undefined fragment outputs to overwrite them.
+    for (uint32_t i = 0; i < color_count; i++)
+      if ((program && std::find(program->fp_contract.outputs.begin(),
+                                program->fp_contract.outputs.end(),
+                                i) == program->fp_contract.outputs.end()) ||
+          (!program && i != 0))
+        color_blends[i].colorWriteMask = 0;
+    blend.attachmentCount = color_count;
+    blend.pAttachments = color_blends.data();
     VkDynamicState dynamics[] = {VK_DYNAMIC_STATE_VIEWPORT,
                                  VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamic{
@@ -314,7 +334,8 @@ class Renderer::Impl {
       for (unsigned alpha = 0; alpha < 2; alpha++) {
         ds.depthTestEnable = mode != 0;
         ds.depthWriteEnable = mode == 2;
-        attachment.blendEnable = alpha;
+        for (auto &a : color_blends)
+          a.blendEnable = alpha;
         OK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pc, nullptr,
                                      &destination[mode * 2 + alpha]));
       }
@@ -333,8 +354,9 @@ class Renderer::Impl {
     color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     color.finalLayout = surface ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
                                 : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    VkAttachmentDescription attachments[2] = {color, {}};
-    auto &depth = attachments[1];
+    std::vector<VkAttachmentDescription> attachments(color_count + 1, color);
+    auto &depth = attachments.back();
+    depth = {};
     depth.format = depth_format;
     depth.samples = VK_SAMPLE_COUNT_1_BIT;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -344,12 +366,14 @@ class Renderer::Impl {
     depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     VkAttachmentReference depth_ref{
-        1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-    VkAttachmentReference ref{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        color_count, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    std::vector<VkAttachmentReference> refs;
+    for (uint32_t i = 0; i < color_count; i++)
+      refs.push_back({i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL});
     VkSubpassDescription sub{};
     sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    sub.colorAttachmentCount = 1;
-    sub.pColorAttachments = &ref;
+    sub.colorAttachmentCount = color_count;
+    sub.pColorAttachments = refs.data();
     sub.pDepthStencilAttachment = &depth_ref;
     VkSubpassDependency deps[2]{};
     deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -371,8 +395,8 @@ class Renderer::Impl {
                                    : VK_PIPELINE_STAGE_TRANSFER_BIT;
     deps[1].dstAccessMask = surface ? 0 : VK_ACCESS_TRANSFER_READ_BIT;
     VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    rp.attachmentCount = 2;
-    rp.pAttachments = attachments;
+    rp.attachmentCount = uint32_t(attachments.size());
+    rp.pAttachments = attachments.data();
     rp.subpassCount = 1;
     rp.pSubpasses = &sub;
     rp.dependencyCount = 2;
@@ -419,9 +443,12 @@ class Renderer::Impl {
       views.push_back(view);
       VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
       fb.renderPass = pass;
-      VkImageView fb_views[] = {views.back(), target.view};
-      fb.attachmentCount = 2;
-      fb.pAttachments = fb_views;
+      std::vector<VkImageView> fb_views{views.back()};
+      for (auto &c : extra_colors)
+        fb_views.push_back(c.view);
+      fb_views.push_back(target.view);
+      fb.attachmentCount = uint32_t(fb_views.size());
+      fb.pAttachments = fb_views.data();
       fb.width = extent.width;
       fb.height = extent.height;
       fb.layers = 1;
@@ -519,6 +546,15 @@ public:
         vkDestroyBuffer(device, readback, nullptr);
       if (readback_memory)
         vkFreeMemory(device, readback_memory, nullptr);
+      for (auto &c : extra_colors) {
+        if (c.view)
+          vkDestroyImageView(device, c.view, nullptr);
+        if (c.image)
+          vkDestroyImage(device, c.image, nullptr);
+        if (c.memory)
+          vkFreeMemory(device, c.memory, nullptr);
+      }
+      extra_colors.clear();
       if (owned_image)
         vkDestroyImage(device, owned_image, nullptr);
       if (image_memory)
@@ -721,6 +757,12 @@ public:
     VkDeviceCreateInfo dev{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dev.queueCreateInfoCount = 1;
     dev.pQueueCreateInfos = &qc;
+    VkPhysicalDeviceFeatures supported_features{};
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    VkPhysicalDeviceFeatures enabled_features{};
+    enabled_features.independentBlend = supported_features.independentBlend;
+    independent_blend = enabled_features.independentBlend != 0;
+    dev.pEnabledFeatures = &enabled_features;
     if (surface) {
       dev.enabledExtensionCount = 1;
       dev.ppEnabledExtensionNames = &swap;
@@ -1087,9 +1129,23 @@ public:
     state.fragment_bytes = uint32_t(f.size_bytes());
     state.ready = true;
   }
-  void offscreen(uint32_t w, uint32_t h) {
+  void validateColorTargets(uint32_t count) {
+    if (!count || count > 4)
+      throw std::runtime_error("Color attachment count must be 1..4");
+    if (count > 1 && !independent_blend)
+      throw std::runtime_error("MRT requires independentBlend on this device");
+    for (const auto &program : programs)
+      for (auto output : program.fp_contract.outputs)
+        if (output >= count)
+          throw std::runtime_error(
+              "RSX shader output has no bound color target");
+  }
+  void offscreen(uint32_t w, uint32_t h, uint32_t targets) {
     if (!device || owned_image || surface || !w || !h || w > 4096 || h > 4096)
       throw std::runtime_error("Invalid offscreen target request");
+    validateColorTargets(
+        targets); // Fail before allocating or mutating a target.
+    color_count = targets;
     extent = {w, h};
     format = VK_FORMAT_R8G8B8A8_UNORM;
     VkImageCreateInfo ic{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -1111,8 +1167,25 @@ public:
     OK(vkAllocateMemory(device, &ai, nullptr, &image_memory));
     OK(vkBindImageMemory(device, owned_image, image_memory, 0));
     images.push_back(owned_image);
+    for (uint32_t i = 1; i < color_count; i++) {
+      extra_colors.emplace_back();
+      auto &c = extra_colors.back();
+      OK(vkCreateImage(device, &ic, nullptr, &c.image));
+      vkGetImageMemoryRequirements(device, c.image, &req);
+      ai.allocationSize = req.size;
+      ai.memoryTypeIndex =
+          memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      OK(vkAllocateMemory(device, &ai, nullptr, &c.memory));
+      OK(vkBindImageMemory(device, c.image, c.memory, 0));
+      VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+      vi.image = c.image;
+      vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      vi.format = format;
+      vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+      OK(vkCreateImageView(device, &vi, nullptr, &c.view));
+    }
     VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bc.size = (VkDeviceSize)w * h * 4;
+    bc.size = (VkDeviceSize)w * h * 4 * color_count;
     bc.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     OK(vkCreateBuffer(device, &bc, nullptr, &readback));
     vkGetBufferMemoryRequirements(device, readback, &req);
@@ -1124,6 +1197,9 @@ public:
     makeTargets();
   }
   bool resize(uint32_t w, uint32_t h, bool vsync) {
+    if (!device || !surface)
+      throw std::runtime_error("Resize requires a window surface");
+    validateColorTargets(1); // Presentation currently binds only target 0.
     if (!w || !h)
       return false;
     OK(vkDeviceWaitIdle(device));
@@ -1357,16 +1433,17 @@ public:
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     OK(vkBeginCommandBuffer(cmd, &begin));
-    VkClearValue clear[2]{};
-    std::copy(parameters.clear_color.begin(), parameters.clear_color.end(),
-              clear[0].color.float32);
-    clear[1].depthStencil.depth = parameters.clear_depth;
+    std::vector<VkClearValue> clear(color_count + 1);
+    for (uint32_t i = 0; i < color_count; i++)
+      std::copy(parameters.clear_color.begin(), parameters.clear_color.end(),
+                clear[i].color.float32);
+    clear.back().depthStencil.depth = parameters.clear_depth;
     VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     rp.renderPass = pass;
     rp.framebuffer = framebuffers.at(index);
     rp.renderArea.extent = extent;
-    rp.clearValueCount = 2;
-    rp.pClearValues = clear;
+    rp.clearValueCount = uint32_t(clear.size());
+    rp.pClearValues = clear.data();
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
     if (!rsxMode())
       vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0,
@@ -1409,9 +1486,12 @@ public:
       VkBufferImageCopy copy{};
       copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
       copy.imageExtent = {extent.width, extent.height, 1};
-      vkCmdCopyImageToBuffer(cmd, owned_image,
-                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback, 1,
-                             &copy);
+      for (uint32_t i = 0; i < color_count; i++) {
+        copy.bufferOffset = VkDeviceSize(i) * extent.width * extent.height * 4;
+        auto image = i ? extra_colors[i - 1].image : owned_image;
+        vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               readback, 1, &copy);
+      }
       VkBufferMemoryBarrier b{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
       b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
       b.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
@@ -1451,8 +1531,8 @@ public:
     }
     return true;
   }
-  std::vector<uint8_t> readPixels() {
-    if (!device || surface || !readback)
+  std::vector<uint8_t> readPixels(uint32_t attachment) {
+    if (!device || surface || !readback || attachment >= color_count)
       throw std::runtime_error("Readback requires an offscreen target");
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     void *pixels = nullptr;
@@ -1465,7 +1545,8 @@ public:
       vkUnmapMemory(device, readback_memory);
       check(r, "vkInvalidateMappedMemoryRanges");
     }
-    auto data = static_cast<const uint8_t *>(pixels);
+    auto data = static_cast<const uint8_t *>(pixels) +
+                size_t(attachment) * extent.width * extent.height * 4;
     std::vector<uint8_t> result(data, data + size_t(extent.width) *
                                                  extent.height * 4);
     vkUnmapMemory(device, readback_memory);
@@ -1479,8 +1560,8 @@ void Renderer::start(void *window, bool validation) {
   impl_->start(window, validation);
 }
 void Renderer::close() noexcept { impl_->close(); }
-void Renderer::offscreen(uint32_t width, uint32_t height) {
-  impl_->offscreen(width, height);
+void Renderer::offscreen(uint32_t width, uint32_t height, uint32_t targets) {
+  impl_->offscreen(width, height, targets);
 }
 bool Renderer::resize(uint32_t width, uint32_t height, bool vsync) {
   return impl_->resize(width, height, vsync);
@@ -1490,7 +1571,9 @@ bool Renderer::draw(std::span<const DrawCommand> commands) {
   return impl_->draw(commands);
 }
 bool Renderer::needsResize() const { return impl_->dirty; }
-std::vector<uint8_t> Renderer::readPixels() { return impl_->readPixels(); }
+std::vector<uint8_t> Renderer::readPixels(uint32_t attachment) {
+  return impl_->readPixels(attachment);
+}
 Info Renderer::info() const {
   return {impl_->adapter, impl_->api_version, impl_->device_type,
           impl_->present_mode, impl_->validation_errors.load()};

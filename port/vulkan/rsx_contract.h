@@ -135,7 +135,7 @@ inline RsxContract validateRsxModule(std::span<const uint32_t> words,
         result.outputs.push_back(uint32_t(d.location));
       if (v.storage == 1 && d.location > (fragment ? 10 : 15))
         fail();
-      if (v.storage == 3 && d.location > (fragment ? 0 : 10))
+      if (v.storage == 3 && d.location > (fragment ? 3 : 10))
         fail();
     }
     if (d.binding < 0) {

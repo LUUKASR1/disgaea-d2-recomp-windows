@@ -27,6 +27,8 @@ std::string json(const std::string &s) {
 }
 struct Entry {
   std::string file, stage, compile = "failed", abi = "not-evaluated", reason;
+  std::vector<uint32_t> fragment_outputs;
+  uint32_t minimum_color_targets = 0;
 };
 struct Result {
   unsigned compiled = 0, failed = 0, gaps = 0;
@@ -100,7 +102,16 @@ Result check(const fs::path &input, const fs::path &output, bool fixture) {
       entry.compile = "passed";
       result.compiled++;
       try {
-        d2::vulkan::validateRsxModule(module.words, stage == Stage::fragment);
+        auto contract = d2::vulkan::validateRsxModule(module.words,
+                                                      stage == Stage::fragment);
+        if (stage == Stage::fragment) {
+          entry.fragment_outputs = contract.outputs;
+          std::sort(entry.fragment_outputs.begin(),
+                    entry.fragment_outputs.end());
+          for (auto location : entry.fragment_outputs)
+            entry.minimum_color_targets =
+                std::max(entry.minimum_color_targets, location + 1);
+        }
         entry.abi = "supported";
       } catch (const std::exception &error) {
         entry.abi = "unsupported";
@@ -125,7 +136,8 @@ Result check(const fs::path &input, const fs::path &output, bool fixture) {
          << ",\"renderer_abi_gaps\":" << result.gaps
          << ",\"game_backend_ready\":false,\"pixel_equivalence_tested\":false,"
             "\"shader_pairs_linked\":false,\"rpcs3_comparison_performed\":"
-            "false,\"shaders\":[";
+            "false,\"mrt_scope\":\"offscreen-rgba8-only\","
+            "\"presentation_color_targets\":1,\"shaders\":[";
   for (size_t i = 0; i < result.entries.size(); i++) {
     auto &e = result.entries[i];
     if (i)
@@ -133,7 +145,15 @@ Result check(const fs::path &input, const fs::path &output, bool fixture) {
     report << "{\"file\":" << json(e.file) << ",\"stage\":" << json(e.stage)
            << ",\"compile_status\":" << json(e.compile)
            << ",\"renderer_abi\":" << json(e.abi)
-           << ",\"reason\":" << json(e.reason) << '}';
+           << ",\"reason\":" << json(e.reason)
+           << ",\"minimum_color_targets\":" << e.minimum_color_targets
+           << ",\"fragment_output_locations\":[";
+    for (size_t j = 0; j < e.fragment_outputs.size(); j++) {
+      if (j)
+        report << ',';
+      report << e.fragment_outputs[j];
+    }
+    report << "]}";
   }
   report << "]}\n";
   write(output / "corpus-vulkan-report.json", report.str());
@@ -167,13 +187,23 @@ int main(int argc, char **argv) {
       write(input / "fp_003_gap.hlsl",
             "cbuffer Values:register(b0){float4 color;} float4 "
             "main():SV_TARGET{return color;}");
+      write(input / "fp_004_mrt.hlsl",
+            "struct Out{float4 a:SV_TARGET0;float4 b:SV_TARGET2;};"
+            "Out main(){Out o;o.a=float4(1,0,0,1);o.b=float4(0,1,0,1);return "
+            "o;}");
     }
     if (input.empty())
       throw std::runtime_error(
           "Select the captured shaders folder with --input");
     auto result = check(input, output, fixture);
     if (fixture) {
-      if (result.compiled != 3 || result.failed != 1 || result.gaps != 1)
+      auto mrt = std::find_if(
+          result.entries.begin(), result.entries.end(),
+          [](const Entry &e) { return e.file == "fp_004_mrt.hlsl"; });
+      if (result.compiled != 4 || result.failed != 1 || result.gaps != 1 ||
+          mrt == result.entries.end() ||
+          mrt->fragment_outputs != std::vector<uint32_t>{0, 2} ||
+          mrt->minimum_color_targets != 3)
         throw std::runtime_error(
             "Corpus continuation/ABI classification self-test failed");
       write(output / "self-test.json", "{\"schema\":1,\"status\":\"passed\","
