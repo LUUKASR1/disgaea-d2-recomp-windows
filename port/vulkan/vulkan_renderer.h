@@ -17,6 +17,10 @@ struct Vertex {
   std::array<float, 4> color;
   std::array<float, 2> uv{};
 };
+// Expanded float attributes for the experimental RSX shader path.
+struct RsxVertex {
+  std::array<std::array<float, 4>, 16> attributes{};
+};
 struct Rect {
   uint32_t x = 0, y = 0, width = 0, height = 0;
 };
@@ -58,10 +62,24 @@ public:
   bool needsResize() const;
   void setGeometry(std::span<const Vertex>,
                    std::span<const uint32_t> indices = {});
+  // Trusted SPIR-V from the audited compiler only. Install before creating a
+  // target; immutable until close. VS: set0/b0, FP: set1/b1,t0[16],s0[16].
+  // This bounded contract does not support vertex textures, MRT or game replay.
+  void setRsxProgram(std::span<const uint32_t> vertex,
+                     std::span<const uint32_t> fragment);
+  void setRsxGeometry(std::span<const RsxVertex>,
+                      std::span<const uint32_t> indices = {});
+  // VS requires exactly 514 float4 rows (512 constants + scale + offset).
+  // FP is a nonempty packed cbuffer, at most 1024 float4 rows.
+  void setRsxConstants(std::span<const std::array<float, 4>> vertex,
+                       std::span<const std::array<float, 4>> fragment);
   void setParameters(const DrawParameters &);
   // Tightly packed linear RGBA8, nearest sampling, clamp-to-edge, one mip.
   void setTexture(uint32_t width, uint32_t height,
                   std::span<const uint8_t> rgba);
+  // Fragment texture units are independent. Unbound RSX units sample white.
+  void setTextureUnit(uint32_t unit, uint32_t width, uint32_t height,
+                      std::span<const uint8_t> rgba);
   bool draw();
   bool draw(std::span<const DrawCommand> commands);
   std::vector<uint8_t> readPixels(); // RGBA8; offscreen targets only

@@ -1,9 +1,11 @@
-// Experimental native Vulkan foundation. Does not execute game/RSX commands.
+// Experimental Vulkan renderer and bounded synthetic RSX shader execution.
+// Game/RSX command replay is not connected.
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <dlfcn.h>
 #endif
+#include "rsx_contract.h"
 #include "triangle_spv.h"
 #include "vulkan_renderer.h"
 #include <algorithm>
@@ -17,6 +19,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <vulkan/vulkan.h>
 namespace d2::vulkan {
@@ -146,9 +149,25 @@ class Renderer::Impl {
   VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
   VkDescriptorSet texture_set = VK_NULL_HANDLE;
   VkSampler sampler = VK_NULL_HANDLE;
-  VkImage texture = VK_NULL_HANDLE;
-  VkDeviceMemory texture_memory = VK_NULL_HANDLE;
-  VkImageView texture_view = VK_NULL_HANDLE;
+  struct Texture {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+  };
+  // Slot 16 is an immutable white fallback, independent from unit 0.
+  std::array<Texture, 17> textures{};
+  struct Uniform {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+  };
+  std::array<Uniform, 2> uniforms{};
+  std::array<VkDescriptorSetLayout, 2> rsx_layouts{};
+  std::array<VkDescriptorSet, 2> rsx_sets{};
+  VkDescriptorPool rsx_pool = VK_NULL_HANDLE;
+  std::vector<uint32_t> rsx_vertex, rsx_fragment;
+  bool rsx_constants_ready = false;
+  RsxContract rsx_vs_contract, rsx_fp_contract;
+  bool rsxMode() const { return !rsx_vertex.empty(); }
   VkBuffer staging = VK_NULL_HANDLE;
   VkDeviceMemory staging_memory = VK_NULL_HANDLE;
   bool texture_ready = false;
@@ -183,18 +202,19 @@ class Renderer::Impl {
   void makePipeline() {
     VkShaderModuleCreateInfo shader{
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    shader.codeSize = sizeof(triangle_vert);
-    shader.pCode = triangle_vert;
+    shader.codeSize = rsxMode() ? rsx_vertex.size() * 4 : sizeof(triangle_vert);
+    shader.pCode = rsxMode() ? rsx_vertex.data() : triangle_vert;
     OK(vkCreateShaderModule(device, &shader, nullptr, &vert));
-    shader.codeSize = sizeof(triangle_frag);
-    shader.pCode = triangle_frag;
+    shader.codeSize =
+        rsxMode() ? rsx_fragment.size() * 4 : sizeof(triangle_frag);
+    shader.pCode = rsxMode() ? rsx_fragment.data() : triangle_frag;
     OK(vkCreateShaderModule(device, &shader, nullptr, &frag));
     VkPipelineLayoutCreateInfo lc{
         VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    lc.setLayoutCount = 1;
-    lc.pSetLayouts = &texture_layout;
+    lc.setLayoutCount = rsxMode() ? 2 : 1;
+    lc.pSetLayouts = rsxMode() ? rsx_layouts.data() : &texture_layout;
     VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)};
-    lc.pushConstantRangeCount = 1;
+    lc.pushConstantRangeCount = rsxMode() ? 0 : 1;
     lc.pPushConstantRanges = &push;
     OK(vkCreatePipelineLayout(device, &lc, nullptr, &layout));
     VkPipelineShaderStageCreateInfo stages[2]{};
@@ -208,16 +228,25 @@ class Renderer::Impl {
     stages[1].module = frag;
     VkPipelineVertexInputStateCreateInfo vertex{
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkVertexInputBindingDescription binding{0, sizeof(Vertex),
-                                            VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputBindingDescription binding{
+        0, uint32_t(rsxMode() ? sizeof(RsxVertex) : sizeof(Vertex)),
+        VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription attributes[] = {
         {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, position)},
         {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color)},
         {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)}};
     vertex.vertexBindingDescriptionCount = 1;
     vertex.pVertexBindingDescriptions = &binding;
-    vertex.vertexAttributeDescriptionCount = 3;
-    vertex.pVertexAttributeDescriptions = attributes;
+    std::array<VkVertexInputAttributeDescription, 16> rsx_attributes{};
+    for (uint32_t i = 0; i < rsx_vs_contract.inputs.size(); i++) {
+      auto location = rsx_vs_contract.inputs[i];
+      rsx_attributes[i] = {location, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
+                           location * 16};
+    }
+    vertex.vertexAttributeDescriptionCount =
+        rsxMode() ? uint32_t(rsx_vs_contract.inputs.size()) : 3;
+    vertex.pVertexAttributeDescriptions =
+        rsxMode() ? rsx_attributes.data() : attributes;
     VkPipelineInputAssemblyStateCreateInfo assembly{
         VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -439,7 +468,19 @@ public:
       releaseTargets();
       if (descriptor_pool)
         vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
-      releaseTexture();
+      if (rsx_pool)
+        vkDestroyDescriptorPool(device, rsx_pool, nullptr);
+      for (auto l : rsx_layouts)
+        if (l)
+          vkDestroyDescriptorSetLayout(device, l, nullptr);
+      for (auto &u : uniforms) {
+        if (u.buffer)
+          vkDestroyBuffer(device, u.buffer, nullptr);
+        if (u.memory)
+          vkFreeMemory(device, u.memory, nullptr);
+      }
+      for (auto &t : textures)
+        releaseTexture(t);
       if (sampler)
         vkDestroySampler(device, sampler, nullptr);
       if (texture_layout)
@@ -718,33 +759,40 @@ public:
         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     OK(vkCreateSampler(device, &si, nullptr, &sampler));
     const uint8_t white[] = {255, 255, 255, 255};
-    setTexture(1, 1, white);
+    uploadTexture(16, 1, 1, white);
+    uploadTexture(0, 1, 1, white);
   }
   // Called only after the upload/draw fence or device idle has completed.
-  void releaseTexture() {
-    texture_ready = false;
-    if (texture_view)
-      vkDestroyImageView(device, texture_view, nullptr);
-    if (texture)
-      vkDestroyImage(device, texture, nullptr);
-    if (texture_memory)
-      vkFreeMemory(device, texture_memory, nullptr);
+  void releaseTexture(Texture &t) {
+    if (t.view)
+      vkDestroyImageView(device, t.view, nullptr);
+    if (t.image)
+      vkDestroyImage(device, t.image, nullptr);
+    if (t.memory)
+      vkFreeMemory(device, t.memory, nullptr);
     if (staging)
       vkDestroyBuffer(device, staging, nullptr);
     if (staging_memory)
       vkFreeMemory(device, staging_memory, nullptr);
-    texture_view = VK_NULL_HANDLE;
-    texture = VK_NULL_HANDLE;
-    texture_memory = VK_NULL_HANDLE;
+    t = {};
     staging = VK_NULL_HANDLE;
     staging_memory = VK_NULL_HANDLE;
   }
-  void setTexture(uint32_t w, uint32_t h, std::span<const uint8_t> rgba) {
+  void setTextureUnit(uint32_t unit, uint32_t w, uint32_t h,
+                      std::span<const uint8_t> rgba) {
+    if (unit >= 16)
+      throw std::runtime_error("Invalid fragment texture unit");
+    uploadTexture(unit, w, h, rgba);
+  }
+  void uploadTexture(uint32_t unit, uint32_t w, uint32_t h,
+                     std::span<const uint8_t> rgba) {
     if (!device || !texture_set || !w || !h || w > 4096 || h > 4096 ||
         rgba.size() != size_t(w) * h * 4)
       throw std::runtime_error("Invalid or oversized RGBA8 texture");
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-    releaseTexture();
+    texture_ready = false;
+    auto &t = textures.at(unit);
+    releaseTexture(t);
     VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bc.size = rgba.size();
     bc.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -774,19 +822,19 @@ public:
     ic.samples = VK_SAMPLE_COUNT_1_BIT;
     ic.tiling = VK_IMAGE_TILING_OPTIMAL;
     ic.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    OK(vkCreateImage(device, &ic, nullptr, &texture));
-    vkGetImageMemoryRequirements(device, texture, &req);
+    OK(vkCreateImage(device, &ic, nullptr, &t.image));
+    vkGetImageMemoryRequirements(device, t.image, &req);
     ai.allocationSize = req.size;
     ai.memoryTypeIndex =
         memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    OK(vkAllocateMemory(device, &ai, nullptr, &texture_memory));
-    OK(vkBindImageMemory(device, texture, texture_memory, 0));
+    OK(vkAllocateMemory(device, &ai, nullptr, &t.memory));
+    OK(vkBindImageMemory(device, t.image, t.memory, 0));
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-    vi.image = texture;
+    vi.image = t.image;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
     vi.format = ic.format;
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    OK(vkCreateImageView(device, &vi, nullptr, &texture_view));
+    OK(vkCreateImageView(device, &vi, nullptr, &t.view));
     OK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -797,7 +845,7 @@ public:
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex =
         VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = texture;
+    barrier.image = t.image;
     barrier.subresourceRange = vi.subresourceRange;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
@@ -805,7 +853,7 @@ public:
     VkBufferImageCopy copy{};
     copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     copy.imageExtent = {w, h, 1};
-    vkCmdCopyBufferToImage(cmd, staging, texture,
+    vkCmdCopyBufferToImage(cmd, staging, t.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -823,7 +871,7 @@ public:
     // Retain upload resources on timeout; close() waits device idle before
     // release.
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-    VkDescriptorImageInfo image{sampler, texture_view,
+    VkDescriptorImageInfo image{sampler, t.view,
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     write.dstSet = texture_set;
@@ -831,12 +879,135 @@ public:
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     write.pImageInfo = &image;
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    if (unit == 0)
+      vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    if (rsx_pool)
+      updateRsxTextures();
     vkDestroyBuffer(device, staging, nullptr);
     vkFreeMemory(device, staging_memory, nullptr);
     staging = VK_NULL_HANDLE;
     staging_memory = VK_NULL_HANDLE;
     texture_ready = true;
+  }
+  void updateRsxTextures() {
+    std::array<VkDescriptorImageInfo, 16> images{}, samplers{};
+    for (size_t i = 0; i < 16; i++) {
+      images[i].imageView =
+          textures[i].view ? textures[i].view : textures[16].view;
+      images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      samplers[i].sampler = sampler;
+    }
+    VkWriteDescriptorSet writes[2]{};
+    for (auto &w : writes) {
+      w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      w.dstSet = rsx_sets[1];
+      w.descriptorCount = 16;
+    }
+    writes[0].dstBinding = 32;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[0].pImageInfo = images.data();
+    writes[1].dstBinding = 64;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    writes[1].pImageInfo = samplers.data();
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+  }
+  void setRsxProgram(std::span<const uint32_t> v, std::span<const uint32_t> f) {
+    if (!device || pass || geometry || rsx_pool)
+      throw std::runtime_error(
+          "Install one RSX program before targets/geometry");
+    auto vs_contract = validateRsxModule(v, false);
+    auto fp_contract = validateRsxModule(f, true);
+    for (auto input : fp_contract.inputs)
+      if (std::find(vs_contract.outputs.begin(), vs_contract.outputs.end(),
+                    input) == vs_contract.outputs.end())
+        throw std::runtime_error("RSX varying missing from vertex program");
+    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    VkDescriptorSetLayoutBinding vs{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                                    VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+    VkDescriptorSetLayoutBinding ps[] = {
+        {1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT,
+         nullptr},
+        {32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 16, VK_SHADER_STAGE_FRAGMENT_BIT,
+         nullptr},
+        {64, VK_DESCRIPTOR_TYPE_SAMPLER, 16, VK_SHADER_STAGE_FRAGMENT_BIT,
+         nullptr}};
+    VkDescriptorSetLayoutCreateInfo dl{
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dl.bindingCount = 1;
+    dl.pBindings = &vs;
+    OK(vkCreateDescriptorSetLayout(device, &dl, nullptr, &rsx_layouts[0]));
+    dl.bindingCount = 3;
+    dl.pBindings = ps;
+    OK(vkCreateDescriptorSetLayout(device, &dl, nullptr, &rsx_layouts[1]));
+    VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 16},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLER, 16}};
+    VkDescriptorPoolCreateInfo dp{
+        VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dp.maxSets = 2;
+    dp.poolSizeCount = 3;
+    dp.pPoolSizes = sizes;
+    OK(vkCreateDescriptorPool(device, &dp, nullptr, &rsx_pool));
+    VkDescriptorSetAllocateInfo da{
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    da.descriptorPool = rsx_pool;
+    da.descriptorSetCount = 2;
+    da.pSetLayouts = rsx_layouts.data();
+    OK(vkAllocateDescriptorSets(device, &da, rsx_sets.data()));
+    for (unsigned i = 0; i < 2; i++) {
+      VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+      bc.size = i ? 16384 : 8224;
+      bc.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+      OK(vkCreateBuffer(device, &bc, nullptr, &uniforms[i].buffer));
+      VkMemoryRequirements req{};
+      vkGetBufferMemoryRequirements(device, uniforms[i].buffer, &req);
+      VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+      ai.allocationSize = req.size;
+      ai.memoryTypeIndex =
+          memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+      OK(vkAllocateMemory(device, &ai, nullptr, &uniforms[i].memory));
+      OK(vkBindBufferMemory(device, uniforms[i].buffer, uniforms[i].memory, 0));
+      VkDescriptorBufferInfo bi{uniforms[i].buffer, 0, bc.size};
+      VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      w.dstSet = rsx_sets[i];
+      w.dstBinding = i ? 1 : 0;
+      w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      w.descriptorCount = 1;
+      w.pBufferInfo = &bi;
+      vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+    }
+    updateRsxTextures();
+    rsx_vs_contract = std::move(vs_contract);
+    rsx_fp_contract = std::move(fp_contract);
+    rsx_vertex.assign(v.begin(), v.end());
+    rsx_fragment.assign(f.begin(), f.end());
+  }
+  void setRsxConstants(std::span<const std::array<float, 4>> v,
+                       std::span<const std::array<float, 4>> f) {
+    if (!device || !rsxMode() || v.size() != 514 || f.empty() ||
+        f.size() > 1024 || f.size_bytes() < rsx_fp_contract.uniform_bytes)
+      throw std::runtime_error("Invalid RSX constant buffer sizes");
+    for (auto rows : {v, f})
+      for (auto &row : rows)
+        for (float c : row)
+          if (!std::isfinite(c))
+            throw std::runtime_error("Nonfinite RSX constant");
+    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    rsx_constants_ready = false;
+    for (unsigned i = 0; i < 2; i++) {
+      auto rows = i ? f : v;
+      void *mapped = nullptr;
+      OK(vkMapMemory(device, uniforms[i].memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+      std::memset(mapped, 0, i ? 16384 : 8224);
+      std::memcpy(mapped, rows.data(), rows.size_bytes());
+      VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+      range.memory = uniforms[i].memory;
+      range.size = VK_WHOLE_SIZE;
+      auto result = vkFlushMappedMemoryRanges(device, 1, &range);
+      vkUnmapMemory(device, uniforms[i].memory);
+      check(result, "RSX constant buffer flush");
+    }
+    rsx_constants_ready = true;
   }
   void offscreen(uint32_t w, uint32_t h) {
     if (!device || owned_image || surface || !w || !h || w > 4096 || h > 4096)
@@ -966,21 +1137,29 @@ public:
         throw std::runtime_error("Nonfinite clear color");
     parameters = value;
   }
-  void setGeometry(std::span<const Vertex> vertices,
-                   std::span<const uint32_t> indices) {
+  template <class V>
+  void uploadGeometry(std::span<const V> vertices,
+                      std::span<const uint32_t> indices) {
     if (!device || vertices.size() > 1048576 || indices.size() > 3145728 ||
         (indices.empty() ? vertices.size() % 3 : indices.size() % 3))
       throw std::runtime_error("Invalid or oversized triangle-list geometry");
     for (const auto &v : vertices) {
-      for (float uv : v.uv)
-        if (!std::isfinite(uv))
-          throw std::runtime_error("Nonfinite UV");
-      for (float c : v.position)
-        if (!std::isfinite(c))
-          throw std::runtime_error("Nonfinite position");
-      for (float c : v.color)
-        if (!std::isfinite(c))
-          throw std::runtime_error("Nonfinite vertex color");
+      if constexpr (std::is_same_v<V, RsxVertex>) {
+        for (const auto &a : v.attributes)
+          for (float c : a)
+            if (!std::isfinite(c))
+              throw std::runtime_error("Nonfinite RSX attribute");
+      } else {
+        for (float c : v.uv)
+          if (!std::isfinite(c))
+            throw std::runtime_error("Nonfinite UV");
+        for (float c : v.position)
+          if (!std::isfinite(c))
+            throw std::runtime_error("Nonfinite position");
+        for (float c : v.color)
+          if (!std::isfinite(c))
+            throw std::runtime_error("Nonfinite color");
+      }
     }
     for (auto i : indices)
       if (i >= vertices.size())
@@ -1024,6 +1203,17 @@ public:
     vertex_count = static_cast<uint32_t>(vertices.size());
     index_count = static_cast<uint32_t>(indices.size());
   }
+  void setGeometry(std::span<const Vertex> v, std::span<const uint32_t> i) {
+    if (rsxMode())
+      throw std::runtime_error("RSX program requires RSX geometry");
+    uploadGeometry(v, i);
+  }
+  void setRsxGeometry(std::span<const RsxVertex> v,
+                      std::span<const uint32_t> i) {
+    if (!rsxMode())
+      throw std::runtime_error("Install RSX program first");
+    uploadGeometry(v, i);
+  }
   bool draw() {
     DrawCommand command;
     command.count = index_count ? index_count : vertex_count;
@@ -1036,7 +1226,8 @@ public:
   bool draw(std::span<const DrawCommand> commands) {
     if (commands.size() > 4096)
       throw std::runtime_error("Too many draw commands");
-    if (!device || framebuffers.empty() || !texture_ready)
+    if (!device || framebuffers.empty() || !texture_ready ||
+        (rsxMode() && !rsx_constants_ready))
       throw std::runtime_error("Render target unavailable");
     auto rect = [this](Rect r) {
       if (!r.width && !r.height && !r.x && !r.y)
@@ -1051,7 +1242,8 @@ public:
       auto bound = c.indexed ? index_count : vertex_count;
       if (c.first > bound || c.count > bound - c.first || c.count % 3 ||
           uint32_t(c.depth) > 2 || !std::isfinite(c.alpha_cutoff) ||
-          c.alpha_cutoff < -1 || c.alpha_cutoff > 1)
+          c.alpha_cutoff < -1 || c.alpha_cutoff > 1 ||
+          (rsxMode() && c.alpha_cutoff != -1))
         throw std::runtime_error("Invalid draw command range/state");
       rect(c.viewport);
       rect(c.scissor);
@@ -1087,15 +1279,17 @@ public:
     rp.clearValueCount = 2;
     rp.pClearValues = clear;
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
-                            &texture_set, 0, nullptr);
+    vkCmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, rsxMode() ? 2 : 1,
+        rsxMode() ? rsx_sets.data() : &texture_set, 0, nullptr);
     for (const auto &c : commands) {
       if (!c.count)
         continue;
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         pipelines[uint32_t(c.depth) * 2 + unsigned(c.blend)]);
-      vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(float), &c.alpha_cutoff);
+      if (!rsxMode())
+        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(float), &c.alpha_cutoff);
       auto viewport = rect(c.viewport);
       auto scissor = rect(c.scissor);
       VkViewport vp{float(viewport.offset.x),
@@ -1214,6 +1408,22 @@ void Renderer::setParameters(const DrawParameters &parameters) {
 }
 void Renderer::setTexture(uint32_t width, uint32_t height,
                           std::span<const uint8_t> rgba) {
-  impl_->setTexture(width, height, rgba);
+  impl_->setTextureUnit(0, width, height, rgba);
+}
+void Renderer::setTextureUnit(uint32_t unit, uint32_t w, uint32_t h,
+                              std::span<const uint8_t> rgba) {
+  impl_->setTextureUnit(unit, w, h, rgba);
+}
+void Renderer::setRsxProgram(std::span<const uint32_t> v,
+                             std::span<const uint32_t> f) {
+  impl_->setRsxProgram(v, f);
+}
+void Renderer::setRsxGeometry(std::span<const RsxVertex> v,
+                              std::span<const uint32_t> i) {
+  impl_->setRsxGeometry(v, i);
+}
+void Renderer::setRsxConstants(std::span<const std::array<float, 4>> v,
+                               std::span<const std::array<float, 4>> f) {
+  impl_->setRsxConstants(v, f);
 }
 } // namespace d2::vulkan
