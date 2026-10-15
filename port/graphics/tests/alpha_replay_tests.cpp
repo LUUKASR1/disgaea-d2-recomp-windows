@@ -103,6 +103,7 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     for(unsigned u=0;u<4;u++)require(std::filesystem::file_size(folder/("tex"+std::to_string(u)+".rgba"))==4,"Null SRV exports one zero texel");
     d2_draw_frame_begin();require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
         vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)<0,"Missing descriptor is rejected rather than substituted");
+    image.close();packet_file.close();
     d2_draw_capture_close();std::filesystem::remove_all(folder);
     puts("PASS original shader alpha/discard depth mask: zero color, uniform toggle, empty draw");return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
