@@ -77,6 +77,7 @@ jobs:
           }
           $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
           if ($leftovers.Count -ne 0) { throw 'Temporary embedded compiler cleanup failed' }
+          exit 0 # Driver-unavailable code 77 was handled above; do not propagate it.
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows' && success()
         with:
