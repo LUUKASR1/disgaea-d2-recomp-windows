@@ -11,7 +11,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     generate_shaders.py vendor/fsr1/ffx_a.h vendor/fsr1/ffx_fsr1.h)
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/generate_shaders.py"
     "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fsr_shaders.h" COMMAND_ERROR_IS_FATAL ANY)
-add_library(d2_graphics STATIC graphics.cpp capture.cpp hud_capture.cpp hud_present.cpp motion_probe.cpp motion_raster.cpp scene_depth.cpp alpha_replay.cpp depth_steps.cpp)
+add_library(d2_graphics STATIC graphics.cpp capture.cpp hud_capture.cpp hud_present.cpp motion_probe.cpp motion_raster.cpp scene_depth.cpp alpha_replay.cpp depth_steps.cpp draw_capture.cpp)
 target_compile_features(d2_graphics PUBLIC cxx_std_20)
 target_include_directories(d2_graphics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_definitions(d2_graphics PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

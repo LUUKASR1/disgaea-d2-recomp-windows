@@ -84,7 +84,7 @@ def generate(source, output):
         '                fprintf(stderr,"[D2POSTHUD] presentation=%s reason=%s\\n",d2_post_snapshotted?"HUD-after-upscale":"fallback",reason);}}\n'
         '        if(d2_display_present(s_d3d.swap_chain,(UINT)d2_interval)!=0){s_d3d.window_closed=1;return;}')
     text = replace(text, '    /* Release D3D12 resources */',
-        '    d2_posthud_shutdown();\n    d2_hud_shutdown();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
+        '    d2_posthud_shutdown();\n    d2_hud_shutdown();\n    d2_draw_release();\n    d2_draw_capture_close();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
     text = replace(text, '    u32 d2_diag_valid;',
         '    ID3D12PipelineState* d2_hud_pso;\n    u32 d2_capture_vs_hash;\n    u32 d2_diag_valid;')
     text = replace(text, '        r->d2_diag_valid = enabled ? 1u : 0u;',
@@ -167,6 +167,21 @@ def generate(source, output):
             d2_temporal_dump(d2_capture_index);
             d2_hud_dump(fi,s_dbg_last_draws,d2_hud_start,d2_capture_index,d2_hud_snapshotted);
         }''')
+    text = replace(text, '    s_d3d.device->lpVtbl->CreateShaderResourceView(s_d3d.device, res, &sv, h);',
+        '    s_d3d.device->lpVtbl->CreateShaderResourceView(s_d3d.device, res, &sv, h);\n    d2_draw_srv(heap_slot,res,&sv);')
+    text = replace(text, '    pb->lpVtbl->Release(pb);\n    if (FAILED(hr)) {',
+        '    if(SUCCEEDED(hr) && pso)d2_draw_pipeline(pso,&pd,hlsl);\n    pb->lpVtbl->Release(pb);\n    if (FAILED(hr)) {')
+    text = replace(text, '    int slot;\n    if (s_d3d.vp_vs_n < VP_VS_CACHE)',
+        '    d2_draw_vertex_source(vb->lpVtbl->GetBufferPointer(vb),vb->lpVtbl->GetBufferSize(vb),hlsl);\n    int slot;\n    if (s_d3d.vp_vs_n < VP_VS_CACHE)')
+    text = text.replace('    d2_posthud_frame(fi);', '    d2_posthud_frame(fi);\n    d2_draw_frame_begin();\n    d2_draw_release();')
+    text = text.replace('#include "temporal_adapter.inc"', '#include "temporal_adapter.inc"\n#include "draw_capture_adapter.inc"')
+    text = text.replace('                d2_alpha_record_pso(d,dpso);',
+        '                d2_alpha_record_pso(d,dpso);\n                if(d2_capture_requested)d2_draw_keep(d,dpso);')
+    text = text.replace('            rsx_capture_frame(fi,s_dbg_last_draws,d2_capture_index);',
+        '            if(d2_draw_capture_enabled()){d2_draw_dump(d2_capture_index,s_dbg_last_draws);}else{\n            rsx_capture_frame(fi,s_dbg_last_draws,d2_capture_index);')
+    text = text.replace('            d2_hud_dump(fi,s_dbg_last_draws,d2_hud_start,d2_capture_index,d2_hud_snapshotted);',
+        '            d2_hud_dump(fi,s_dbg_last_draws,d2_hud_start,d2_capture_index,d2_hud_snapshotted);}')
+    text = text.replace('d2_capture_requested && d2_hud_start<', 'd2_capture_requested && !d2_draw_capture_enabled() && d2_hud_start<')
     # Export only the final, successfully compiled HLSL, on cache misses.
     # Prefix capture.h already declares this opt-in observer for the C backend.
     text = replace(text, '    int slot;\n    if (s_d3d.vp_vs_n < VP_VS_CACHE)',
@@ -179,7 +194,7 @@ def generate(source, output):
         return '#include "'+path.resolve().as_posix()+'"' if path.is_file() else match[0]
     text = re.sub(r'#\s*include\s*"([^"\n]+)"', includes, text)
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text('#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n#include "hud_present.h"\n'+text, encoding='utf-8', newline='\n')
+    output.write_text('#include "draw_capture.h"\n#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n#include "hud_present.h"\n'+text, encoding='utf-8', newline='\n')
 
 
 if __name__ == '__main__': generate(sys.argv[1], sys.argv[2])

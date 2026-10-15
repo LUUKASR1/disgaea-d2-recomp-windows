@@ -136,7 +136,9 @@ class Renderer::Impl {
   };
   std::vector<ColorTarget> extra_colors;
   uint32_t color_count = 1;
-  bool independent_blend = false;
+  bool independent_blend = false, depth_clamp_supported = false;
+  RasterState raster_state{};
+  std::array<VkSampler, 16> unit_samplers{};
   VkRenderPass pass = VK_NULL_HANDLE;
   VkPipelineLayout layout = VK_NULL_HANDLE;
   std::array<VkPipeline, 6> pipelines{};
@@ -277,21 +279,39 @@ class Renderer::Impl {
     VkPipelineRasterizationStateCreateInfo raster{
         VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     raster.polygonMode = VK_POLYGON_MODE_FILL;
-    raster.cullMode = VK_CULL_MODE_NONE;
-    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.cullMode = raster_state.cull == 1   ? VK_CULL_MODE_FRONT_BIT
+                      : raster_state.cull == 2 ? VK_CULL_MODE_BACK_BIT
+                                               : VK_CULL_MODE_NONE;
+    raster.frontFace = raster_state.front_ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE
+                                              : VK_FRONT_FACE_CLOCKWISE;
+    raster.depthClampEnable = raster_state.depth_clamp;
     raster.lineWidth = 1;
     VkPipelineMultisampleStateCreateInfo ms{
         VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     VkPipelineColorBlendAttachmentState attachment{};
-    attachment.colorWriteMask = 0xf;
+    attachment.colorWriteMask = raster_state.color_mask;
     attachment.blendEnable = VK_TRUE;
-    attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    attachment.colorBlendOp = VK_BLEND_OP_ADD;
-    attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    auto factor = [](BlendFactor f) {
+      const VkBlendFactor table[] = {VK_BLEND_FACTOR_ZERO,
+                                     VK_BLEND_FACTOR_ONE,
+                                     VK_BLEND_FACTOR_SRC_COLOR,
+                                     VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+                                     VK_BLEND_FACTOR_DST_COLOR,
+                                     VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+                                     VK_BLEND_FACTOR_SRC_ALPHA,
+                                     VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+                                     VK_BLEND_FACTOR_DST_ALPHA,
+                                     VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+                                     VK_BLEND_FACTOR_SRC_ALPHA_SATURATE};
+      return table[uint32_t(f)];
+    };
+    attachment.srcColorBlendFactor = factor(raster_state.src_color);
+    attachment.dstColorBlendFactor = factor(raster_state.dst_color);
+    attachment.colorBlendOp = VkBlendOp(raster_state.color_op);
+    attachment.srcAlphaBlendFactor = factor(raster_state.src_alpha);
+    attachment.dstAlphaBlendFactor = factor(raster_state.dst_alpha);
+    attachment.alphaBlendOp = VkBlendOp(raster_state.alpha_op);
     VkPipelineColorBlendStateCreateInfo blend{
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     std::vector<VkPipelineColorBlendAttachmentState> color_blends(color_count,
@@ -327,7 +347,7 @@ class Renderer::Impl {
     pc.renderPass = pass;
     VkPipelineDepthStencilStateCreateInfo ds{
         VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    ds.depthCompareOp = VkCompareOp(raster_state.depth_compare);
     pc.pDepthStencilState = &ds;
     auto &destination = program ? program->pipelines : pipelines;
     for (unsigned mode = 0; mode < 3; mode++)
@@ -530,6 +550,9 @@ public:
         }
       for (auto &t : textures)
         releaseTexture(t);
+      for (auto s : unit_samplers)
+        if (s)
+          vkDestroySampler(device, s, nullptr);
       if (sampler)
         vkDestroySampler(device, sampler, nullptr);
       if (texture_layout)
@@ -762,6 +785,8 @@ public:
     VkPhysicalDeviceFeatures enabled_features{};
     enabled_features.independentBlend = supported_features.independentBlend;
     independent_blend = enabled_features.independentBlend != 0;
+    enabled_features.depthClamp = supported_features.depthClamp;
+    depth_clamp_supported = enabled_features.depthClamp != 0;
     dev.pEnabledFeatures = &enabled_features;
     if (surface) {
       dev.enabledExtensionCount = 1;
@@ -959,7 +984,7 @@ public:
       images[i].imageView =
           textures[i].view ? textures[i].view : textures[16].view;
       images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-      samplers[i].sampler = sampler;
+      samplers[i].sampler = unit_samplers[i] ? unit_samplers[i] : sampler;
     }
     VkWriteDescriptorSet writes[2]{};
     for (auto &w : writes) {
@@ -1128,6 +1153,35 @@ public:
     }
     state.fragment_bytes = uint32_t(f.size_bytes());
     state.ready = true;
+  }
+  void setRasterState(const RasterState &state) {
+    if (!device || pass || state.cull > 2 || state.color_mask > 15 ||
+        state.depth_compare > 7 || uint32_t(state.src_color) > 10 ||
+        uint32_t(state.dst_color) > 10 || uint32_t(state.src_alpha) > 10 ||
+        uint32_t(state.dst_alpha) > 10 || uint32_t(state.color_op) > 4 ||
+        uint32_t(state.alpha_op) > 4 ||
+        (state.depth_clamp && !depth_clamp_supported))
+      throw std::runtime_error(
+          "Unsupported raster state or target already created");
+    raster_state = state;
+  }
+  void setSamplerUnit(uint32_t unit, bool linear, bool wrap) {
+    if (!device || !rsxMode() || unit >= 16)
+      throw std::runtime_error("Invalid RSX sampler unit");
+    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    si.magFilter = si.minFilter = linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    si.addressModeU = si.addressModeV = si.addressModeW =
+        wrap ? VK_SAMPLER_ADDRESS_MODE_REPEAT
+             : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    VkSampler next = VK_NULL_HANDLE;
+    OK(vkCreateSampler(device, &si, nullptr, &next));
+    auto previous = unit_samplers[unit];
+    unit_samplers[unit] = next;
+    updateRsxTextures();
+    if (previous)
+      vkDestroySampler(device, previous, nullptr);
   }
   void validateColorTargets(uint32_t count) {
     if (!count || count > 4)
@@ -1560,6 +1614,12 @@ void Renderer::start(void *window, bool validation) {
   impl_->start(window, validation);
 }
 void Renderer::close() noexcept { impl_->close(); }
+void Renderer::setRasterState(const RasterState &state) {
+  impl_->setRasterState(state);
+}
+void Renderer::setSamplerUnit(uint32_t unit, bool linear, bool wrap) {
+  impl_->setSamplerUnit(unit, linear, wrap);
+}
 void Renderer::offscreen(uint32_t width, uint32_t height, uint32_t targets) {
   impl_->offscreen(width, height, targets);
 }

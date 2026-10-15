@@ -1,4 +1,8 @@
 #include "alpha_replay.h"
+#include "draw_capture.h"
+#include "../../vulkan/draw_packet.h"
+#include <filesystem>
+#include <fstream>
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -69,5 +73,36 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     binding.alpha=false;replay();for(auto p:mask)require(p==255,"Disabling alpha test retains full quad");
     binding.draw=false;replay();for(size_t i=0;i<mask.size();i++)require(mask[i]==0 && depth[i]==1,"No draw does not fabricate coverage or depth");
     require(d2_alpha_replay(device.p,queue.p,0,16,record,&binding,borrowed,3,mask.data())<0,"Invalid size rejected");
+    SetEnvironmentVariableA("D2_DRAW_CAPTURE","1");
+    const char captured_vs[]="float4 main(float4 p:POSITION):SV_Position{return p;}";
+    const char captured_fp[]="cbuffer Alpha:register(b1){float4 test;}float4 main():SV_Target{return float4(test.x,0,1,1);}";
+    Ref<ID3DBlob> cv,cp;
+    check(D3DCompile(captured_vs,sizeof(captured_vs)-1,nullptr,nullptr,nullptr,"main","vs_5_0",0,0,cv.put(),error.put()));
+    check(D3DCompile(captured_fp,sizeof(captured_fp)-1,nullptr,nullptr,nullptr,"main","ps_5_0",0,0,cp.put(),error.put()));
+    pd.VS={cv->GetBufferPointer(),cv->GetBufferSize()};pd.PS={cp->GetBufferPointer(),cp->GetBufferSize()};
+    Ref<ID3D12PipelineState> captured;check(device->CreateGraphicsPipelineState(&pd,IID_ID3D12PipelineState,(void**)captured.put()));
+    d2_draw_vertex_source(pd.VS.pShaderBytecode,pd.VS.BytecodeLength,captured_vs);d2_draw_pipeline(captured.p,&pd,captured_fp);
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R8G8B8A8_UNORM;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Texture2D.MipLevels=1;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    d2_draw_frame_begin();for(unsigned i=0;i<4;i++)d2_draw_srv(i,nullptr,&srv);
+    binding.pso=captured.p;binding.alpha=true;binding.draw=true;
+    float expanded[6][64]{};for(unsigned i=0;i<6;i++)std::memcpy(expanded[i],vertices[i],16);
+    float vertex_constants[514][4]{};float fragment_constants[4]={1,0,5,0};
+    auto folder=std::filesystem::temp_directory_path()/("D2-draw-test-"+std::to_string(GetCurrentProcessId()));
+    std::filesystem::remove_all(folder);std::filesystem::create_directories(folder);
+    auto path=folder.u8string();std::string utf8((char*)path.data(),path.size());
+    void* draw_borrowed[]={captured.p,root.p,vb.p};
+    require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
+        vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)==0,"Real draw export helper succeeds");
+    std::ifstream image(folder/"reference.rgba",std::ios::binary);std::vector<unsigned char> rgba((std::istreambuf_iterator<char>(image)),{});
+    require(rgba.size()==32*16*4,"Reference readback strips pitch padding");
+    for(size_t i=0;i<rgba.size();i+=4)require(rgba[i]==255&&rgba[i+1]==0&&rgba[i+2]==255&&rgba[i+3]==255,"Original PSO renders magenta reference");
+    std::ifstream packet_file(folder/"packet.bin",std::ios::binary);d2::DrawPacket packet;packet_file.read((char*)&packet,sizeof(packet));
+    require(bool(packet_file)&&packet.magic==0x31524444&&packet.vertices==6&&packet.fragment_bytes==16,"Portable packet header preserves sizes");
+    require(std::filesystem::file_size(folder/"vertices.bin")==sizeof(expanded),"Full 16-attribute geometry exported");
+    for(unsigned u=0;u<4;u++)require(std::filesystem::file_size(folder/("tex"+std::to_string(u)+".rgba"))==4,"Null SRV exports one zero texel");
+    d2_draw_frame_begin();require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
+        vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)<0,"Missing descriptor is rejected rather than substituted");
+    d2_draw_capture_close();std::filesystem::remove_all(folder);
     puts("PASS original shader alpha/discard depth mask: zero color, uniform toggle, empty draw");return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}

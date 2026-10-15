@@ -176,7 +176,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             return
         busy = True
         backend.capture_enabled = capture_enabled.get()
-        backend.capture_goal = "shaders" if capture_goal.get().startswith("Shaders") else "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
+        backend.capture_goal = "draw" if capture_goal.get().startswith("Desenho") else "shaders" if capture_goal.get().startswith("Shaders") else "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
         for widget in buttons + entries:
             widget.configure(state='disabled')
         progress.start(12)
@@ -377,10 +377,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         toggle.pack(anchor='w', pady=4); entries.append(toggle)
         label(diagnostic, 'Objetivo da captura', 10, MUTED)
         goal_combo = ttk.Combobox(diagnostic, textvariable=capture_goal,
-            values=('Cenário — girar câmera', 'Sprites — movimentar personagem', 'Shaders — preparar Vulkan'),
+            values=('Cenário — girar câmera', 'Sprites — movimentar personagem', 'Shaders — preparar Vulkan', 'Desenho real — comparar Vulkan'),
             state='readonly', style='D2.TCombobox', width=40)
         goal_combo.pack(anchor='w', pady=4); entries.append(goal_combo)
-        label(diagnostic, 'Para investigar sprites, pressione F8 durante o movimento do personagem, sem girar a câmera manualmente. A captura também registra o acompanhamento automático da câmera. Escolha o objetivo antes de abrir o jogo.', 10, MUTED)
+        label(diagnostic, 'Desenho real: pressione F8 em uma cena parada; a coleta pode pausar por alguns segundos. Shaders: coleta automática, sem F8. Para sprites, pressione F8 ao mover o personagem. Escolha antes de abrir o jogo.', 10, MUTED)
 
         label(diagnostic, 'Com o jogo aberto, pressione F8 ou clique em Capturar frame. Até oito capturas por sessão. Pode haver uma pausa breve durante a gravação.', 10, MUTED)
         label(diagnostic, 'Em Shaders — preparar Vulkan, a coleta é automática durante o jogo, sem F8. Visite menus, Castle Hallway e uma batalha; feche o jogo para receber o ZIP em Downloads. Esse modo não captura imagens.', 10, MUTED)

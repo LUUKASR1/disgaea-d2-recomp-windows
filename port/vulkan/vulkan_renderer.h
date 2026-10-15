@@ -36,8 +36,10 @@ enum class DepthMode : uint32_t { disabled, read_only, read_write };
 struct DrawCommand {
   uint32_t first = 0, count = 0;
   bool indexed = false;
-  DepthMode depth = DepthMode::disabled; // Compare LESS_OR_EQUAL when enabled.
-  bool blend = true; // Straight alpha; false writes unblended RGBA.
+  DepthMode depth =
+      DepthMode::disabled; // Compare uses RasterState; default LESS_OR_EQUAL.
+  bool blend =
+      true; // Uses RasterState blend factors; false writes unblended RGBA.
   Rect viewport{}, scissor{};
   float alpha_cutoff = -1.f;
   // Renderer-local immutable program/constant snapshot handles; zero is
@@ -48,6 +50,38 @@ struct Info {
   std::string adapter;
   uint32_t api_version = 0, device_type = 0, present_mode = 0,
            validation_errors = 0;
+};
+// Immutable pipeline state for an isolated RSX draw. Defaults preserve the
+// existing synthetic probes; samplers remain independently configurable.
+enum class BlendFactor : uint32_t {
+  zero,
+  one,
+  src_color,
+  inv_src_color,
+  dst_color,
+  inv_dst_color,
+  src_alpha,
+  inv_src_alpha,
+  dst_alpha,
+  inv_dst_alpha,
+  src_alpha_saturate
+};
+enum class BlendOperation : uint32_t {
+  add,
+  subtract,
+  reverse_subtract,
+  minimum,
+  maximum
+};
+struct RasterState {
+  uint32_t cull = 0; // 0 none, 1 front, 2 back
+  bool front_ccw = true, depth_clamp = false;
+  uint32_t color_mask = 15, depth_compare = 3; // Vulkan ordering: never..always
+  BlendFactor src_color = BlendFactor::src_alpha,
+              dst_color = BlendFactor::inv_src_alpha;
+  BlendFactor src_alpha = BlendFactor::one,
+              dst_alpha = BlendFactor::inv_src_alpha;
+  BlendOperation color_op = BlendOperation::add, alpha_op = BlendOperation::add;
 };
 class Renderer {
   class Impl;
@@ -62,6 +96,9 @@ public:
   void close() noexcept;
   // 1..4 RGBA8 color attachments, shared depth. MRT requires independentBlend.
   // All declared RSX fragment outputs must have a bound attachment.
+  void setRasterState(const RasterState &state); // Before target creation.
+  void setSamplerUnit(uint32_t unit, bool linear,
+                      bool wrap); // RSX sampler 0..15.
   void offscreen(uint32_t width, uint32_t height, uint32_t color_targets = 1);
   bool resize(uint32_t width, uint32_t height, bool vsync);
   bool needsResize() const;

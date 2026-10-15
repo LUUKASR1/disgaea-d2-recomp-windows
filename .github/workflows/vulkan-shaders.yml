@@ -32,6 +32,7 @@ jobs:
           export VK_ICD_FILENAMES=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)
           test -n "$VK_ICD_FILENAMES"
           build-shader/DisgaeaD2RsxGpuProbe --validation --output build-shader/rsx-gpu-check
+          build-shader/DisgaeaD2DrawReplay --self-test --validation --output build-shader/draw-self-test
           ctest --test-dir build-shader --output-on-failure
           for file in build-shader/corpus-self-test/*.spv; do spirv-val --target-env vulkan1.1 "$file"; done
       - name: Package single-executable Windows shader checker and required licenses
@@ -109,6 +110,32 @@ jobs:
           name: DisgaeaD2-Shader-Corpus-Checker-Windows-x64
           path: corpus-checker/
           if-no-files-found: error
+      - name: Package isolated draw replay without game data
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory draw-replay
+          Copy-Item build-shader/Release/DisgaeaD2DrawReplay.exe draw-replay/
+          Copy-Item port/vulkan/shader/DRAW-README.md draw-replay/README.md
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt draw-replay/
+          Copy-Item shader-sdk/LICENSE draw-replay/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location draw-replay
+          & ./DisgaeaD2DrawReplay.exe --self-test --output fixture-check
+          $result = $LASTEXITCODE
+          Pop-Location
+          if ($result -eq 77) { Write-Host 'No Vulkan ICD: draw GPU replay unavailable.' }
+          elseif ($result -ne 0) { throw 'Standalone draw replay self-test failed' }
+          Remove-Item -Recurse -Force draw-replay/fixture-check
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Embedded compiler cleanup failed' }
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-Isolated-Draw-Replay-Windows-x64
+          path: draw-replay/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -118,4 +145,5 @@ jobs:
             build-shader/rsx-gpu-check/
             build-shader/windows-rsx-gpu-check/
             build-shader/corpus-self-test/
+            build-shader/draw-self-test/draw-vulkan-report.json
             build-shader/Testing/Temporary/LastTest.log

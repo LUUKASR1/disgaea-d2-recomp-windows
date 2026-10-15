@@ -44,6 +44,22 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(session.event.signals, 0)
             self.assertTrue(session.event.closed)
 
+    def test_isolated_draw_capture_uses_explicit_request_without_motion_survey(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = CaptureSession(directory, 'test', {}, FakeEvent, capture_goal='draw')
+            env = session.environment({'D2_SHADER_CORPUS':'1', 'D2_CAPTURE_MASK_STATE':'1'})
+            self.assertEqual(env['D2_DRAW_CAPTURE'], '1')
+            self.assertNotIn('D2_SHADER_CORPUS', env)
+            self.assertNotIn('D2_CAPTURE_MASK_STATE', env)
+            self.assertEqual(clean_capture_environment(env), {})
+            session.started(); session.request()
+            self.assertEqual(session.event.signals, 1)
+            frame = session.directory / 'frame_00'; frame.mkdir()
+            (frame / 'complete.json').write_text(json.dumps({'schema':1,'status':'complete','captured':1}))
+            (frame / 'packet.bin').write_bytes(b'private local draw')
+            self.assertEqual(len(session.results()), 1)
+            self.assertIsNotNone(session.finish(destination=directory))
+
     def test_normal_environment_and_session_requests(self):
         original = {'PATH': 'tools', 'RSX_CAP': '1:100', 'd2_capture_event': 'old', 'D2_CAPTURE_F8': '1', 'D2_SCENERY_FEEDBACK_FILE': 'inherited', 'D2_CAPTURE_GOAL': 'sprites'}
         self.assertEqual(clean_capture_environment(original), {'PATH': 'tools'})
