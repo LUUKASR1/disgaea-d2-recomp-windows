@@ -10,7 +10,7 @@ import zipfile
 
 LIMIT = 8
 CAPTURE_ENV = ('D2_CAPTURE_EVENT', 'D2_CAPTURE_MASK_STATE', 'D2_CAPTURE_F8',
-               'RSX_CAP', 'RSX_CAP_DIR', 'D2_SCENERY_FEEDBACK_FILE', 'D2_CAPTURE_GOAL')
+               'RSX_CAP', 'RSX_CAP_DIR', 'D2_SCENERY_FEEDBACK_FILE', 'D2_CAPTURE_GOAL', 'D2_SHADER_CORPUS')
 
 
 class WinEvent:
@@ -45,7 +45,7 @@ def clean_capture_environment(original):
 
 class CaptureSession:
     def __init__(self, home, version, settings, event_factory=WinEvent, capture_goal="scenery"):
-        if capture_goal not in ("scenery", "sprites"):
+        if capture_goal not in ("scenery", "sprites", "shaders"):
             raise ValueError("Objetivo de captura inválido.")
         self.capture_goal = capture_goal
         self.lock = threading.Lock()
@@ -57,19 +57,22 @@ class CaptureSession:
         self.name = 'Local\\DisgaeaD2Capture-' + token
         self.directory = Path(home) / 'captures' / (datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + token[:8])
         # The audited SDK uses a 300-byte frame-directory buffer.
-        if len(str(self.directory).encode('utf-8')) > 240:
+        if len(str(self.directory).encode('utf-8')) > (230 if capture_goal == 'shaders' else 240):
             raise RuntimeError('O caminho da captura é longo demais. Use uma pasta local mais curta.')
         self.directory.mkdir(parents=True)
         (self.directory / 'session.json').write_text(json.dumps({
-            'schema': 1, 'capture_goal': capture_goal, 'launcher': version, 'settings': settings, 'limit': LIMIT,
-            'image': 'internal-scene-with-HUD', 'created': datetime.now().isoformat(),
-            'hud_replay': 'experimental-capture-only',
-            'description': 'Capturas pontuais e reprodução isolada da HUD quando reconhecida. A renderização normal permanece como referência.'
+            'schema': 1, 'capture_goal': capture_goal, 'launcher': version, 'settings': settings, 'limit': 256 if capture_goal == 'shaders' else LIMIT,
+            'image': None if capture_goal == 'shaders' else 'internal-scene-with-HUD', 'created': datetime.now().isoformat(),
+            'hud_replay': 'not-applicable' if capture_goal == 'shaders' else 'experimental-capture-only',
+            'description': 'Coleta automática de HLSL compilado pelo runtime; sem captura de imagens.' if capture_goal == 'shaders' else 'Capturas pontuais e reprodução isolada da HUD quando reconhecida. A renderização normal permanece como referência.'
         }, ensure_ascii=False, indent=2), encoding='utf-8')
         self.event = event_factory(self.name)
 
     def environment(self, original):
         env = clean_capture_environment(original)
+        if self.capture_goal == 'shaders':
+            env.update(D2_SHADER_CORPUS='1', D2_CAPTURE_GOAL='shaders', RSX_CAP_DIR=str(self.directory))
+            return env
         env.update(D2_CAPTURE_EVENT=self.name, D2_CAPTURE_GOAL=self.capture_goal, D2_CAPTURE_MASK_STATE='1', RSX_CAP_DIR=str(self.directory),
                    D2_SCENERY_FEEDBACK_FILE=str(self.directory.parent / 'scenery-feedback-v1.bin'))
         return env
@@ -92,6 +95,8 @@ class CaptureSession:
 
     def request(self):
         with self.lock:
+            if self.capture_goal == 'shaders':
+                raise RuntimeError('Os shaders são coletados automaticamente ao jogar; não precisa pressionar F8.')
             if not self.running or self.closed:
                 raise RuntimeError('Abra o jogo com a captura habilitada antes de capturar.')
             results = self.results()
@@ -105,6 +110,9 @@ class CaptureSession:
 
     def status(self):
         with self.lock:
+            if self.capture_goal == 'shaders':
+                count = sum(1 for p in (self.directory / 'shaders').glob('*.hlsl') if p.is_file())
+                return f'{count}/256 shaders coletados • Feche o jogo para gerar o ZIP.'
             results = self.results()
             if len(results) > self.completed_before_request:
                 self.pending = False
@@ -133,7 +141,7 @@ class CaptureSession:
             self.closed = True
             self.event.close()
         # Partial attempts are retained for diagnosis rather than silently discarded.
-        if not any(self.directory.glob('frame_*')):
+        if self.capture_goal != 'shaders' and not any(self.directory.glob('frame_*')):
             return None
         destination = Path(destination) if destination else Path.home() / 'Downloads'
         if not destination.is_dir():

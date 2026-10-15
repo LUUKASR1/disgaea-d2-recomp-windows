@@ -176,7 +176,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             return
         busy = True
         backend.capture_enabled = capture_enabled.get()
-        backend.capture_goal = "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
+        backend.capture_goal = "shaders" if capture_goal.get().startswith("Shaders") else "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
         for widget in buttons + entries:
             widget.configure(state='disabled')
         progress.start(12)
@@ -370,19 +370,20 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     capture_button = None
     if home.name == 'DisgaeaD2Recomp-Graphics-Preview':
         diagnostic = card(page)
-        label(diagnostic, 'CAPTURAS EXPERIMENTAIS: CENÁRIO E SPRITES', 12, GOLD, True)
+        label(diagnostic, 'CAPTURAS EXPERIMENTAIS: CENÁRIO, SPRITES E SHADERS', 12, GOLD, True)
         toggle = tk.Checkbutton(diagnostic, text='Habilitar captura na próxima abertura do jogo',
             variable=capture_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
             activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
         toggle.pack(anchor='w', pady=4); entries.append(toggle)
         label(diagnostic, 'Objetivo da captura', 10, MUTED)
         goal_combo = ttk.Combobox(diagnostic, textvariable=capture_goal,
-            values=('Cenário — girar câmera', 'Sprites — movimentar personagem'),
+            values=('Cenário — girar câmera', 'Sprites — movimentar personagem', 'Shaders — preparar Vulkan'),
             state='readonly', style='D2.TCombobox', width=40)
         goal_combo.pack(anchor='w', pady=4); entries.append(goal_combo)
         label(diagnostic, 'Para investigar sprites, pressione F8 durante o movimento do personagem, sem girar a câmera manualmente. A captura também registra o acompanhamento automático da câmera. Escolha o objetivo antes de abrir o jogo.', 10, MUTED)
 
         label(diagnostic, 'Com o jogo aberto, pressione F8 ou clique em Capturar frame. Até oito capturas por sessão. Pode haver uma pausa breve durante a gravação.', 10, MUTED)
+        label(diagnostic, 'Em Shaders — preparar Vulkan, a coleta é automática durante o jogo, sem F8. Visite menus, Castle Hallway e uma batalha; feche o jogo para receber o ZIP em Downloads. Esse modo não captura imagens.', 10, MUTED)
         label(diagnostic, 'Nas cenas reconhecidas, o relatório inclui cena sem HUD, HUD isolada, recomposição e comparação de pixels. A imagem normal do jogo continua sendo a referência.', 10, MUTED)
         def request_capture():
             try:
@@ -431,7 +432,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                     messagebox.showerror('Disgaea D2', message)
         if capture_button is not None:
             session = backend.capture_session
-            capture_button.configure(state='normal' if session and session.running and not session.closed else 'disabled')
+            capture_button.configure(state='normal' if session and session.running and not session.closed and session.capture_goal != 'shaders' else 'disabled')
             capture_status.set(backend.frame_capture_status() if session else 'Captura desativada.' if not capture_enabled.get() else 'Abra o jogo para capturar.')
         app.after(200, poll)
 

@@ -15,7 +15,7 @@ add_library(d2_graphics STATIC graphics.cpp capture.cpp hud_capture.cpp hud_pres
 target_compile_features(d2_graphics PUBLIC cxx_std_20)
 target_include_directories(d2_graphics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_definitions(d2_graphics PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(d2_graphics PUBLIC d3d12 dxgi d3dcompiler dxguid uuid)
+target_link_libraries(d2_graphics PUBLIC d3d12 dxgi d3dcompiler dxguid uuid bcrypt)
 if(BUILD_TESTING)
     add_executable(d2_sprite_correspondence_tests tests/sprite_correspondence_tests.cpp)
     target_include_directories(d2_sprite_correspondence_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

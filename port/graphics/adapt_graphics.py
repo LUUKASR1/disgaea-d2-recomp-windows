@@ -167,6 +167,13 @@ def generate(source, output):
             d2_temporal_dump(d2_capture_index);
             d2_hud_dump(fi,s_dbg_last_draws,d2_hud_start,d2_capture_index,d2_hud_snapshotted);
         }''')
+    # Export only the final, successfully compiled HLSL, on cache misses.
+    # Prefix capture.h already declares this opt-in observer for the C backend.
+    text = replace(text, '    int slot;\n    if (s_d3d.vp_vs_n < VP_VS_CACHE)',
+        '    if(d2_capture_shader_enabled()) d2_capture_shader_program("vp",hlsl,strlen(hlsl),vuc,16u*rsx_vp_program_size_instrs(vuc,vlen),vstart/16u,0,0);\n    int slot;\n    if (s_d3d.vp_vs_n < VP_VS_CACHE)')
+    text = replace(text, '    if (e) e->lpVtbl->Release(e);\n\n    D3D12_INPUT_ELEMENT_DESC il[16];',
+        '    if (e) e->lpVtbl->Release(e);\n    if(d2_capture_shader_enabled()) d2_capture_shader_program("fp",hlsl,strlen(hlsl),vm_base+off,rsx_fp_program_size(vm_base+off,4096),0,RSX_FP_CTRL_AUTO,cube_mask);\n\n    D3D12_INPUT_ELEMENT_DESC il[16];')
+    text = '#include "rsx_vp_decompiler.h"\n' + text
     def includes(match):
         path = source.parent / match[1]
         return '#include "'+path.resolve().as_posix()+'"' if path.is_file() else match[0]

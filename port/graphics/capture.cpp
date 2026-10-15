@@ -4,6 +4,9 @@
 #include <cstdlib>
 #include <cstdio>
 #include <string>
+#include <set>
+#include <cstring>
+#include <bcrypt.h>
 
 namespace {
 HANDLE request = nullptr;
@@ -27,6 +30,8 @@ bool nonempty(const std::string& path) {
 }
 }
 
+#include "shader_corpus.inc"
+
 extern "C" int d2_capture_next(uint32_t* index, void* window) {
     if (!initialized) {
         initialized = true;
@@ -48,6 +53,7 @@ extern "C" int d2_capture_next(uint32_t* index, void* window) {
     return 1;
 }
 extern "C" void d2_capture_shutdown(void) {
+    corpus_close();
     if (request) CloseHandle(request);
     request = nullptr; initialized = false; was_down = false; count = 0; directory.clear();
 }

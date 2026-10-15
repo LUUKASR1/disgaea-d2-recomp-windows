@@ -23,7 +23,7 @@ jobs:
       - run: python tools/bootstrap_windows.py shader-sdk
       - run: cmake -S port/vulkan -B build-shader -DD2_VULKAN_SHADER_COMPILER=ON -DD2_RSX_SDK_DIR=${{ github.workspace }}/shader-sdk -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build-shader --config Release --parallel 2
-      - run: ctest --test-dir build-shader -C Release -R rsx_hlsl --output-on-failure
+      - run: ctest --test-dir build-shader -C Release -R "rsx_hlsl|rsx_shader_corpus" --output-on-failure
       - name: Independently validate emitted SPIR-V
         if: runner.os == 'Linux'
         run: |
@@ -33,6 +33,7 @@ jobs:
           test -n "$VK_ICD_FILENAMES"
           build-shader/DisgaeaD2RsxGpuProbe --validation --output build-shader/rsx-gpu-check
           ctest --test-dir build-shader --output-on-failure
+          for file in build-shader/corpus-self-test/*.spv; do spirv-val --target-env vulkan1.1 "$file"; done
       - name: Package single-executable Windows shader checker and required licenses
         if: runner.os == 'Windows'
         shell: pwsh
@@ -84,6 +85,30 @@ jobs:
           name: DisgaeaD2-RSX-GPU-Probe-Windows-x64
           path: rsx-gpu-probe/
           if-no-files-found: error
+      - name: Package corpus checker and test embedded compiler without game input
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory corpus-checker
+          Copy-Item build-shader/Release/DisgaeaD2ShaderCorpus.exe corpus-checker/
+          Copy-Item port/vulkan/shader/CORPUS-README.md corpus-checker/README.md
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt corpus-checker/
+          Copy-Item shader-sdk/LICENSE corpus-checker/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location corpus-checker
+          & ./DisgaeaD2ShaderCorpus.exe --self-test --output fixture-check
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone corpus checker self-test failed' }
+          Remove-Item -Recurse -Force fixture-check
+          Pop-Location
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Embedded compiler cleanup failed' }
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-Shader-Corpus-Checker-Windows-x64
+          path: corpus-checker/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -92,4 +117,5 @@ jobs:
             build-shader/shader-check/
             build-shader/rsx-gpu-check/
             build-shader/windows-rsx-gpu-check/
+            build-shader/corpus-self-test/
             build-shader/Testing/Temporary/LastTest.log

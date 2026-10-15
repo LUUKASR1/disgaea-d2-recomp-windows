@@ -7,10 +7,12 @@
 #include <stdexcept>
 #include <string>
 #include <cstdio>
+#include <cstring>
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 int main() {
     try {
         _putenv_s("D2_CAPTURE_EVENT", "");
+        SetEnvironmentVariableA("D2_SHADER_CORPUS",nullptr);
         uint32_t index = 99;
         require(!d2_capture_next(&index, nullptr) && index == 99, "ordinary launch must not capture");
         d2_capture_shutdown();
@@ -44,6 +46,34 @@ int main() {
         std::ifstream complete(dir/"complete.json"); std::string second((std::istreambuf_iterator<char>(complete)),{});
         require(second.find("complete") != std::string::npos && second.find("1280") != std::string::npos,"completion marker");
         complete.close();
+        d2_capture_shader("vp","disabled",8);
+        require(!std::filesystem::exists(dir/"shaders"), "shader export must be opt-in");
+        d2_capture_shutdown();
+        SetEnvironmentVariableA("D2_SHADER_CORPUS","1");
+        const char* code="float4 main():SV_TARGET{return float4(1,0,0,1);}";
+        d2_capture_shader_program("vp",code,std::strlen(code),code,16,2,0,0);
+        d2_capture_shader("vp",code,std::strlen(code));
+        d2_capture_shader("fp",code,std::strlen(code));
+        d2_capture_shader("bad",code,std::strlen(code));
+        d2_capture_shader("vp",code,262145);
+        unsigned files=0;
+        for(auto &entry:std::filesystem::directory_iterator(dir/"shaders")) if(entry.path().extension()==".hlsl")files++;
+        require(files==2,"stage-aware shader dedup/invalid source limits");
+        require(std::filesystem::file_size(dir/"shaders/vp_000.hlsl.rsx")==16,"bounded raw shader export");
+        for(unsigned i=2;i<256;i++) {
+            auto unique=std::string(code)+" // fixture "+std::to_string(i);
+            d2_capture_shader("fp",unique.c_str(),unique.size());
+        }
+        std::string overflow=std::string(code)+" // overflow";
+        d2_capture_shader("fp",overflow.c_str(),overflow.size());
+        d2_capture_shutdown();
+        std::ifstream manifest(dir/"shaders/corpus.json");
+        std::string metadata((std::istreambuf_iterator<char>(manifest)),{});manifest.close();
+        require(metadata.find("\"status\":\"closed\"")!=std::string::npos && metadata.find("\"capped\":true")!=std::string::npos,"bounded corpus closure");
+        files=0;
+        for(auto &entry:std::filesystem::directory_iterator(dir/"shaders")) if(entry.path().extension()==".hlsl")files++;
+        require(files==256,"shader corpus cap");
+        SetEnvironmentVariableA("D2_SHADER_CORPUS",nullptr);
         std::filesystem::remove_all(dir);
         SetEnvironmentVariableW(L"RSX_CAP_DIR",nullptr); d2_capture_shutdown();
         std::puts("Capture disabled/event/one-shot/limit/Unicode/completion checks passed");

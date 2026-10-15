@@ -24,6 +24,26 @@ class CaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 CaptureSession(directory, 'test', {}, FakeEvent, capture_goal='unknown')
 
+    def test_shader_corpus_is_automatic_and_exported_without_frames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = CaptureSession(directory, 'test', {}, FakeEvent, capture_goal='shaders')
+            env = session.environment({'PATH': 'tools', 'd2_shader_corpus': 'old', 'D2_CAPTURE_EVENT': 'old'})
+            self.assertEqual(env['D2_SHADER_CORPUS'], '1')
+            self.assertNotIn('D2_CAPTURE_EVENT', env)
+            self.assertNotIn('D2_CAPTURE_MASK_STATE', env)
+            self.assertEqual(clean_capture_environment(env), {'PATH': 'tools'})
+            self.assertIsNone(json.loads((session.directory / 'session.json').read_text())['image'])
+            session.started()
+            with self.assertRaises(RuntimeError): session.request()
+            folder = session.directory / 'shaders'; folder.mkdir()
+            (folder / 'vp_000.hlsl').write_text('synthetic fixture')
+            self.assertIn('1/256', session.status())
+            report = session.finish(destination=directory)
+            with zipfile.ZipFile(report) as archive:
+                self.assertTrue(any(p.endswith('/shaders/vp_000.hlsl') for p in archive.namelist()))
+            self.assertEqual(session.event.signals, 0)
+            self.assertTrue(session.event.closed)
+
     def test_normal_environment_and_session_requests(self):
         original = {'PATH': 'tools', 'RSX_CAP': '1:100', 'd2_capture_event': 'old', 'D2_CAPTURE_F8': '1', 'D2_SCENERY_FEEDBACK_FILE': 'inherited', 'D2_CAPTURE_GOAL': 'sprites'}
         self.assertEqual(clean_capture_environment(original), {'PATH': 'tools'})
