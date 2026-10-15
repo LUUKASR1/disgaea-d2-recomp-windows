@@ -4,31 +4,46 @@
 #include <windows.h>
 #endif
 #include "vulkan_renderer.h"
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <string>
 using d2::vulkan::Renderer;
 using d2::vulkan::Unavailable;
 namespace {
-unsigned verifyTriangle(Renderer &renderer) {
-  auto data = renderer.readPixels();
-  unsigned count = 0;
-  for (size_t i = 0; i < data.size(); i += 4) {
-    count += data[i] > 30 || data[i + 1] > 35 || data[i + 2] > 45;
-    if (data[i + 3] != 255)
-      throw std::runtime_error("Triangle alpha mismatch");
-  }
-  if (count < data.size() / 40 || count > data.size() / 8)
-    throw std::runtime_error("Triangle coverage mismatch");
-  return count;
+unsigned verifyTexture(Renderer &renderer) {
+  auto pixels = renderer.readPixels();
+  for (unsigned y = 0; y < 96; y++)
+    for (unsigned x = 0; x < 128; x++) {
+      unsigned quadrant = (y >= 48 ? 2 : 0) + (x >= 64 ? 1 : 0);
+      const std::array<int, 4> colors[] = {{{255, 0, 0, 255}},
+                                           {{0, 255, 0, 255}},
+                                           {{0, 0, 255, 255}},
+                                           {{128, 0, 127, 255}}};
+      for (unsigned c = 0; c < 4; c++)
+        if (std::abs(int(pixels[(y * 128 + x) * 4 + c]) - colors[quadrant][c]) >
+            1)
+          throw std::runtime_error("Texture GPU readback mismatch");
+    }
+  return 128 * 96;
 }
-void triangle(Renderer &renderer) {
-  const d2::vulkan::Vertex vertices[] = {{{-.7f, .6f, .5f, 1}, {1, 0, 0, 1}},
-                                         {{.7f, .6f, .5f, 1}, {0, 1, 0, 1}},
-                                         {{0, -.6f, .5f, 1}, {0, 0, 1, 1}}};
-  const uint32_t indices[] = {0, 1, 2};
+void texturedQuad(Renderer &renderer) {
+  const d2::vulkan::Vertex vertices[] = {
+      {{-1, -1, .5f, 1}, {1, 1, 1, 1}, {0, 0}},
+      {{1, -1, .5f, 1}, {1, 1, 1, 1}, {1, 0}},
+      {{1, 1, .5f, 1}, {1, 1, 1, 1}, {1, 1}},
+      {{-1, 1, .5f, 1}, {1, 1, 1, 1}, {0, 1}}};
+  const uint32_t indices[] = {0, 1, 2, 0, 2, 3};
+  const uint8_t rgba[] = {255, 0, 0,   255, 0,   255, 0, 255,
+                          255, 0, 255, 0,   255, 0,   0, 128};
   renderer.setGeometry(vertices, indices);
+  renderer.setTexture(2, 2, rgba);
+  d2::vulkan::DrawParameters p;
+  p.clear_color = {0, 0, 1, 1};
+  renderer.setParameters(p);
 }
+bool resized = false, closeRequested = false, wasMinimized = false;
+unsigned sizeEvents = 0, minimizeEvents = 0, restoreEvents = 0;
 std::string jsonString(const std::string &s) {
   std::string out = "\"";
   for (unsigned char c : s) {
@@ -43,14 +58,22 @@ std::string jsonString(const std::string &s) {
   return out + '"';
 }
 #ifdef _WIN32
-bool resized = false;
 LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
   // Keep HWND alive until Vulkan has released the surface and swapchain.
   if (message == WM_SIZE) {
     resized = true;
+    sizeEvents++;
+    if (w == SIZE_MINIMIZED) {
+      minimizeEvents++;
+      wasMinimized = true;
+    } else if (wasMinimized) {
+      restoreEvents++;
+      wasMinimized = false;
+    }
     return 0;
   }
   if (message == WM_CLOSE) {
+    closeRequested = true;
     PostQuitMessage(0);
     return 0;
   }
@@ -64,7 +87,7 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
 } // namespace
 int main(int argc, char **argv) {
   bool selfTest = false, validation = false, vsync = true;
-  unsigned limit = 300;
+  unsigned limit = 0; // Default: remain open until the user closes the window.
   std::string report = "DisgaeaD2-Vulkan-report.json";
   Renderer renderer;
   unsigned frames = 0, colored = 0;
@@ -119,12 +142,12 @@ int main(int argc, char **argv) {
     native = window;
 #endif
     renderer.start(native, validation);
-    triangle(renderer);
+    texturedQuad(renderer);
     if (selfTest) {
       renderer.offscreen(128, 96);
       for (unsigned i = 0; i < 4; i++) {
         renderer.draw();
-        colored = verifyTriangle(renderer);
+        colored = verifyTexture(renderer);
         frames++;
       }
     }
@@ -133,7 +156,7 @@ int main(int argc, char **argv) {
       ShowWindow(window, SW_SHOW);
       renderer.resize(1280, 720, vsync);
       bool quit = false;
-      while (!quit && frames < limit) {
+      while (!quit && (!limit || frames < limit)) {
         MSG message;
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
           if (message.message == WM_QUIT)
@@ -185,7 +208,7 @@ int main(int argc, char **argv) {
     std::cerr << "Could not write Vulkan report\n";
     return 1;
   }
-  file << "{\"schema\":2,\"renderer_stage\":\"vertex-index-buffers\","
+  file << "{\"schema\":3,\"renderer_stage\":\"rgba-textures\","
           "\"validation_enabled\":"
        << (validation ? "true" : "false")
        << ",\"purpose\":\"native-vulkan-foundation\",\"game_"
@@ -197,6 +220,10 @@ int main(int argc, char **argv) {
        << ",\"frames\":" << frames << ",\"colored_readback_pixels\":" << colored
        << ",\"validation_errors\":" << info.validation_errors
        << ",\"present_mode\":" << info.present_mode
+       << ",\"scene\":\"rgba-quadrants\",\"wm_size_events\":" << sizeEvents
+       << ",\"minimize_events\":" << minimizeEvents
+       << ",\"restore_events\":" << restoreEvents
+       << ",\"wm_close_received\":" << (closeRequested ? "true" : "false")
        << ",\"error\":" << jsonString(error) << "}\n";
   std::cout << status << ": " << info.adapter << " frames=" << frames
             << " report=" << report << '\n';

@@ -40,3 +40,15 @@ O teste fornecido pelo usuário passou na NVIDIA GeForce RTX 5070: 300 quadros a
 O teste GPU compara todos os pixels de um quad indexado, um quad não indexado, recortes de viewport/scissor e um frame somente com clear. Essa interface ainda não interpreta atributos, estados, texturas ou shaders RSX. Suporta apenas uma lista de triângulos por quadro com o shader de cor de teste; não deve ser usada como um renderer completo do jogo.
 
 O launcher 0.1.45 salva `graphics_api` (`d3d12`/`vulkan`), migra perfis antigos para `d3d12` e sobrescreve `D2_GRAPHICS_API` herdado. A interface mostra DirectX 12 disponível e Vulkan em implementação, desabilitado. Uma configuração Vulkan editada manualmente bloqueia a abertura com mensagem explícita. O entry point Windows também rejeita Vulkan/valores desconhecidos antes do boot, para impedir que uma escolha não suportada seja silenciosamente ignorada. Somente D3D12 é um backend jogável nesta etapa.
+
+## Etapa 3: texturas RGBA e transparência básica
+
+O usuário executou a etapa 2 na RTX 5070 por 2.414 quadros: status passed, sem erro registrado, validação desabilitada. O relatório antigo não comprovava os eventos de janela.
+
+O renderer agora envia imagens RGBA8 lineares para imagens Vulkan com tiling optimal, usando staging buffer e barreiras UNDEFINED → TRANSFER_DST → SHADER_READ_ONLY. Um descriptor combinado e um sampler nearest/clamp-to-edge alimentam o shader com UVs por vértice. Uma textura branca de 1×1 preserva o caminho de cor sem textura fornecida. Substituição de textura espera o fence anterior; uploads que excedem o prazo retêm os recursos até o encerramento aguardar device idle.
+
+O shader próprio de teste multiplica textura e cor, descarta alpha abaixo de um limiar configurado e usa blend de alpha direto (não pré-multiplicado). Isso não traduz os comparadores, remaps, formatos compactados, swizzle, mipmaps, estados ou programas RSX do jogo. O limite atual é uma textura RGBA8 até 4096×4096, um mip e uma lista de triângulos por quadro; ainda sem depth/stencil.
+
+Os testes GPU verificam todos os pixels de uma textura assimétrica, UV espelhado, alpha zero/parcial, descarte, largura ímpar e substituições repetidas. Pedidos inválidos não substituem a textura anterior. `--validation` habilita também a validação de sincronização Khronos. O probe schema 3 mostra quatro quadrantes e mantém a janela aberta por padrão. Registra mensagens WM_SIZE, minimização/restauração e WM_CLOSE; esses eventos não identificam qual tecla/botão originou o fechamento.
+
+O jogo continua em D3D12. Esta etapa usa apenas shaders e texturas de teste próprios, sem assets do jogo. A seleção Vulkan para jogar permanece desabilitada.

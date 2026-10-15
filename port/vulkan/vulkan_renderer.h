@@ -15,6 +15,7 @@ struct Unavailable : std::runtime_error {
 struct Vertex {
   std::array<float, 4> position;
   std::array<float, 4> color;
+  std::array<float, 2> uv{};
 };
 struct Rect {
   uint32_t x = 0, y = 0, width = 0, height = 0;
@@ -23,6 +24,8 @@ struct DrawParameters {
   std::array<float, 4> clear_color{.03f, .05f, .1f, 1.f};
   // Zero width/height together means full target; nonzero rectangles must fit.
   Rect viewport{}, scissor{};
+  // Negative disables discard; otherwise alpha below this value is discarded.
+  float alpha_cutoff = -1.f;
 };
 struct Info {
   std::string adapter;
@@ -46,6 +49,8 @@ public:
   void setGeometry(std::span<const Vertex>,
                    std::span<const uint32_t> indices = {});
   void setParameters(const DrawParameters &);
+  // Tightly packed linear RGBA8, nearest sampling, clamp-to-edge, one mip.
+  void setTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba);
   bool draw();
   std::vector<uint8_t> readPixels(); // RGBA8; offscreen targets only
   Info info() const;
