@@ -2,6 +2,9 @@
 #ifdef _WIN32
 // clang-format off: bcrypt requires Windows typedefs first.
 #include <windows.h>
+#include <unknwn.h>
+#include <objidl.h>
+#include <oleauto.h>
 #include <bcrypt.h>
 // clang-format on
 #else
