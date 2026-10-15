@@ -43,6 +43,7 @@ jobs:
           & ./DisgaeaD2ShaderProbe.exe
           if ($LASTEXITCODE -ne 0) { throw 'Standalone embedded DXC test failed' }
           Pop-Location
+          Remove-Item -Recurse -Force shader-probe/shader-check
           $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
           if ($leftovers.Count -ne 0) { throw 'Temporary embedded compiler cleanup failed' }
       - uses: actions/upload-artifact@v4
