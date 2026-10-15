@@ -30,6 +30,7 @@
 !/work/RECON.md
 !/port/
 /port/*
+!/port/vulkan/
 !/port/CMakeLists.txt
 !/port/main.cpp
 !/port/stubs.cpp
