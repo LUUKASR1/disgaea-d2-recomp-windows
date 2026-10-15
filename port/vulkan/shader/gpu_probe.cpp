@@ -1,6 +1,7 @@
 #include "compiler.h"
 #include "fixtures.h"
 #include "vulkan_renderer.h"
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -39,10 +40,13 @@ std::array<RsxVertex, 4> quad() {
 }
 struct Checks {
   uint64_t pixels = 0;
-  unsigned cases = 0, validation_errors = 0;
+  unsigned cases = 0, multi_cases = 0, validation_errors = 0;
   std::string adapter;
-  template <class Oracle> void verify(Renderer &r, Oracle expected) {
-    require(r.draw(), "RSX GPU draw failed");
+  template <class Oracle>
+  void verify(Renderer &r, Oracle expected,
+              std::span<const DrawCommand> commands = {}) {
+    require(commands.empty() ? r.draw() : r.draw(commands),
+            "RSX GPU draw failed");
     auto rgba = r.readPixels();
     require(rgba.size() == width * height * 4, "Readback size mismatch");
     for (unsigned y = 0; y < height; y++)
@@ -94,6 +98,15 @@ int main(int argc, char **argv) {
     auto buffered =
         compiler.compile(fixtures::bufferedFragment(), Stage::fragment);
     auto unsupported = compiler.compile(fixtures::vertex(true), Stage::vertex);
+    auto alternate =
+        compiler.compile(fixtures::vertex(false, 1), Stage::vertex);
+    require(std::find(alternate.metadata.inputs.begin(),
+                      alternate.metadata.inputs.end(),
+                      1) != alternate.metadata.inputs.end() &&
+                std::find(alternate.metadata.inputs.begin(),
+                          alternate.metadata.inputs.end(),
+                          0) == alternate.metadata.inputs.end(),
+            "Alternate vertex fixture did not select ATTR1");
     std::array<Row, 514> vc{};
     vc[512] = {1, 1, 1, 1};
     std::array<Row, 2> fc{};
@@ -207,6 +220,123 @@ int main(int argc, char **argv) {
                     [](unsigned, unsigned) { return Pixel{255, 0, 0, 255}; });
       checks.finish(r);
     }
+    {
+      Renderer r;
+      r.start(nullptr, validation);
+      r.setRsxProgram(vs.words, plain.words);
+      require(r.addRsxProgram(vs.words, plain.words) == 0,
+              "Duplicate program not reused");
+      auto textured = r.addRsxProgram(vs.words, tex.words);
+      auto alpha = r.addRsxProgram(alternate.words, buffered.words);
+      require(textured != alpha && textured != 0 && alpha != 0,
+              "Program handle collision");
+      rejected([&] { r.addRsxProgram(unsupported.words, plain.words); });
+      r.offscreen(width, height);
+      rejected([&] { r.addRsxProgram(vs.words, plain.words); });
+      r.setParameters(params);
+      auto multi_geometry = q;
+      for (auto &v : multi_geometry) {
+        v.attributes[1] = v.attributes[0];
+        v.attributes[1][0] *= .5f;
+      }
+      r.setRsxGeometry(multi_geometry, indices);
+      std::array<Row, 514> world{};
+      world[512] = {1, 1, 1, 1};
+      world[513] = {0, 0, .4f, 0}; // Background at z=.9.
+      std::array<Row, 2> color{};
+      r.setRsxConstants(world, color);
+      auto tile = [&](float x, float y, Row rgba, float reference,
+                      bool alternate_position = true) {
+        auto v = world;
+        v[512] = {alternate_position ? 1.f : .5f, .5f, 1, 1};
+        v[513] = {x, y, -.1f, 0}; // Foreground at z=.4.
+        color[0] = rgba;
+        color[1] = {reference, 0, 0, 0};
+        return r.createRsxConstants(v, color);
+      };
+      auto green = tile(-.5f, .5f, {0, 0, 0, 0}, 0, false);
+      auto yellow = tile(.5f, .5f, {1, 1, 0, 1}, .5f);
+      auto cyan = tile(-.5f, -.5f, {0, 1, 1, 1}, .5f);
+      auto invisible = tile(.5f, -.5f, {1, 1, 1, .25f}, .5f);
+      auto translucent = tile(.5f, .5f, {1, 1, 0, .5f}, .25f);
+      const uint8_t green_tex[] = {0, 255, 0, 255};
+      r.setTextureUnit(3, 1, 1, green_tex);
+      std::array<DrawCommand, 5> commands{};
+      for (auto &c : commands) {
+        c.count = 6;
+        c.indexed = true;
+        c.depth = DepthMode::read_write;
+        c.blend = false;
+      }
+      commands[1].rsx_program = textured;
+      commands[1].rsx_constants = green;
+      commands[2].rsx_program = alpha;
+      commands[2].rsx_constants = yellow;
+      commands[3].rsx_program = alpha;
+      commands[3].rsx_constants = cyan;
+      commands[4].rsx_program = alpha;
+      commands[4].rsx_constants = invisible;
+      auto oracle = [](unsigned x, unsigned y) {
+        if (y < 24)
+          return x < 32 ? Pixel{0, 255, 0, 255} : Pixel{255, 255, 0, 255};
+        return x < 32 ? Pixel{0, 255, 255, 255} : Pixel{255, 0, 0, 255};
+      };
+      auto verify = [&](auto expected) {
+        checks.verify(r, expected, commands);
+        checks.multi_cases++;
+      };
+      verify(oracle);
+      std::reverse(commands.begin(), commands.end());
+      verify(oracle); // Depth must survive switches, even with background
+                      // submitted last.
+      std::reverse(commands.begin(), commands.end());
+      world[512] = {.5f, .5f, 1, 1};
+      world[513] = {.5f, -.5f, .4f, 0};
+      r.setRsxConstants(
+          world, color); // Only default 0 changes; snapshots remain intact.
+      verify(oracle);
+      world[512] = {1, 1, 1, 1};
+      world[513] = {0, 0, .4f, 0};
+      r.setRsxConstants(world, color);
+      const uint8_t magenta[] = {255, 0, 255, 255};
+      r.setTextureUnit(3, 1, 1, magenta);
+      auto replaced = [&](unsigned x, unsigned y) {
+        return y < 24 && x < 32 ? Pixel{255, 0, 255, 255} : oracle(x, y);
+      };
+      verify(replaced);
+      commands[2].rsx_constants = translucent;
+      commands[2].blend = true;
+      verify([&](unsigned x, unsigned y) {
+        return y < 24 && x >= 32 ? Pixel{255, 128, 0, 255} : replaced(x, y);
+      });
+      commands[2].blend = false;
+      verify([&](unsigned x, unsigned y) {
+        return y < 24 && x >= 32 ? Pixel{255, 255, 0, 128} : replaced(x, y);
+      });
+      commands[2].rsx_constants = yellow;
+      auto short_constants =
+          r.createRsxConstants(world, std::span<const Row>(color).first(1));
+      auto previous = r.readPixels();
+      auto bad = commands;
+      bad.back().rsx_program = UINT32_MAX;
+      rejected([&] { r.draw(bad); });
+      bad = commands;
+      bad.back().rsx_constants = UINT32_MAX;
+      rejected([&] { r.draw(bad); });
+      bad = commands;
+      bad.back().rsx_constants = short_constants;
+      rejected([&] { r.draw(bad); });
+      require(r.readPixels() == previous,
+              "Rejected draw list changed the target");
+      verify(replaced);
+      // Fill the bounded pool; rejection must preserve already captured states.
+      for (unsigned i = short_constants + 1; i < 64; i++)
+        require(r.createRsxConstants(world, color) == i,
+                "Snapshot handle not stable");
+      rejected([&] { r.createRsxConstants(world, color); });
+      verify(replaced);
+      checks.finish(r);
+    }
   } catch (const Unavailable &e) {
     error = e.what();
     code = 77;
@@ -217,7 +347,7 @@ int main(int argc, char **argv) {
   try {
     std::filesystem::create_directories(output);
     std::ofstream report(output / "rsx-gpu-report.json");
-    report << "{\"schema\":1,\"purpose\":\"synthetic-rsx-gpu-execution\","
+    report << "{\"schema\":2,\"purpose\":\"synthetic-rsx-gpu-execution\","
               "\"status\":\""
            << (code == 0    ? "passed"
                : code == 77 ? "unavailable"
@@ -227,6 +357,8 @@ int main(int argc, char **argv) {
            << (validation ? "true" : "false")
            << ",\"validation_errors\":" << checks.validation_errors
            << ",\"cases_passed\":" << checks.cases
+           << ",\"per_draw_cases_passed\":" << checks.multi_cases
+           << ",\"renderer_stage\":\"per-draw-programs-and-constants\""
            << ",\"pixels_verified\":" << checks.pixels << "}\n";
     std::ofstream(output / "adapter.txt") << checks.adapter << '\n';
     if (!error.empty())

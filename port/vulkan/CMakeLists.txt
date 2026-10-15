@@ -19,6 +19,11 @@ add_executable(DisgaeaD2VulkanProbe vulkan_probe.cpp)
 target_link_libraries(DisgaeaD2VulkanProbe PRIVATE d2_vulkan)
 target_compile_definitions(DisgaeaD2VulkanProbe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 if(WIN32)
+    # Syntax-check the independent example without requiring a Vulkan import lib
+    # on hosted CI. Applications using it must link vulkan-1.lib themselves.
+    add_library(d2_win32_init_example OBJECT examples/win32_init_compile.cpp)
+    target_compile_features(d2_win32_init_example PRIVATE cxx_std_20)
+    target_link_libraries(d2_win32_init_example PRIVATE Vulkan::Headers)
     target_compile_definitions(d2_vulkan PRIVATE VK_USE_PLATFORM_WIN32_KHR)
     target_link_libraries(DisgaeaD2VulkanProbe PRIVATE user32)
     if(MSVC)

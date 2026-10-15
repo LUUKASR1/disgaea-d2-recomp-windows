@@ -160,14 +160,22 @@ class Renderer::Impl {
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
   };
-  std::array<Uniform, 2> uniforms{};
+  struct Constants {
+    std::array<Uniform, 2> uniforms{};
+    std::array<VkDescriptorSet, 2> sets{};
+    bool ready = false;
+    uint32_t fragment_bytes = 0;
+  };
+  struct Program {
+    std::vector<uint32_t> vertex, fragment;
+    RsxContract vs_contract, fp_contract;
+    std::array<VkPipeline, 6> pipelines{};
+  };
+  std::vector<Program> programs;
+  std::vector<Constants> constant_states;
   std::array<VkDescriptorSetLayout, 2> rsx_layouts{};
-  std::array<VkDescriptorSet, 2> rsx_sets{};
   VkDescriptorPool rsx_pool = VK_NULL_HANDLE;
-  std::vector<uint32_t> rsx_vertex, rsx_fragment;
-  bool rsx_constants_ready = false;
-  RsxContract rsx_vs_contract, rsx_fp_contract;
-  bool rsxMode() const { return !rsx_vertex.empty(); }
+  bool rsxMode() const { return !programs.empty(); }
   VkBuffer staging = VK_NULL_HANDLE;
   VkDeviceMemory staging_memory = VK_NULL_HANDLE;
   bool texture_ready = false;
@@ -199,15 +207,16 @@ class Renderer::Impl {
         return i;
     throw std::runtime_error("Required Vulkan memory type unavailable");
   }
-  void makePipeline() {
+  void makePipeline(Program *program = nullptr) {
     VkShaderModuleCreateInfo shader{
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    shader.codeSize = rsxMode() ? rsx_vertex.size() * 4 : sizeof(triangle_vert);
-    shader.pCode = rsxMode() ? rsx_vertex.data() : triangle_vert;
+    shader.codeSize =
+        rsxMode() ? program->vertex.size() * 4 : sizeof(triangle_vert);
+    shader.pCode = rsxMode() ? program->vertex.data() : triangle_vert;
     OK(vkCreateShaderModule(device, &shader, nullptr, &vert));
     shader.codeSize =
-        rsxMode() ? rsx_fragment.size() * 4 : sizeof(triangle_frag);
-    shader.pCode = rsxMode() ? rsx_fragment.data() : triangle_frag;
+        rsxMode() ? program->fragment.size() * 4 : sizeof(triangle_frag);
+    shader.pCode = rsxMode() ? program->fragment.data() : triangle_frag;
     OK(vkCreateShaderModule(device, &shader, nullptr, &frag));
     VkPipelineLayoutCreateInfo lc{
         VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -216,7 +225,8 @@ class Renderer::Impl {
     VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float)};
     lc.pushConstantRangeCount = rsxMode() ? 0 : 1;
     lc.pPushConstantRanges = &push;
-    OK(vkCreatePipelineLayout(device, &lc, nullptr, &layout));
+    if (!layout)
+      OK(vkCreatePipelineLayout(device, &lc, nullptr, &layout));
     VkPipelineShaderStageCreateInfo stages[2]{};
     for (auto &s : stages) {
       s.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -238,13 +248,14 @@ class Renderer::Impl {
     vertex.vertexBindingDescriptionCount = 1;
     vertex.pVertexBindingDescriptions = &binding;
     std::array<VkVertexInputAttributeDescription, 16> rsx_attributes{};
-    for (uint32_t i = 0; i < rsx_vs_contract.inputs.size(); i++) {
-      auto location = rsx_vs_contract.inputs[i];
-      rsx_attributes[i] = {location, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
-                           location * 16};
-    }
+    if (program)
+      for (uint32_t i = 0; i < program->vs_contract.inputs.size(); i++) {
+        auto location = program->vs_contract.inputs[i];
+        rsx_attributes[i] = {location, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
+                             location * 16};
+      }
     vertex.vertexAttributeDescriptionCount =
-        rsxMode() ? uint32_t(rsx_vs_contract.inputs.size()) : 3;
+        program ? uint32_t(program->vs_contract.inputs.size()) : 3;
     vertex.pVertexAttributeDescriptions =
         rsxMode() ? rsx_attributes.data() : attributes;
     VkPipelineInputAssemblyStateCreateInfo assembly{
@@ -298,13 +309,14 @@ class Renderer::Impl {
         VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     pc.pDepthStencilState = &ds;
+    auto &destination = program ? program->pipelines : pipelines;
     for (unsigned mode = 0; mode < 3; mode++)
       for (unsigned alpha = 0; alpha < 2; alpha++) {
         ds.depthTestEnable = mode != 0;
         ds.depthWriteEnable = mode == 2;
         attachment.blendEnable = alpha;
         OK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pc, nullptr,
-                                     &pipelines[mode * 2 + alpha]));
+                                     &destination[mode * 2 + alpha]));
       }
     vkDestroyShaderModule(device, vert, nullptr);
     vkDestroyShaderModule(device, frag, nullptr);
@@ -366,7 +378,11 @@ class Renderer::Impl {
     rp.dependencyCount = 2;
     rp.pDependencies = deps;
     OK(vkCreateRenderPass(device, &rp, nullptr, &pass));
-    makePipeline();
+    if (rsxMode()) {
+      for (auto &program : programs)
+        makePipeline(&program);
+    } else
+      makePipeline();
     for (VkImage image : images) {
       depths.emplace_back();
       auto &target = depths.back();
@@ -430,11 +446,16 @@ class Renderer::Impl {
     for (auto s : finished)
       vkDestroySemaphore(device, s, nullptr);
     finished.clear();
-    for (auto &pipeline : pipelines) {
-      if (pipeline)
-        vkDestroyPipeline(device, pipeline, nullptr);
-      pipeline = VK_NULL_HANDLE;
-    }
+    auto destroyPipelines = [this](auto &list) {
+      for (auto &pipeline : list) {
+        if (pipeline)
+          vkDestroyPipeline(device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+      }
+    };
+    destroyPipelines(pipelines);
+    for (auto &program : programs)
+      destroyPipelines(program.pipelines);
     for (auto &d : depths) {
       if (d.view)
         vkDestroyImageView(device, d.view, nullptr);
@@ -473,12 +494,13 @@ public:
       for (auto l : rsx_layouts)
         if (l)
           vkDestroyDescriptorSetLayout(device, l, nullptr);
-      for (auto &u : uniforms) {
-        if (u.buffer)
-          vkDestroyBuffer(device, u.buffer, nullptr);
-        if (u.memory)
-          vkFreeMemory(device, u.memory, nullptr);
-      }
+      for (auto &state : constant_states)
+        for (auto &u : state.uniforms) {
+          if (u.buffer)
+            vkDestroyBuffer(device, u.buffer, nullptr);
+          if (u.memory)
+            vkFreeMemory(device, u.memory, nullptr);
+        }
       for (auto &t : textures)
         releaseTexture(t);
       if (sampler)
@@ -900,7 +922,6 @@ public:
     VkWriteDescriptorSet writes[2]{};
     for (auto &w : writes) {
       w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      w.dstSet = rsx_sets[1];
       w.descriptorCount = 16;
     }
     writes[0].dstBinding = 32;
@@ -909,18 +930,19 @@ public:
     writes[1].dstBinding = 64;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
     writes[1].pImageInfo = samplers.data();
-    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    for (auto &state : constant_states) {
+      if (!state.sets[1])
+        continue;
+      for (auto &write : writes)
+        write.dstSet = state.sets[1];
+      vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    }
   }
   void setRsxProgram(std::span<const uint32_t> v, std::span<const uint32_t> f) {
     if (!device || pass || geometry || rsx_pool)
       throw std::runtime_error(
           "Install one RSX program before targets/geometry");
-    auto vs_contract = validateRsxModule(v, false);
-    auto fp_contract = validateRsxModule(f, true);
-    for (auto input : fp_contract.inputs)
-      if (std::find(vs_contract.outputs.begin(), vs_contract.outputs.end(),
-                    input) == vs_contract.outputs.end())
-        throw std::runtime_error("RSX varying missing from vertex program");
+    auto program = checkedProgram(v, f);
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VkDescriptorSetLayoutBinding vs{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
                                     VK_SHADER_STAGE_VERTEX_BIT, nullptr};
@@ -939,37 +961,74 @@ public:
     dl.bindingCount = 3;
     dl.pBindings = ps;
     OK(vkCreateDescriptorSetLayout(device, &dl, nullptr, &rsx_layouts[1]));
-    VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
-                                    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 16},
-                                    {VK_DESCRIPTOR_TYPE_SAMPLER, 16}};
+    VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 128},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};
     VkDescriptorPoolCreateInfo dp{
         VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dp.maxSets = 2;
+    dp.maxSets = 128;
     dp.poolSizeCount = 3;
     dp.pPoolSizes = sizes;
     OK(vkCreateDescriptorPool(device, &dp, nullptr, &rsx_pool));
+    allocateConstants(); // Default state 0, intentionally not ready yet.
+    programs.push_back(std::move(program));
+  }
+  Program checkedProgram(std::span<const uint32_t> v,
+                         std::span<const uint32_t> f) {
+    auto vs_contract = validateRsxModule(v, false);
+    auto fp_contract = validateRsxModule(f, true);
+    for (auto input : fp_contract.inputs)
+      if (std::find(vs_contract.outputs.begin(), vs_contract.outputs.end(),
+                    input) == vs_contract.outputs.end())
+        throw std::runtime_error("RSX varying missing from vertex program");
+    return {{v.begin(), v.end()},
+            {f.begin(), f.end()},
+            std::move(vs_contract),
+            std::move(fp_contract),
+            {}};
+  }
+  uint32_t addRsxProgram(std::span<const uint32_t> v,
+                         std::span<const uint32_t> f) {
+    if (!device || !rsxMode() || pass)
+      throw std::runtime_error("Register RSX programs before target creation");
+    auto program = checkedProgram(v, f);
+    for (uint32_t i = 0; i < programs.size(); i++)
+      if (programs[i].vertex == program.vertex &&
+          programs[i].fragment == program.fragment)
+        return i;
+    if (programs.size() >= 32)
+      throw std::runtime_error("RSX program limit reached");
+    programs.push_back(std::move(program));
+    return uint32_t(programs.size() - 1);
+  }
+  uint32_t allocateConstants() {
+    if (constant_states.size() >= 64)
+      throw std::runtime_error("RSX constant snapshot limit reached");
+    constant_states.emplace_back();
+    auto &state = constant_states.back();
     VkDescriptorSetAllocateInfo da{
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     da.descriptorPool = rsx_pool;
     da.descriptorSetCount = 2;
     da.pSetLayouts = rsx_layouts.data();
-    OK(vkAllocateDescriptorSets(device, &da, rsx_sets.data()));
+    OK(vkAllocateDescriptorSets(device, &da, state.sets.data()));
     for (unsigned i = 0; i < 2; i++) {
       VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
       bc.size = i ? 16384 : 8224;
       bc.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-      OK(vkCreateBuffer(device, &bc, nullptr, &uniforms[i].buffer));
+      OK(vkCreateBuffer(device, &bc, nullptr, &state.uniforms[i].buffer));
       VkMemoryRequirements req{};
-      vkGetBufferMemoryRequirements(device, uniforms[i].buffer, &req);
+      vkGetBufferMemoryRequirements(device, state.uniforms[i].buffer, &req);
       VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
       ai.allocationSize = req.size;
       ai.memoryTypeIndex =
           memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-      OK(vkAllocateMemory(device, &ai, nullptr, &uniforms[i].memory));
-      OK(vkBindBufferMemory(device, uniforms[i].buffer, uniforms[i].memory, 0));
-      VkDescriptorBufferInfo bi{uniforms[i].buffer, 0, bc.size};
+      OK(vkAllocateMemory(device, &ai, nullptr, &state.uniforms[i].memory));
+      OK(vkBindBufferMemory(device, state.uniforms[i].buffer,
+                            state.uniforms[i].memory, 0));
+      VkDescriptorBufferInfo bi{state.uniforms[i].buffer, 0, bc.size};
       VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-      w.dstSet = rsx_sets[i];
+      w.dstSet = state.sets[i];
       w.dstBinding = i ? 1 : 0;
       w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
       w.descriptorCount = 1;
@@ -977,37 +1036,56 @@ public:
       vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
     }
     updateRsxTextures();
-    rsx_vs_contract = std::move(vs_contract);
-    rsx_fp_contract = std::move(fp_contract);
-    rsx_vertex.assign(v.begin(), v.end());
-    rsx_fragment.assign(f.begin(), f.end());
+    return uint32_t(constant_states.size() - 1);
   }
-  void setRsxConstants(std::span<const std::array<float, 4>> v,
-                       std::span<const std::array<float, 4>> f) {
+  void validateConstants(std::span<const std::array<float, 4>> v,
+                         std::span<const std::array<float, 4>> f) {
     if (!device || !rsxMode() || v.size() != 514 || f.empty() ||
-        f.size() > 1024 || f.size_bytes() < rsx_fp_contract.uniform_bytes)
+        f.size() > 1024)
       throw std::runtime_error("Invalid RSX constant buffer sizes");
     for (auto rows : {v, f})
       for (auto &row : rows)
         for (float c : row)
           if (!std::isfinite(c))
             throw std::runtime_error("Nonfinite RSX constant");
+  }
+  void setRsxConstants(std::span<const std::array<float, 4>> v,
+                       std::span<const std::array<float, 4>> f) {
+    validateConstants(v, f);
+    if (f.size_bytes() < programs[0].fp_contract.uniform_bytes)
+      throw std::runtime_error(
+          "FP constants shorter than default program layout");
+    writeConstants(0, v, f);
+  }
+  uint32_t createRsxConstants(std::span<const std::array<float, 4>> v,
+                              std::span<const std::array<float, 4>> f) {
+    validateConstants(v, f);
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-    rsx_constants_ready = false;
+    auto handle = allocateConstants();
+    writeConstants(handle, v, f);
+    return handle;
+  }
+  void writeConstants(uint32_t handle, std::span<const std::array<float, 4>> v,
+                      std::span<const std::array<float, 4>> f) {
+    auto &state = constant_states.at(handle);
+    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    state.ready = false;
     for (unsigned i = 0; i < 2; i++) {
       auto rows = i ? f : v;
       void *mapped = nullptr;
-      OK(vkMapMemory(device, uniforms[i].memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+      OK(vkMapMemory(device, state.uniforms[i].memory, 0, VK_WHOLE_SIZE, 0,
+                     &mapped));
       std::memset(mapped, 0, i ? 16384 : 8224);
       std::memcpy(mapped, rows.data(), rows.size_bytes());
       VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
-      range.memory = uniforms[i].memory;
+      range.memory = state.uniforms[i].memory;
       range.size = VK_WHOLE_SIZE;
       auto result = vkFlushMappedMemoryRanges(device, 1, &range);
-      vkUnmapMemory(device, uniforms[i].memory);
+      vkUnmapMemory(device, state.uniforms[i].memory);
       check(result, "RSX constant buffer flush");
     }
-    rsx_constants_ready = true;
+    state.fragment_bytes = uint32_t(f.size_bytes());
+    state.ready = true;
   }
   void offscreen(uint32_t w, uint32_t h) {
     if (!device || owned_image || surface || !w || !h || w > 4096 || h > 4096)
@@ -1226,8 +1304,7 @@ public:
   bool draw(std::span<const DrawCommand> commands) {
     if (commands.size() > 4096)
       throw std::runtime_error("Too many draw commands");
-    if (!device || framebuffers.empty() || !texture_ready ||
-        (rsxMode() && !rsx_constants_ready))
+    if (!device || framebuffers.empty() || !texture_ready)
       throw std::runtime_error("Render target unavailable");
     auto rect = [this](Rect r) {
       if (!r.width && !r.height && !r.x && !r.y)
@@ -1245,6 +1322,18 @@ public:
           c.alpha_cutoff < -1 || c.alpha_cutoff > 1 ||
           (rsxMode() && c.alpha_cutoff != -1))
         throw std::runtime_error("Invalid draw command range/state");
+      if (rsxMode()) {
+        if (c.rsx_program >= programs.size() ||
+            c.rsx_constants >= constant_states.size())
+          throw std::runtime_error("Unknown RSX draw handle");
+        auto &state = constant_states[c.rsx_constants];
+        if (!state.ready ||
+            state.fragment_bytes <
+                programs[c.rsx_program].fp_contract.uniform_bytes)
+          throw std::runtime_error(
+              "RSX draw constants unavailable or too short");
+      } else if (c.rsx_program || c.rsx_constants)
+        throw std::runtime_error("RSX handles in legacy draw");
       rect(c.viewport);
       rect(c.scissor);
     }
@@ -1279,14 +1368,21 @@ public:
     rp.clearValueCount = 2;
     rp.pClearValues = clear;
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindDescriptorSets(
-        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, rsxMode() ? 2 : 1,
-        rsxMode() ? rsx_sets.data() : &texture_set, 0, nullptr);
+    if (!rsxMode())
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0,
+                              1, &texture_set, 0, nullptr);
     for (const auto &c : commands) {
       if (!c.count)
         continue;
-      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        pipelines[uint32_t(c.depth) * 2 + unsigned(c.blend)]);
+      auto &draw_pipelines =
+          rsxMode() ? programs[c.rsx_program].pipelines : pipelines;
+      vkCmdBindPipeline(
+          cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+          draw_pipelines[uint32_t(c.depth) * 2 + unsigned(c.blend)]);
+      if (rsxMode())
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0,
+                                2, constant_states[c.rsx_constants].sets.data(),
+                                0, nullptr);
       if (!rsxMode())
         vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(float), &c.alpha_cutoff);
@@ -1425,5 +1521,13 @@ void Renderer::setRsxGeometry(std::span<const RsxVertex> v,
 void Renderer::setRsxConstants(std::span<const std::array<float, 4>> v,
                                std::span<const std::array<float, 4>> f) {
   impl_->setRsxConstants(v, f);
+}
+uint32_t Renderer::addRsxProgram(std::span<const uint32_t> v,
+                                 std::span<const uint32_t> f) {
+  return impl_->addRsxProgram(v, f);
+}
+uint32_t Renderer::createRsxConstants(std::span<const std::array<float, 4>> v,
+                                      std::span<const std::array<float, 4>> f) {
+  return impl_->createRsxConstants(v, f);
 }
 } // namespace d2::vulkan

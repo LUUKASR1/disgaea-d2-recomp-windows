@@ -40,6 +40,9 @@ struct DrawCommand {
   bool blend = true; // Straight alpha; false writes unblended RGBA.
   Rect viewport{}, scissor{};
   float alpha_cutoff = -1.f;
+  // Renderer-local immutable program/constant snapshot handles; zero is
+  // default.
+  uint32_t rsx_program = 0, rsx_constants = 0;
 };
 struct Info {
   std::string adapter;
@@ -63,10 +66,20 @@ public:
   void setGeometry(std::span<const Vertex>,
                    std::span<const uint32_t> indices = {});
   // Trusted SPIR-V from the audited compiler only. Install before creating a
-  // target; immutable until close. VS: set0/b0, FP: set1/b1,t0[16],s0[16].
+  // target. Programs remain immutable until close. VS: set0/b0,
+  // FP: set1/b1,t0[16],s0[16].
   // This bounded contract does not support vertex textures, MRT or game replay.
   void setRsxProgram(std::span<const uint32_t> vertex,
                      std::span<const uint32_t> fragment);
+  // Register before target creation. Exact duplicate modules reuse a handle.
+  // Bounded to 32 distinct programs per renderer.
+  uint32_t addRsxProgram(std::span<const uint32_t> vertex,
+                         std::span<const uint32_t> fragment);
+  // Capture constants in independent GPU buffers, so different draws in the
+  // same submission cannot overwrite each other's values. At most 64 snapshots
+  // including mutable default 0. Textures remain renderer-global in this stage.
+  uint32_t createRsxConstants(std::span<const std::array<float, 4>> vertex,
+                              std::span<const std::array<float, 4>> fragment);
   void setRsxGeometry(std::span<const RsxVertex>,
                       std::span<const uint32_t> indices = {});
   // VS requires exactly 514 float4 rows (512 constants + scale + offset).

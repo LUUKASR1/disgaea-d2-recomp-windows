@@ -20,9 +20,10 @@ void word(std::vector<uint8_t> &bytes, size_t offset, uint32_t value,
     for (unsigned n = 0; n < 4; n++)
       bytes[offset + n] = uint8_t(value >> (8 * n));
 }
-std::string vertex(bool texture) {
+std::string vertex(bool texture, unsigned position_attribute) {
+  require(position_attribute < 16, "Invalid synthetic position attribute");
   std::vector<uint8_t> code(48);
-  // MOV o0, ATTR0; MOV o1, ATTR3; MOV o7, ATTR8 (TEXCOORD0).
+  // MOV o0, selected ATTR; MOV o1, ATTR3; MOV o7, ATTR8 (TEXCOORD0).
   const uint32_t source = 2 | (3 << 8) | (2 << 10) | (1 << 12);
   for (unsigned n = 0; n < 3; n++) {
     word(code, n * 16, (1u << 30) | (0x3fu << 15), false);
@@ -30,7 +31,7 @@ std::string vertex(bool texture) {
          ((n == 1 && texture ? 25u : 1u) << 22) |
              ((n == 2 ? 8u
                : n    ? 3u
-                      : 0u)
+                      : position_attribute)
               << 8) |
              (source >> 9),
          false);
