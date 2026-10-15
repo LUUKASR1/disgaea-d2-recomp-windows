@@ -1,0 +1,59 @@
+name: Vulkan RSX shader compiler
+on:
+  push:
+    paths: ['port/vulkan/shader/**', 'port/vulkan/CMakeLists.txt', '.github/workflows/vulkan-shaders.yml']
+  pull_request:
+    paths: ['port/vulkan/shader/**', 'port/vulkan/CMakeLists.txt', '.github/workflows/vulkan-shaders.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/bootstrap_windows.py shader-sdk
+      - run: cmake -S port/vulkan -B build-shader -DD2_VULKAN_SHADER_COMPILER=ON -DD2_RSX_SDK_DIR=${{ github.workspace }}/shader-sdk -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-shader --config Release --target DisgaeaD2ShaderProbe --parallel 2
+      - run: ctest --test-dir build-shader -C Release -R rsx_hlsl --output-on-failure
+      - name: Independently validate emitted SPIR-V
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y spirv-tools
+          for file in build-shader/shader-check/*.spv; do spirv-val --target-env vulkan1.1 "$file"; done
+      - name: Package single-executable Windows shader checker and required licenses
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory shader-probe
+          Copy-Item build-shader/Release/DisgaeaD2ShaderProbe.exe shader-probe/
+          Copy-Item port/vulkan/shader/README.md shader-probe/
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt shader-probe/
+          Copy-Item shader-sdk/LICENSE shader-probe/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location shader-probe
+          & ./DisgaeaD2ShaderProbe.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone embedded DXC test failed' }
+          Pop-Location
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Temporary embedded compiler cleanup failed' }
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-RSX-Shader-Probe-Windows-x64
+          path: shader-probe/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shader-compilation-report-${{ matrix.os }}
+          path: |
+            build-shader/shader-check/
+            build-shader/Testing/Temporary/LastTest.log

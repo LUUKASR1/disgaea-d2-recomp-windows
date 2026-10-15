@@ -64,3 +64,15 @@ Cada imagem de apresentação agora tem um depth target próprio (D32 float, com
 Os testes offscreen conferem todos os pixels ao inverter a ordem de objetos opacos, alternar escrita de profundidade, sobrepor uma interface sem depth test, mudar clear depth e descartar fragmentos transparentes antes que escrevam profundidade. Também verificam que uma lista inválida não é parcialmente submetida e que a cena seguinte se recupera.
 
 O probe schema 4 apresenta fundo vermelho, objeto verde no centro e overlay azul no canto superior esquerdo. A ordem dos dois primeiros desenhos alterna a cada 120 quadros, sem mudar a imagem. Antes da janela Win32, outro renderer offscreen confere quatro quadros de 128×96 pixels e registra o adaptador usado nesse preflight separadamente. O jogo continua em Direct3D 12; shaders, texturas/formatos e estados RSX ainda exigem integração.
+
+## Etapa 5: compilação RSX → HLSL → SPIR-V
+
+O relatório do usuário confirmou o preflight de 12.288 pixels na RTX 5070, seguido de 2.105 quadros apresentados e WM_CLOSE sem erro registrado, validação desabilitada.
+
+`shader/compiler.cpp` implementa uma biblioteca C++ que compila em memória a saída dos decompiladores auditados, usando DXC v1.8.2505.1 com checksums fixados. No Windows, o verificador inclui o DLL como recurso do próprio EXE, extrai em pasta temporária exclusiva e carrega pelo caminho completo com busca restrita. Descarrega e remove a cópia ao encerrar normalmente; encerramento forçado pode deixar a pasta. As licenças do DXC e do SDK acompanham o artefato. Não exige SDK ou ferramentas instaladas pelo usuário.
+
+O modo HLSL 2018 mantém as condições vetoriais usadas pela saída existente. Compila para Vulkan 1.1/SPIR-V, com inversão de Y no vertex shader. Define ATTR0…15 em locations 0…15, COLOR0/1 em 0/1, FOG em 2 e TEXCOORD0…7 em 3…10. Separa vertex/fragment nos descriptor sets 0/1; cbuffers usam binding bN, texturas 32+tN, samplers 64+sN e UAVs 96+uN. Arrays continuam arrays de descriptors; estes números não são contagens de descritores. Um leitor limitado de metadados SPIR-V confere locations e colisões; ele não substitui o validador SPIR-V completo.
+
+O teste compila sete módulos próprios a partir de programas RSX sintéticos e HLSL de teste: vertex MOV, vertex TXL, fragment MOV, fragment TEX, constantes/alpha em buffer, espaços de recursos e recuperação após código inválido. Não inclui shaders ou assets do jogo. A CI Linux valida cada módulo também com `spirv-val`. A CI Windows testa o EXE sozinho em uma pasta separada e confere a limpeza temporária do DXC.
+
+Para desenvolvedores: configure com `-DD2_VULKAN_SHADER_COMPILER=ON -DD2_RSX_SDK_DIR=<SDK auditado>`. O alvo `DisgaeaD2ShaderProbe` gera `shader-check/shader-report.json` e módulos de teste. O compilador permanece opcional e separado do probe de renderização. **Ainda não cria pipelines gráficos a partir desses shaders, não conecta seus descriptors/constantes ao renderer e não testa shaders reais do Disgaea.** A seleção Vulkan para jogar continua desabilitada.
