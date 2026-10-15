@@ -2,6 +2,8 @@
 
 Este executável testa o novo backend Vulkan. **Ainda não executa o jogo.** O launcher do jogo continua usando Direct3D 12.
 
+Etapa atual: renderer reutilizável com buffers reais de vértices e índices, desenho indexado/não indexado, viewport, scissor e limpeza de cor. O triângulo agora usa esses buffers, em vez de gerar vértices dentro do shader. O relatório schema 2 inclui `renderer_stage: vertex-index-buffers` e informa se a validação estava habilitada.
+
 1. Extraia o ZIP em uma pasta gravável.
 2. Abra `DisgaeaD2VulkanProbe.exe`.
 3. Deve aparecer um triângulo colorido sobre fundo escuro. A janela fecha automaticamente após 300 quadros. Para testar redimensionamento e Alt+F4 com mais tempo, execute `DisgaeaD2VulkanProbe.exe --frames 10000` pelo terminal.

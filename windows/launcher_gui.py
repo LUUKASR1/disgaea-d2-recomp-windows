@@ -70,6 +70,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     except (OSError, ValueError) as error:
         settings, initial_error = dict(DEFAULTS), str(error)
     resolution = tk.StringVar(value=settings['resolution'])
+    graphics_api = tk.StringVar(value=settings['graphics_api'])
     mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
     refresh_rate = tk.StringVar(value='Nativo' if settings['refresh_rate']=='native' else settings['refresh_rate']+' Hz')
@@ -155,7 +156,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • Experimental', 9, MUTED)
 
     def get_settings():
-        return {'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
+        return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
                 'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
                 'fsr_sharpness': sharpness.get(), 'frame_generation': False,
                 'hud_after_upscale': hud_after_upscale.get()}
@@ -253,6 +254,14 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(page, 'Do seu jeito', 28, bold=True)
     label(page, 'Escolha como o jogo aparece na tela. Aplique antes de jogar.', color=MUTED)
     video = card(page)
+    label(video, 'API gráfica', bold=True)
+    api_dx12 = tk.Radiobutton(video, text='DirectX 12', variable=graphics_api, value='d3d12',
+        bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT)
+    api_dx12.pack(anchor='w'); entries.append(api_dx12)
+    api_vulkan = tk.Radiobutton(video, text='Vulkan — em implementação', variable=graphics_api, value='vulkan',
+        state='disabled', bg=CARD, fg=MUTED, selectcolor=PANEL, disabledforeground=MUTED)
+    api_vulkan.pack(anchor='w', pady=(0, 8))
+    label(video, 'Vulkan será habilitado quando o backend do jogo estiver disponível. O teste de inicialização já funciona.', 10, MUTED)
     label(video, 'Modo de exibição', bold=True)
     mode_combo = ttk.Combobox(video, textvariable=mode, values=('Janela', 'Tela cheia sem bordas'), state='readonly', style='D2.TCombobox', width=32)
     mode_combo.pack(anchor='w', pady=(0, 18)); entries.append(mode_combo)
@@ -303,6 +312,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             messagebox.showerror('Configurações', str(error))
     button(page, 'Salvar configurações', save_video, True)
     def reset():
+        graphics_api.set(DEFAULTS['graphics_api'])
         resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync']); refresh_rate.set('Nativo'); fps_unlimited.set(DEFAULTS['fps_unlimited']); vrr.set(DEFAULTS['vrr'])
         render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
         hud_after_upscale.set(False)

@@ -14,6 +14,21 @@ import launcher
 
 
 class DisplayTests(unittest.TestCase):
+    def test_graphics_api_migration_persistence_and_launch_gate(self):
+        self.assertEqual(display.validate_settings({})['graphics_api'], 'd3d12')
+        inherited = {'D2_GRAPHICS_API': 'vulkan'}
+        self.assertEqual(display.display_environment(inherited, {})['D2_GRAPHICS_API'], 'd3d12')
+        self.assertEqual(inherited['D2_GRAPHICS_API'], 'vulkan')
+        with tempfile.TemporaryDirectory() as home:
+            display.save_settings(home, {'graphics_api': 'vulkan'})
+            selected = display.load_settings(home)
+            self.assertEqual(selected['graphics_api'], 'vulkan')
+            with self.assertRaisesRegex(ValueError, 'em implementação'):
+                display.display_environment({}, selected)
+        for invalid in ('', 'opengl', None, True, 12):
+            with self.assertRaises(ValueError):
+                display.validate_settings({'graphics_api': invalid})
+
     def test_refresh_choices_and_unlimited_environment(self):
         migrated=display.validate_settings({'maximum_refresh':True})
         self.assertEqual(migrated['refresh_rate'],'native')

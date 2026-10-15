@@ -6,8 +6,9 @@ import math
 
 RESOLUTIONS = ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')
 REFRESH_RATES = ('native', '60', '75', '120', '144', '165', '180')
+GRAPHICS_APIS = {'d3d12': 'DirectX 12', 'vulkan': 'Vulkan'}
 RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
-DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
+DEFAULTS = {'graphics_api': 'd3d12', 'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
             'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
             'hud_after_upscale': False, 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
 
@@ -16,6 +17,8 @@ def validate_settings(value):
     if not isinstance(value, dict):
         raise ValueError('Configurações de vídeo inválidas.')
     result = {name: value.get(name, default) for name, default in DEFAULTS.items()}
+    if not isinstance(result['graphics_api'], str) or result['graphics_api'] not in GRAPHICS_APIS:
+        raise ValueError('API gráfica inválida. Selecione DirectX 12 ou Vulkan.')
     if result['resolution'] not in RESOLUTIONS:
         raise ValueError('Selecione uma resolução da lista.')
     if result['mode'] not in ('windowed', 'borderless'):
@@ -71,6 +74,9 @@ def save_settings(home, value):
 def display_environment(inherited, settings):
     env = inherited.copy()
     value = validate_settings(settings)
+    if value['graphics_api'] == 'vulkan':
+        raise ValueError('O backend Vulkan do jogo ainda está em implementação. Selecione DirectX 12 para jogar.')
+    env['D2_GRAPHICS_API'] = value['graphics_api']
     env['D2_PRESENT_INTERVAL'] = '1' if value['vsync'] else '0'
     rw, rh = ('1280x720' if value['render_resolution'] == 'native' else value['render_resolution']).split('x')
     ow, oh = value['resolution'].split('x')

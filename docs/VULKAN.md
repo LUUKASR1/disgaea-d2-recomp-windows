@@ -30,3 +30,13 @@ ctest --test-dir build-vulkan -C Release --output-on-failure
 Para usar headers locais, passe `-DD2_VULKAN_HEADERS_DIR=caminho`. Para recompilar os shaders, instale `glslangValidator` e `spirv-val` e execute `python port/vulkan/generate_shaders.py`. O teste `--self-test --validation` exige `VK_LAYER_KHRONOS_validation` instalada. O fluxo `.github/workflows/vulkan.yml` gera o probe Windows separado da build jogável.
 
 Limites desta primeira implementação: uma fila que suporte gráficos e apresentação, uma submissão gráfica por vez, nenhuma tradução RSX, nenhum asset do jogo. O renderer foi mantido independente para que falhas experimentais não alterem o jogo funcional.
+
+## Etapa 2: renderer reutilizável e seleção de API
+
+O teste fornecido pelo usuário passou na NVIDIA GeForce RTX 5070: 300 quadros apresentados em janela, FIFO/V-Sync. A camada de validação estava desativada nesse teste; redimensionamento e fechamento não foram confirmados pelo relatório.
+
+`d2_vulkan` agora é uma biblioteca separada, com interface pública em `vulkan_renderer.h`. Recebe vértices em clip space e índices de 32 bits via buffers Vulkan reais. Expõe desenho indexado/não indexado, clear, viewport, scissor e leitura RGBA8 para testes offscreen. O envio de geometria espera a conclusão da submissão anterior antes de substituir a memória. Dados inválidos são rejeitados antes de gravar buffers; o teste verifica recuperação e preservação da geometria anterior.
+
+O teste GPU compara todos os pixels de um quad indexado, um quad não indexado, recortes de viewport/scissor e um frame somente com clear. Essa interface ainda não interpreta atributos, estados, texturas ou shaders RSX. Suporta apenas uma lista de triângulos por quadro com o shader de cor de teste; não deve ser usada como um renderer completo do jogo.
+
+O launcher 0.1.45 salva `graphics_api` (`d3d12`/`vulkan`), migra perfis antigos para `d3d12` e sobrescreve `D2_GRAPHICS_API` herdado. A interface mostra DirectX 12 disponível e Vulkan em implementação, desabilitado. Uma configuração Vulkan editada manualmente bloqueia a abertura com mensagem explícita. O entry point Windows também rejeita Vulkan/valores desconhecidos antes do boot, para impedir que uma escolha não suportada seja silenciosamente ignorada. Somente D3D12 é um backend jogável nesta etapa.
