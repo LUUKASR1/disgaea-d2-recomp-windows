@@ -26,7 +26,9 @@ with tempfile.TemporaryDirectory() as temp:
     def check(expected, status):
         result = subprocess.run([exe, *flags, '--input', str(packet), '--output', str(output)], capture_output=True, text=True)
         assert result.returncode == expected, result.stdout + result.stderr
-        assert json.loads(report.read_text())['status'] == status
+        result_report = json.loads(report.read_text())
+        assert result_report['status'] == status
+        assert result_report.get('validation_errors', 0) == 0
     check(2, 'pixel-mismatch')
     reference.write_bytes(bytes(len(original)))
     check(2, 'empty-reference')
@@ -40,14 +42,14 @@ with tempfile.TemporaryDirectory() as temp:
     check(1, 'failed')
     (packet / 'draw.json').write_text('{"status":"captured"}')
     # Same GPU path, now exercise the captured blend operation and sampler ABI.
-    data = list(struct.unpack('<32I', saved))
+    data = list(struct.unpack('<40I', saved))
     data[9] = 1  # blend enabled, default SRC_ALPHA / INV_SRC_ALPHA
-    header.write_bytes(struct.pack('<32I', *data))
+    header.write_bytes(struct.pack('<40I', *data))
     (packet / 'fragment-constants.bin').write_bytes(struct.pack('<4f', 1, 1, 1, .5))
     reference.write_bytes(bytes([128, 0, 0, 128]) * (64 * 48))
     check(0, 'exact-match')
     data[12] = 3  # reverse subtract for color only
-    header.write_bytes(struct.pack('<32I', *data))
+    header.write_bytes(struct.pack('<40I', *data))
     reference.write_bytes(bytes([0, 0, 0, 128]) * (64 * 48))
     check(0, 'exact-match')
     header.write_bytes(saved)
@@ -55,10 +57,10 @@ with tempfile.TemporaryDirectory() as temp:
     fp = packet / 'fp.hlsl'
     fp.write_text(fp.read_text().replace('rsx_tex[0]', 'rsx_tex[1]').replace('rsx_samp[0]', 'rsx_samp[1]'))
     (packet / 'tex1.rgba').write_bytes(bytes([255, 0, 0, 255, 0, 0, 255, 255]))
-    data = list(struct.unpack('<32I', saved)); data[22] = 2  # texture_width[1]
+    data = list(struct.unpack('<40I', saved)); data[22] = 2  # texture_width[1]
     for clamp in (False, True):
         data[20] = int(clamp)
-        header.write_bytes(struct.pack('<32I', *data))
+        header.write_bytes(struct.pack('<40I', *data))
         oracle = bytearray()
         for y in range(48):
             for x in range(64):
@@ -75,13 +77,45 @@ with tempfile.TemporaryDirectory() as temp:
     # captured single-target D3D binding, never by silent ABI relaxation.
     (packet / 'tex1.rgba').write_bytes(bytes(4))
     fp.write_text('cbuffer C:register(b1){float4 color;}struct Out{float4 a:SV_TARGET0;float4 b:SV_TARGET2;};Out main(){Out o;o.a=float4(1,0,0,1)*color;o.b=float4(0,1,0,1);return o;}')
-    data = list(struct.unpack('<32I', saved)); data[29] = 5
-    header.write_bytes(struct.pack('<32I', *data)); reference.write_bytes(original)
+    data = list(struct.unpack('<40I', saved)); data[29] = 5
+    header.write_bytes(struct.pack('<40I', *data)); reference.write_bytes(original)
     check(0, 'exact-match')
     assert json.loads(report.read_text())['discarded_shader_output_mask'] == 4
-    data[29] = 1; header.write_bytes(struct.pack('<32I', *data))
+    data[29] = 1; header.write_bytes(struct.pack('<40I', *data))
     check(1, 'failed')  # Cannot pretend the extra shader output was absent.
-    data[29] = 5; header.write_bytes(struct.pack('<32I', *data))
+    data[29] = 5; header.write_bytes(struct.pack('<40I', *data))
+    # Native BC blocks stay compressed; compare decoded colors/alpha and
+    # component selectors through the actual Vulkan image view and shader.
+    fp.write_text('Texture2D rsx_tex[16]:register(t0);SamplerState rsx_samp[16]:register(s0);cbuffer Color:register(b1){float4 color;}struct In{float4 uv:TEXCOORD0;};float4 main(In i):SV_TARGET{return rsx_tex[0].Sample(rsx_samp[0],i.uv.xy)*color;}')
+    for fmt, block in ((1, bytes.fromhex('00f8000000000000')),
+                       (2, bytes([255])*8 + bytes.fromhex('00f8000000000000')),
+                       (3, bytes([255,0])+bytes(6)+bytes.fromhex('00f8000000000000'))):
+        data = list(struct.unpack('<40I', saved)); data[21] = 5; data[25] = 7
+        data[32] = fmt; data[36] = 0x688
+        header.write_bytes(struct.pack('<40I', *data))
+        (packet / 'tex0.bc').write_bytes(block * 4)
+        reference.write_bytes(bytes([255,0,0,255])*(64*48))
+        check(0, 'exact-match')
+        data[36] = 2 | (1<<3) | (0<<6) | (5<<9) # BGRA plus forced alpha 1
+        header.write_bytes(struct.pack('<40I', *data))
+        reference.write_bytes(bytes([0,0,255,255])*(64*48))
+        check(0, 'exact-match')
+        (packet / 'tex0.bc').write_bytes(block)
+        check(1, 'failed') # Truncated two-by-two block grid.
+    data[32] = 4; header.write_bytes(struct.pack('<40I', *data))
+    check(1, 'failed')
+    data[32] = 1; data[36] = 7; header.write_bytes(struct.pack('<40I', *data))
+    (packet / 'tex0.bc').write_bytes(bytes.fromhex('00f8000000000000')*4)
+    check(1, 'failed')
+    # Both older packet versions remain readable with pre-remapped RGBA.
+    fp.write_text('float4 main():SV_TARGET0{return float4(1,0,0,1);}')
+    reference.write_bytes(original)
+    for version in (1,2):
+        legacy = list(struct.unpack('<40I', saved))[:32]; legacy[1] = version
+        if version == 1: legacy[29] = 0
+        header.write_bytes(struct.pack('<32I', *legacy))
+        check(0, 'exact-match')
+    header.write_bytes(saved)
     reference.unlink()
     check(1, 'failed')
-print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, missing input')
+print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, native BC1/2/3, component remap, legacy packets, missing input')

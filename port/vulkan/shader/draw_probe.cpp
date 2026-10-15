@@ -184,10 +184,14 @@ int main(int argc, char **argv) {
     require(text(input / "draw.json").find("\"status\":\"captured\"") !=
                 std::string::npos,
             "Draw was rejected or not completed");
-    auto bytes = read(input / "packet.bin", 128, 128);
+    auto bytes = read(input / "packet.bin", 160);
+    require(bytes.size() == 128 || bytes.size() == 160, "Invalid packet size");
     d2::DrawPacket p;
-    std::memcpy(&p, bytes.data(), sizeof(p));
-    require(p.magic == 0x31524444 && (p.version == 1 || p.version == 2) &&
+    std::memcpy(&p, bytes.data(), bytes.size());
+    require(bytes.size() == (p.version == 3 ? 160u : 128u),
+            "Packet version/size mismatch");
+    require(p.magic == 0x31524444 &&
+                (p.version == 1 || p.version == 2 || p.version == 3) &&
                 p.width && p.height && p.width <= 1920 && p.height <= 1080 &&
                 p.vertices && p.vertices <= 4096 && p.vertices % 3 == 0 &&
                 p.fragment_bytes && p.fragment_bytes <= 16384 &&
@@ -261,10 +265,23 @@ int main(int argc, char **argv) {
                   p.texture_width[u] <= 4096 && p.texture_height[u] <= 4096 &&
                   uint64_t(p.texture_width[u]) * p.texture_height[u] <= 4194304,
               "Invalid texture dimensions");
-      auto pixels =
-          read(input / ("tex" + std::to_string(u) + ".rgba"), 16777216,
-               size_t(p.texture_width[u]) * p.texture_height[u] * 4);
-      r.setTextureUnit(u, p.texture_width[u], p.texture_height[u], pixels);
+      require(p.texture_format[u] <= 3, "Unsupported texture format");
+      if (p.texture_format[u]) {
+        size_t size = size_t((p.texture_width[u] + 3) / 4) *
+                      ((p.texture_height[u] + 3) / 4) *
+                      (p.texture_format[u] == 1 ? 8 : 16);
+        auto blocks =
+            read(input / ("tex" + std::to_string(u) + ".bc"), 4194304, size);
+        r.setTextureUnitBlocks(u, p.texture_width[u], p.texture_height[u],
+                               p.texture_format[u], p.texture_mapping[u],
+                               blocks);
+      } else {
+        require(p.texture_mapping[u] == 0, "RGBA texture already remapped");
+        auto pixels =
+            read(input / ("tex" + std::to_string(u) + ".rgba"), 16777216,
+                 size_t(p.texture_width[u]) * p.texture_height[u] * 4);
+        r.setTextureUnit(u, p.texture_width[u], p.texture_height[u], pixels);
+      }
       r.setSamplerUnit(u, u != 0, u != 0 && !(u == 1 && p.palette_clamp));
     }
     DrawParameters parameters;

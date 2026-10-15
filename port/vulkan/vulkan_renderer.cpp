@@ -136,7 +136,8 @@ class Renderer::Impl {
   };
   std::vector<ColorTarget> extra_colors;
   uint32_t color_count = 1;
-  bool independent_blend = false, depth_clamp_supported = false;
+  bool independent_blend = false, depth_clamp_supported = false,
+       bc_supported = false;
   RasterState raster_state{};
   std::array<VkSampler, 16> unit_samplers{};
   VkRenderPass pass = VK_NULL_HANDLE;
@@ -787,6 +788,9 @@ public:
     independent_blend = enabled_features.independentBlend != 0;
     enabled_features.depthClamp = supported_features.depthClamp;
     depth_clamp_supported = enabled_features.depthClamp != 0;
+    enabled_features.textureCompressionBC =
+        supported_features.textureCompressionBC;
+    bc_supported = enabled_features.textureCompressionBC != 0;
     dev.pEnabledFeatures = &enabled_features;
     if (surface) {
       dev.enabledExtensionCount = 1;
@@ -874,10 +878,21 @@ public:
     uploadTexture(unit, w, h, rgba);
   }
   void uploadTexture(uint32_t unit, uint32_t w, uint32_t h,
-                     std::span<const uint8_t> rgba) {
+                     std::span<const uint8_t> rgba, uint32_t bc_format = 0,
+                     uint32_t mapping = 0x688) {
+    size_t expected = bc_format ? size_t((w + 3) / 4) * ((h + 3) / 4) *
+                                      (bc_format == 1 ? 8 : 16)
+                                : size_t(w) * h * 4;
+    if (bc_format > 3 || (bc_format && !bc_supported))
+      throw std::runtime_error("BC texture compression unavailable");
+    for (unsigned c = 0; c < 4; ++c)
+      if (((mapping >> (3 * c)) & 7) > 5)
+        throw std::runtime_error("Invalid texture component mapping");
+    if (mapping & ~0xfffu)
+      throw std::runtime_error("Unknown texture mapping bits");
     if (!device || !texture_set || !w || !h || w > 4096 || h > 4096 ||
-        rgba.size() != size_t(w) * h * 4)
-      throw std::runtime_error("Invalid or oversized RGBA8 texture");
+        rgba.size() != expected)
+      throw std::runtime_error("Invalid or oversized texture payload");
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     texture_ready = false;
     auto &t = textures.at(unit);
@@ -905,7 +920,10 @@ public:
     check(flush, "Texture flush");
     VkImageCreateInfo ic{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ic.imageType = VK_IMAGE_TYPE_2D;
-    ic.format = VK_FORMAT_R8G8B8A8_UNORM;
+    ic.format = bc_format == 1   ? VK_FORMAT_BC1_RGBA_UNORM_BLOCK
+                : bc_format == 2 ? VK_FORMAT_BC2_UNORM_BLOCK
+                : bc_format == 3 ? VK_FORMAT_BC3_UNORM_BLOCK
+                                 : VK_FORMAT_R8G8B8A8_UNORM;
     ic.extent = {w, h, 1};
     ic.mipLevels = ic.arrayLayers = 1;
     ic.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -922,6 +940,13 @@ public:
     vi.image = t.image;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
     vi.format = ic.format;
+    const VkComponentSwizzle selectors[] = {
+        VK_COMPONENT_SWIZZLE_R,    VK_COMPONENT_SWIZZLE_G,
+        VK_COMPONENT_SWIZZLE_B,    VK_COMPONENT_SWIZZLE_A,
+        VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE};
+    vi.components = {selectors[mapping & 7], selectors[(mapping >> 3) & 7],
+                     selectors[(mapping >> 6) & 7],
+                     selectors[(mapping >> 9) & 7]};
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     OK(vkCreateImageView(device, &vi, nullptr, &t.view));
     OK(vkResetCommandBuffer(cmd, 0));
@@ -1625,6 +1650,13 @@ void Renderer::offscreen(uint32_t width, uint32_t height, uint32_t targets) {
 }
 bool Renderer::resize(uint32_t width, uint32_t height, bool vsync) {
   return impl_->resize(width, height, vsync);
+}
+void Renderer::setTextureUnitBlocks(uint32_t unit, uint32_t w, uint32_t h,
+                                    uint32_t format, uint32_t mapping,
+                                    std::span<const uint8_t> blocks) {
+  if (unit >= 16 || format < 1 || format > 3)
+    throw std::runtime_error("Invalid compressed texture unit/format");
+  impl_->uploadTexture(unit, w, h, blocks, format, mapping);
 }
 bool Renderer::draw() { return impl_->draw(); }
 bool Renderer::draw(std::span<const DrawCommand> commands) {

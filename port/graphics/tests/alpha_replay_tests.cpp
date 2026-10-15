@@ -121,7 +121,7 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     require(rgba.size()==32*16*4,"Reference readback strips pitch padding");
     for(size_t i=0;i<rgba.size();i+=4)require(rgba[i]==255&&rgba[i+1]==0&&rgba[i+2]==255&&rgba[i+3]==255,"Original PSO renders magenta reference");
     std::ifstream packet_file(folder/"packet.bin",std::ios::binary);d2::DrawPacket packet;packet_file.read((char*)&packet,sizeof(packet));
-    require(bool(packet_file)&&packet.magic==0x31524444&&packet.vertices==6&&packet.fragment_bytes==16&&packet.version==2&&packet.fragment_output_mask==5,"Portable packet header preserves sizes");
+    require(bool(packet_file)&&packet.magic==0x31524444&&packet.vertices==6&&packet.fragment_bytes==16&&packet.version==3&&packet.fragment_output_mask==5,"Portable packet header preserves sizes");
     require(std::filesystem::file_size(folder/"vertices.bin")==sizeof(expanded),"Full 16-attribute geometry exported");
     for(unsigned u=2;u<4;u++)require(std::filesystem::file_size(folder/("tex"+std::to_string(u)+".rgba"))==4,"Null SRV exports one zero texel");
     for(unsigned u=0;u<2;u++){
@@ -130,6 +130,33 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
         for(unsigned i=0;i<6;i++){unsigned char value=(unsigned char)(17+29*i);
             require(pixels[i*4]==value&&pixels[i*4+1]==(u?value+7:value)&&pixels[i*4+2]==(u?255:value)&&pixels[i*4+3]==(u?0:value),"GPU texture bytes and SRV remap preserved");}
     }
+    image.close();packet_file.close();
+    // BC readback must copy block rows, not texel rows/padding. Original
+    // compressed bytes and SRV selectors are kept for Vulkan's decoder.
+    for(unsigned fmt=1;fmt<=3;fmt++){
+        Ref<ID3D12Resource> bc,upload;Ref<ID3D12CommandAllocator> alloc;Ref<ID3D12GraphicsCommandList> list;
+        D3D12_RESOURCE_DESC td{};td.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;td.Width=8;td.Height=8;td.DepthOrArraySize=td.MipLevels=1;td.SampleDesc.Count=1;
+        td.Format=fmt==1?DXGI_FORMAT_BC1_UNORM:fmt==2?DXGI_FORMAT_BC2_UNORM:DXGI_FORMAT_BC3_UNORM;
+        D3D12_HEAP_PROPERTIES def{};def.Type=D3D12_HEAP_TYPE_DEFAULT;
+        check(device->CreateCommittedResource(&def,D3D12_HEAP_FLAG_NONE,&td,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_ID3D12Resource,(void**)bc.put()));
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 total;device->GetCopyableFootprints(&td,0,1,0,&footprint,nullptr,nullptr,&total);
+        auto ud=buffer;ud.Width=total;check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&ud,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_ID3D12Resource,(void**)upload.put()));
+        void* data=nullptr;check(upload->Map(0,&none,&data));std::memset(data,0,(size_t)total);
+        unsigned row=2*(fmt==1?8:16);for(unsigned y=0;y<2;y++)for(unsigned x=0;x<row;x++)((unsigned char*)data)[y*footprint.Footprint.RowPitch+x]=(unsigned char)(1+y*row+x);
+        upload->Unmap(0,nullptr);check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_ID3D12CommandAllocator,(void**)alloc.put()));
+        check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,alloc.p,nullptr,IID_ID3D12GraphicsCommandList,(void**)list.put()));
+        D3D12_TEXTURE_COPY_LOCATION from{},to{};from.pResource=upload.p;from.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;from.PlacedFootprint=footprint;to.pResource=bc.p;to.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        list->CopyTextureRegion(&to,0,0,0,&from,nullptr);D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={bc.p,0,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};list->ResourceBarrier(1,&barrier);
+        check(list->Close());ID3D12CommandList* lists[]={list.p};queue->ExecuteCommandLists(1,lists);
+        auto view=srv;view.Format=td.Format;view.Shader4ComponentMapping=D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(2,1,0,5);d2_draw_srv(0,bc.p,&view);
+        require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),43,fmt,32,16,expanded,6,vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)==0,"Native BC capture succeeds");
+        {std::ifstream f(folder/"tex0.bc",std::ios::binary);std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(f)),{});require(bytes.size()==row*2,"BC padding stripped by block rows");for(unsigned x=0;x<bytes.size();x++)require(bytes[x]==x+1,"Original BC blocks preserved");}
+        {std::ifstream f(folder/"packet.bin",std::ios::binary);d2::DrawPacket v;f.read((char*)&v,sizeof(v));require(v.texture_format[0]==fmt&&v.texture_mapping[0]==(view.Shader4ComponentMapping&0xfffu),"BC format and mapping preserved");}
+        view.Texture2D.MostDetailedMip=1;d2_draw_srv(0,bc.p,&view);
+        require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),43,fmt,32,16,expanded,6,vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)<0,"Unsupported view rejected");
+        {std::ifstream f(folder/"draw.json");std::string text((std::istreambuf_iterator<char>(f)),{});require(text.find("\"texture_unit\":0")!=std::string::npos&&text.find("\"most_detailed_mip\":1")!=std::string::npos,"Rejection identifies descriptor details");}
+    }
+    d2_draw_srv(0,nullptr,&srv);
     binding.draw=false;
     require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
         vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)==1,"Empty original reference must request another candidate");

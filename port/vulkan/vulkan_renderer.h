@@ -135,6 +135,10 @@ public:
   // Fragment texture units are independent. Unbound RSX units sample white.
   void setTextureUnit(uint32_t unit, uint32_t width, uint32_t height,
                       std::span<const uint8_t> rgba);
+  // Native compressed blocks; selectors 0..5 mean R,G,B,A,zero,one.
+  void setTextureUnitBlocks(uint32_t unit, uint32_t width, uint32_t height,
+                            uint32_t bc_format, uint32_t mapping,
+                            std::span<const uint8_t> blocks);
   bool draw();
   bool draw(std::span<const DrawCommand> commands);
   std::vector<uint8_t>

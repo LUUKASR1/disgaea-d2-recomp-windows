@@ -154,6 +154,22 @@ std::vector<uint8_t> rgba(const Copy &c, uint32_t mapping) {
   c.resource->Unmap(0, &none);
   return output;
 }
+std::vector<uint8_t> blocks(const Copy &c, unsigned format) {
+  const auto &f = c.footprint.Footprint;
+  size_t row = size_t((f.Width + 3) / 4) * (format == 1 ? 8 : 16);
+  unsigned rows = (f.Height + 3) / 4;
+  std::vector<uint8_t> output(row * rows);
+  void *data = nullptr;
+  D3D12_RANGE range{0, size_t(c.bytes)};
+  check(c.resource->Map(0, &range, &data));
+  for (unsigned y = 0; y < rows; ++y)
+    std::memcpy(output.data() + y * row,
+                (uint8_t *)data + c.footprint.Offset + size_t(y) * f.RowPitch,
+                row);
+  D3D12_RANGE none{0, 0};
+  c.resource->Unmap(0, &none);
+  return output;
+}
 void write(const std::string &name, const void *data, size_t bytes) {
   FILE *f = d2_capture_fopen(name.c_str(), "wb");
   if (!f)
@@ -286,6 +302,7 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
     return -1;
   auto ctx = std::make_unique<Context>();
   bool submitted = false, completed = false;
+  std::string texture_diagnostic;
   try {
     auto found = pipelines.find(pso);
     if (found == pipelines.end())
@@ -347,6 +364,27 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
       }
       auto desc = s.resource->GetDesc();
       auto &v = s.view;
+      packet.texture_format[u] = v.Format == DXGI_FORMAT_BC1_UNORM   ? 1
+                                 : v.Format == DXGI_FORMAT_BC2_UNORM ? 2
+                                 : v.Format == DXGI_FORMAT_BC3_UNORM ? 3
+                                                                     : 0;
+      texture_diagnostic =
+          ",\"texture_unit\":" + std::to_string(u) +
+          ",\"resource_format\":" + std::to_string(desc.Format) +
+          ",\"view_format\":" + std::to_string(v.Format) +
+          ",\"resource_dimension\":" + std::to_string(desc.Dimension) +
+          ",\"view_dimension\":" + std::to_string(v.ViewDimension) +
+          ",\"width\":" + std::to_string(desc.Width) +
+          ",\"height\":" + std::to_string(desc.Height) +
+          ",\"array_size\":" + std::to_string(desc.DepthOrArraySize) +
+          ",\"sample_count\":" + std::to_string(desc.SampleDesc.Count) +
+          ",\"resource_flags\":" + std::to_string(desc.Flags) +
+          ",\"resource_mips\":" + std::to_string(desc.MipLevels) +
+          ",\"view_mips\":" + std::to_string(v.Texture2D.MipLevels) +
+          ",\"most_detailed_mip\":" +
+          std::to_string(v.Texture2D.MostDetailedMip) + ",\"min_lod_clamp\":" +
+          std::to_string(v.Texture2D.ResourceMinLODClamp) +
+          ",\"component_mapping\":" + std::to_string(v.Shader4ComponentMapping);
       if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
           desc.DepthOrArraySize != 1 || desc.SampleDesc.Count != 1 ||
           desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
@@ -359,11 +397,14 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
           v.Texture2D.ResourceMinLODClamp || v.Format != desc.Format ||
           (v.Format != DXGI_FORMAT_R8G8B8A8_UNORM &&
            v.Format != DXGI_FORMAT_R8_UNORM &&
-           v.Format != DXGI_FORMAT_R8G8_UNORM))
+           v.Format != DXGI_FORMAT_R8G8_UNORM && !packet.texture_format[u]))
         throw std::runtime_error("texture-outside-first-replay-scope");
       for (unsigned k = 0; k < 4; k++)
         if (((v.Shader4ComponentMapping >> (3 * k)) & 7) > 5)
           throw std::runtime_error("invalid-component-mapping");
+      if (packet.texture_format[u])
+        packet.texture_mapping[u] = v.Shader4ComponentMapping & 0xfffu;
+      texture_diagnostic.clear();
       packet.texture_width[u] = (uint32_t)desc.Width;
       packet.texture_height[u] = desc.Height;
     }
@@ -371,7 +412,12 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
                      size_t(width) * height * 4 + size_t(vertex_count) * 256 +
                      8224 + fc_bytes + sizeof(packet);
     for (unsigned u = 0; u < 4; u++)
-      payload += size_t(packet.texture_width[u]) * packet.texture_height[u] * 4;
+      payload +=
+          packet.texture_format[u]
+              ? size_t((packet.texture_width[u] + 3) / 4) *
+                    ((packet.texture_height[u] + 3) / 4) *
+                    (packet.texture_format[u] == 1 ? 8 : 16)
+              : size_t(packet.texture_width[u]) * packet.texture_height[u] * 4;
     if (payload > 268435456 - exported_bytes)
       throw std::runtime_error("session-payload-budget-exceeded");
     exported_bytes +=
@@ -463,11 +509,14 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
     }
     write(base + "/reference.rgba", image.data(), image.size());
     for (unsigned u = 0; u < 4; u++) {
-      auto pixels = bound[u].resource
+      auto pixels = packet.texture_format[u]
+                        ? blocks(copies[u], packet.texture_format[u])
+                    : bound[u].resource
                         ? rgba(copies[u], bound[u].view.Shader4ComponentMapping)
                         : std::vector<uint8_t>(4, 0);
-      write(base + "/tex" + std::to_string(u) + ".rgba", pixels.data(),
-            pixels.size());
+      write(base + "/tex" + std::to_string(u) +
+                (packet.texture_format[u] ? ".bc" : ".rgba"),
+            pixels.data(), pixels.size());
     }
     write(base + "/vp.hlsl", program.vertex.data(), program.vertex.size());
     write(base + "/fp.hlsl", program.fragment.data(), program.fragment.size());
@@ -494,7 +543,7 @@ extern "C" int d2_draw_export(void *dp, void *qp, void *pso,
       status(
           folder,
           std::string("{\"schema\":1,\"status\":\"rejected\",\"reason\":\"") +
-              e.what() + "\"}\n");
+              e.what() + "\"" + texture_diagnostic + "}\n");
     } catch (...) {
     }
     if (submitted && !completed)
