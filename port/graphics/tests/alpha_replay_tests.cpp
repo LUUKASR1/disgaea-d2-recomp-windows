@@ -85,6 +85,29 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R8G8B8A8_UNORM;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
     srv.Texture2D.MipLevels=1;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     d2_draw_frame_begin();for(unsigned i=0;i<4;i++)d2_draw_srv(i,nullptr,&srv);
+    // Odd-width R8/RG8 resources verify GPU copy footprints and component
+    // remapping, rather than merely serializing null descriptors.
+    Ref<ID3D12Resource> textures[2],uploads[2];Ref<ID3D12CommandAllocator> texture_allocator;Ref<ID3D12GraphicsCommandList> texture_list;
+    check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_ID3D12CommandAllocator,(void**)texture_allocator.put()));
+    check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,texture_allocator.p,nullptr,IID_ID3D12GraphicsCommandList,(void**)texture_list.put()));
+    for(unsigned unit=0;unit<2;unit++){
+        D3D12_RESOURCE_DESC td{};td.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;td.Width=3;td.Height=2;td.DepthOrArraySize=td.MipLevels=1;td.SampleDesc.Count=1;
+        td.Format=unit?DXGI_FORMAT_R8G8_UNORM:DXGI_FORMAT_R8_UNORM;D3D12_HEAP_PROPERTIES th{};th.Type=D3D12_HEAP_TYPE_DEFAULT;
+        check(device->CreateCommittedResource(&th,D3D12_HEAP_FLAG_NONE,&td,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_ID3D12Resource,(void**)textures[unit].put()));
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 total=0;device->GetCopyableFootprints(&td,0,1,0,&footprint,nullptr,nullptr,&total);
+        auto upload_desc=buffer;upload_desc.Width=total;
+        check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&upload_desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_ID3D12Resource,(void**)uploads[unit].put()));
+        void* pixels=nullptr;check(uploads[unit]->Map(0,&none,&pixels));std::memset(pixels,0,(size_t)total);
+        for(unsigned y=0;y<2;y++)for(unsigned x=0;x<3;x++)for(unsigned c=0;c<=unit;c++)
+            ((unsigned char*)pixels)[footprint.Offset+y*footprint.Footprint.RowPitch+x*(unit+1)+c]=(unsigned char)(17+29*(y*3+x)+c*7);
+        uploads[unit]->Unmap(0,nullptr);
+        D3D12_TEXTURE_COPY_LOCATION from{},to{};from.pResource=uploads[unit].p;from.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;from.PlacedFootprint=footprint;
+        to.pResource=textures[unit].p;to.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;texture_list->CopyTextureRegion(&to,0,0,0,&from,nullptr);
+        D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={textures[unit].p,0,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};texture_list->ResourceBarrier(1,&barrier);
+        auto view=srv;view.Format=td.Format;view.Shader4ComponentMapping=unit?D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(0,1,5,4):D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(0,0,0,0);
+        d2_draw_srv(unit,textures[unit].p,&view);
+    }
+    check(texture_list->Close());ID3D12CommandList* texture_commands[]={texture_list.p};queue->ExecuteCommandLists(1,texture_commands);
     binding.pso=captured.p;binding.alpha=true;binding.draw=true;
     float expanded[6][64]{};for(unsigned i=0;i<6;i++)std::memcpy(expanded[i],vertices[i],16);
     float vertex_constants[514][4]{};float fragment_constants[4]={1,0,5,0};
@@ -100,7 +123,13 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     std::ifstream packet_file(folder/"packet.bin",std::ios::binary);d2::DrawPacket packet;packet_file.read((char*)&packet,sizeof(packet));
     require(bool(packet_file)&&packet.magic==0x31524444&&packet.vertices==6&&packet.fragment_bytes==16,"Portable packet header preserves sizes");
     require(std::filesystem::file_size(folder/"vertices.bin")==sizeof(expanded),"Full 16-attribute geometry exported");
-    for(unsigned u=0;u<4;u++)require(std::filesystem::file_size(folder/("tex"+std::to_string(u)+".rgba"))==4,"Null SRV exports one zero texel");
+    for(unsigned u=2;u<4;u++)require(std::filesystem::file_size(folder/("tex"+std::to_string(u)+".rgba"))==4,"Null SRV exports one zero texel");
+    for(unsigned u=0;u<2;u++){
+        std::ifstream tex(folder/("tex"+std::to_string(u)+".rgba"),std::ios::binary);std::vector<unsigned char> pixels((std::istreambuf_iterator<char>(tex)),{});
+        require(pixels.size()==24,"Texture footprint stripped to six RGBA texels");
+        for(unsigned i=0;i<6;i++){unsigned char value=(unsigned char)(17+29*i);
+            require(pixels[i*4]==value&&pixels[i*4+1]==(u?value+7:value)&&pixels[i*4+2]==(u?255:value)&&pixels[i*4+3]==(u?0:value),"GPU texture bytes and SRV remap preserved");}
+    }
     d2_draw_frame_begin();require(d2_draw_export(device.p,queue.p,captured.p,record,&binding,utf8.c_str(),42,7,32,16,expanded,6,
         vertex_constants,fragment_constants,sizeof(fragment_constants),0,0,draw_borrowed,3)<0,"Missing descriptor is rejected rather than substituted");
     image.close();packet_file.close();
