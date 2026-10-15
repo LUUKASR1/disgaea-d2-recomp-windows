@@ -1196,8 +1196,8 @@ public:
     state.fragment_bytes = uint32_t(f.size_bytes());
     state.ready = true;
   }
-  void setRasterState(const RasterState &state) {
-    if (!device || pass || state.cull > 2 || state.color_mask > 15 ||
+  void validateRasterState(const RasterState &state) {
+    if (!device || state.cull > 2 || state.color_mask > 15 ||
         state.depth_compare > 7 || uint32_t(state.src_color) > 10 ||
         uint32_t(state.dst_color) > 10 || uint32_t(state.src_alpha) > 10 ||
         uint32_t(state.dst_alpha) > 10 || uint32_t(state.color_op) > 4 ||
@@ -1205,7 +1205,42 @@ public:
         (state.depth_clamp && !depth_clamp_supported))
       throw std::runtime_error(
           "Unsupported raster state or target already created");
+  }
+  void setRasterState(const RasterState &state) {
+    if (pass)
+      throw std::runtime_error("Target already created");
+    validateRasterState(state);
     raster_state = state;
+  }
+  void replaceReplayPipeline(std::span<const uint32_t> v,
+                             std::span<const uint32_t> f,
+                             const RasterState &state) {
+    if (!device || surface || !pass || programs.size() != 1 || color_count != 1)
+      throw std::runtime_error(
+          "Pipeline replacement requires sole-program offscreen replay");
+    validateRasterState(state);
+    auto next = checkedProgram(v, f);
+    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    auto previous = raster_state;
+    raster_state = state;
+    try {
+      makePipeline(&next);
+    } catch (...) {
+      for (auto p : next.pipelines)
+        if (p)
+          vkDestroyPipeline(device, p, nullptr);
+      if (vert)
+        vkDestroyShaderModule(device, vert, nullptr);
+      if (frag)
+        vkDestroyShaderModule(device, frag, nullptr);
+      vert = frag = VK_NULL_HANDLE;
+      raster_state = previous;
+      throw;
+    }
+    for (auto p : programs[0].pipelines)
+      if (p)
+        vkDestroyPipeline(device, p, nullptr);
+    programs[0] = std::move(next);
   }
   void setSamplerUnit(uint32_t unit, bool linear, bool wrap) {
     if (!device || !rsxMode() || unit >= 16)
@@ -1678,6 +1713,11 @@ void Renderer::setTextureUnitBlocks(uint32_t unit, uint32_t w, uint32_t h,
   if (unit >= 16 || format < 1 || format > 3)
     throw std::runtime_error("Invalid compressed texture unit/format");
   impl_->uploadTexture(unit, w, h, blocks, format, mapping);
+}
+void Renderer::replaceReplayPipeline(std::span<const uint32_t> v,
+                                     std::span<const uint32_t> f,
+                                     const RasterState &state) {
+  impl_->replaceReplayPipeline(v, f, state);
 }
 bool Renderer::draw() { return impl_->draw(); }
 bool Renderer::drawAppend(std::span<const DrawCommand> commands) {

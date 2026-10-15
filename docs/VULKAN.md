@@ -150,3 +150,14 @@ O comparador aceita `--sequence --input frame_00 --output pasta`. Confere conclu
 Testes próprios verificam duas chamadas D3D12 com depth retido e segunda geometria mais distante; Vulkan verifica oclusão entre submissões, mistura de alfa sobre cor anterior, identidades de quadro, ordem e recusa de pipelines diferentes. Referências/capturas/shaders do jogo ficam locais.
 
 O render pass de LOAD mantém formatos/subpass e depende das regras de [compatibilidade de render passes](https://docs.vulkan.org/spec/latest/chapters/renderpass.html#renderpass-compatibility); o depth usa STORE para permitir a próxima submissão. Recursos amostrados são retidos além do heap de descritores, inclusive em timeout de GPU não confirmado.
+
+
+## Sequências com pipelines diferentes (0.1.51)
+
+O relatório real da sequência 0.1.50 confirmou `exact-match` na NVIDIA GeForce RTX 5070: três draws, 108.086 pixels com referência não zero, zero diferenças e erro máximo zero; validação Khronos desativada. Isso cobre somente o subconjunto selecionado, não o frame completo.
+
+O formato de sequência v2 amplia o limite para oito IDs (64 bytes); v1 com quatro IDs (48 bytes) continua legível e exige pipelines iguais. A captura observa até 24 tentativas e até oito referências não vazias, com no máximo dois desenhos por PSO exato para diversificar as amostras. São proxies de pipeline, não reconhecimento de personagens ou cobertura garantida da batalha. Orçamento de 256 MiB e recusas de recursos continuam ativos.
+
+No replay offscreen de programa único, shaders/estado podem ser substituídos após aguardar o fence anterior. A ferramenta compila/valida o novo pipeline antes de substituir o anterior, retém os mesmos attachments e atualiza recursos por desenho. Falha de criação limpa módulos/PSOs parciais e preserva o programa anterior. `pipeline_switches` informa mudanças, e `coverage_scope` passa a `selected-mixed-pipeline-subset-only`. Trata-se de diagnóstico sincronizado sem cache de desempenho, não do backend de jogo.
+
+Testes próprios cobrem troca de fragment shader, máscara de cor, blend e comparação de profundidade com cor/depth retidos, além de oito draws e compatibilidade v1. O teste D3D12 usa dois PSOs diferentes no mesmo alvo, com depth/blend/write mask diferentes. Ainda faltam estado RSX completo, clears intermediários, stencil, render-to-texture, seleção mais ampla e validação do frame completo. SDK/lock e gameplay D3D12 permanecem preservados.

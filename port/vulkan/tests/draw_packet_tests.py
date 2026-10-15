@@ -160,6 +160,41 @@ with tempfile.TemporaryDirectory() as temp:
     (seq/'sequence.bin').write_bytes(seq_header)
     bad=list(struct.unpack('<40I',(second/'packet.bin').read_bytes()));bad[16]=3
     (second/'packet.bin').write_bytes(struct.pack('<40I',*bad));sequence_check(1,'failed')
+    # v2 permits different shaders and raster state on retained attachments.
+    values=list(struct.unpack('<6IQ4I',seq_header));values[1]=2
+    mixed_header=struct.pack('<6IQ8I',*(values+[0,0,0,0]))
+    (seq/'sequence.bin').write_bytes(mixed_header)
+    fields=list(struct.unpack('<40I',(second/'packet.bin').read_bytes()));fields[16]=1
+    (second/'packet.bin').write_bytes(struct.pack('<40I',*fields))
+    (second/'fp.hlsl').write_text('cbuffer C:register(b1){float4 color;}float4 main():SV_TARGET0{return float4(0,1,0,1)*color;}')
+    (seq/'sequence-reference.rgba').write_bytes(bytes([127,128,0,255])*(64*48))
+    sequence_check(0,'exact-match')
+    mixed_report=json.loads((output/'sequence-vulkan-report.json').read_text())
+    assert mixed_report['pipeline_switches']==1 and mixed_report['sequence_version']==2
+    assert mixed_report['coverage_scope']=='selected-mixed-pipeline-subset-only'
+    assert mixed_report['adapter']
+    fields[19]=1 # New PSO writes red only; retain other channels.
+    (second/'packet.bin').write_bytes(struct.pack('<40I',*fields))
+    (seq/'sequence-reference.rgba').write_bytes(bytes([127,0,0,255])*(64*48))
+    sequence_check(0,'exact-match')
+    fields[19]=15;fields[8]=5 # GREATER: .25 must fail against prior .5.
+    (second/'packet.bin').write_bytes(struct.pack('<40I',*fields))
+    (seq/'sequence-reference.rgba').write_bytes(original)
+    sequence_check(0,'exact-match')
+    fields[16]=99;(second/'packet.bin').write_bytes(struct.pack('<40I',*fields))
+    sequence_check(1,'failed')
+    # Bound of eight draws, with unused slots and identity checks retained.
+    for index in range(1,8):
+        target=seq/f'draw_{index:03d}'
+        if target.exists():shutil.rmtree(target)
+        shutil.copytree(seq/'draw_000',target)
+        (target/'draw.json').write_text(json.dumps({'status':'captured','frame':42,'draw':index},separators=(',',':')))
+    (seq/'sequence.bin').write_bytes(struct.pack('<6IQ8I',0x31535144,2,64,48,8,0,42,*range(8)))
+    (seq/'sequence-reference.rgba').write_bytes(original)
+    r=subprocess.run([exe,*flags,'--sequence','--input',str(seq),'--output',str(output)],capture_output=True,text=True)
+    assert r.returncode==0,r.stdout+r.stderr
+    report8=json.loads((output/'sequence-vulkan-report.json').read_text())
+    assert report8['selected_draw_count']==8 and report8['validation_errors']==0 and report8['status']=='exact-match'
     reference.unlink()
     check(1, 'failed')
-print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, native BC1/2/3, component remap, legacy packets, shared-depth/color sequences, identity/order rejection, missing input')
+print('PASS draw replay: exact pixels, mismatch, empty proof, bounds, completion, blend operations, linear wrap/clamp, native BC1/2/3, component remap, legacy packets, shared-depth/color sequences, mixed shaders/raster/masks/compare, identity/order rejection, missing input')

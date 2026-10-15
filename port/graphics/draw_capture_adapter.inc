@@ -1,4 +1,4 @@
-/* One explicit request, at most four isolated draws. Runs only after the
+/* One explicit request, at most eight isolated draws. Runs only after the
    original frame has been submitted; mapped banks use the submitted parity. */
 typedef struct {const D3D12DrawRecord* r;u32 draw,parity;ID3D12PipelineState* pso;} D2DrawBinding;
 static ID3D12PipelineState* d2_draw_psos[MAX_DRAWS];
@@ -20,7 +20,7 @@ static void d2_draw_bind(void* lp,void* bp){
     list->lpVtbl->IASetVertexBuffers(list,0,1,&vb);list->lpVtbl->IASetPrimitiveTopology(list,D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     list->lpVtbl->DrawInstanced(list,r->vertex_count,1,r->vb_byte_offset/256u,0);
 }
-typedef struct {D2DrawBinding bindings[4];u32 count;} D2DrawSequenceBinding;
+typedef struct {D2DrawBinding bindings[8];u32 count;} D2DrawSequenceBinding;
 static void d2_draw_sequence_bind(void* lp,void* bp){
     const D2DrawSequenceBinding* sequence=(const D2DrawSequenceBinding*)bp;
     for(u32 i=0;i<sequence->count;i++)d2_draw_bind(lp,(void*)&sequence->bindings[i]);
@@ -28,14 +28,16 @@ static void d2_draw_sequence_bind(void* lp,void* bp){
 static void d2_draw_dump(u32 index,u32 count){
     const char* base=d2_capture_directory();if(!base)return;
     char dir[512],path[600];snprintf(dir,sizeof(dir),"%s/frame_%02u",base,index);d2_capture_mkdir(dir);
-    D2DrawBinding selected[4];
+    D2DrawBinding selected[8];
     unsigned attempted=0,captured=0,empty=0;u32 parity=(u32)(s_d3d.vp_parity^1);
-    for(u32 d=0;d<count&&d<MAX_DRAWS&&attempted<8&&captured<4;d++){
+    for(u32 d=0;d<count&&d<MAX_DRAWS&&attempted<24&&captured<8;d++){
         const D3D12DrawRecord* r=&s_d3d.draws[d];
         if(!r->is_vp||r->is_clear||!d2_draw_psos[d]||!d2_draw_pipeline_ready(d2_draw_psos[d])||r->rt_off||r->rt_mrt[0]||r->rt_mrt[1]||r->rt_mrt[2]||
            !r->vertex_count||r->vertex_count>4096||r->vertex_count%3||r->vb_byte_offset%256||r->cb_slot>=MAX_DRAWS||
            r->vb_byte_offset/256u>MAX_VERTICES-r->vertex_count||!s_d3d.vp_vb_mapped||!s_d3d.vp_cb_mapped||!s_d3d.vp_fpcb_mapped)continue;
         if(r->vp_x||r->vp_y||(r->vp_w&&r->vp_w!=d2_graphics_guest_width())||(r->vp_h&&r->vp_h!=d2_graphics_guest_height()))continue;
+        unsigned same_pipeline=0;for(unsigned i=0;i<captured;i++)same_pipeline+=selected[i].pso==d2_draw_psos[d];
+        if(same_pipeline>=2)continue;
         int mutable_input=0;for(unsigned u=0;u<4;u++)mutable_input|=r->tex_rt[u]>=0;
         if(mutable_input)continue;
         snprintf(path,sizeof(path),"%s/draw_%03u",dir,d);d2_capture_mkdir(path);attempted++;
@@ -50,20 +52,17 @@ static void d2_draw_dump(u32 index,u32 count){
         if(result==0)selected[captured]=binding;
         captured+=result==0;empty+=result==1;
     }
-    /* Largest exact-PSO group. Selected subset only; skipped scene draws are
-       not reconstructed or claimed equivalent to the full game frame. */
-    u32 best=0,best_count=0;int sequence_result=-1;
-    for(u32 i=0;i<captured;i++){u32 n=0;for(u32 j=0;j<captured;j++)n+=selected[j].pso==selected[i].pso;
-        if(n>best_count){best=i;best_count=n;}}
-    if(best_count>=2){
-        D2DrawSequenceBinding sequence;sequence.count=0;u32 ids[4],first_srvs[4];void* keep[9];u32 n=0;
+    /* Selected subset in original order, never the complete scene. */
+    u32 best_count=captured;int sequence_result=-1;
+    if(captured>=2){
+        D2DrawSequenceBinding sequence;sequence.count=captured;u32 ids[8],first_srvs[8];void* keep[13];u32 n=0;
         keep[n++]=s_d3d.vp_root_sig;keep[n++]=s_d3d.srv_heap;keep[n++]=s_d3d.vp_vb;keep[n++]=s_d3d.vp_cb;keep[n++]=s_d3d.vp_fpcb;
-        for(u32 i=0;i<captured;i++)if(selected[i].pso==selected[best].pso){
-            first_srvs[sequence.count]=DRAW_SRV_BASE+selected[i].draw*4;ids[sequence.count]=selected[i].draw;sequence.bindings[sequence.count++]=selected[i];keep[n++]=selected[i].pso;}
+        for(u32 i=0;i<captured;i++){
+            first_srvs[i]=DRAW_SRV_BASE+selected[i].draw*4;ids[i]=selected[i].draw;sequence.bindings[i]=selected[i];keep[n++]=selected[i].pso;}
         sequence_result=d2_draw_sequence_reference(s_d3d.device,s_d3d.cmd_queue,d2_draw_sequence_bind,&sequence,dir,s_d3d.frame_count,s_d3d.width,s_d3d.height,ids,first_srvs,sequence.count,keep,n);
     }
     snprintf(path,sizeof(path),"%s/complete.json",dir);FILE* json=d2_capture_fopen(path,"wb");
-    if(json){fprintf(json,"{\"schema\":1,\"status\":\"%s\",\"purpose\":\"isolated-real-draw-packets\",\"frame\":%llu,\"attempted\":%u,\"captured\":%u,\"empty_references\":%u,\"sequence_draws\":%u,\"sequence_captured\":%s,\"vulkan_replayed\":false}\n",
+    if(json){fprintf(json,"{\"schema\":1,\"status\":\"%s\",\"purpose\":\"isolated-real-draw-packets\",\"frame\":%llu,\"attempted\":%u,\"captured\":%u,\"empty_references\":%u,\"selection_policy\":\"max-two-per-exact-pipeline\",\"sequence_draws\":%u,\"sequence_captured\":%s,\"vulkan_replayed\":false}\n",
         captured?"complete":"failed",(unsigned long long)s_d3d.frame_count,attempted,captured,empty,best_count,sequence_result==0?"true":"false");fclose(json);}
     d2_draw_release();
 }

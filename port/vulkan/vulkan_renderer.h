@@ -139,6 +139,10 @@ public:
   void setTextureUnitBlocks(uint32_t unit, uint32_t width, uint32_t height,
                             uint32_t bc_format, uint32_t mapping,
                             std::span<const uint8_t> blocks);
+  // Synchronized diagnostic replacement, sole-program offscreen replay only.
+  void replaceReplayPipeline(std::span<const uint32_t> vertex,
+                             std::span<const uint32_t> fragment,
+                             const RasterState &state);
   bool draw();
   bool draw(std::span<const DrawCommand> commands);
   // Offscreen only. Append after a completed draw, retaining color and depth.

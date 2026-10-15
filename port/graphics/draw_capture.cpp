@@ -560,7 +560,7 @@ d2_draw_sequence_reference(void *dp, void *qp, D2AlphaRecord record, void *user,
                            const uint32_t *first_srvs, uint32_t count,
                            void *const *borrowed, uint32_t borrowed_count) {
   if (!d2_draw_capture_enabled() || !dp || !qp || !record || !folder ||
-      !draws || !first_srvs || count < 2 || count > 4 || !width || !height ||
+      !draws || !first_srvs || count < 2 || count > 8 || !width || !height ||
       width > 1920 || height > 1080 || borrowed_count > 256 ||
       (!borrowed && borrowed_count))
     return -1;
@@ -674,7 +674,7 @@ d2_draw_sequence_reference(void *dp, void *qp, D2AlphaRecord record, void *user,
     std::copy(draws, draws + count, sequence.draws);
     write(base + "/sequence.bin", &sequence, sizeof(sequence));
     const char marker[] =
-        "{\"schema\":1,\"status\":\"captured\",\"purpose\":\"selected-same-"
+        "{\"schema\":1,\"status\":\"captured\",\"purpose\":\"selected-mixed-"
         "pipeline-sequence\",\"full_frame_equivalence_tested\":false}\n";
     write(base + "/sequence.json", marker, sizeof(marker) - 1);
     return 0;

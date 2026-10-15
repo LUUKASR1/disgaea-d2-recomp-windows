@@ -165,7 +165,7 @@ void fixture(const fs::path &input) {
 int main(int argc, char **argv) {
   fs::path input, output = "draw-vulkan-check";
   bool synthetic = false, validation = false, sequence_mode = false;
-  uint32_t sequence_count = 0;
+  uint32_t sequence_count = 0, sequence_version = 0, pipeline_switches = 0;
   int code = 1;
   std::string status = "failed", error, adapter;
   uint64_t different = 0, above = 0, nonzero = 0;
@@ -210,22 +210,26 @@ int main(int argc, char **argv) {
       require(text(root / "sequence.json").find("\"status\":\"captured\"") !=
                   std::string::npos,
               "Sequence was not completed");
-      auto data =
-          read(root / "sequence.bin", sizeof(sequence), sizeof(sequence));
-      std::memcpy(&sequence, data.data(), sizeof(sequence));
-      require(sequence.magic == 0x31535144 && sequence.version == 1 &&
+      auto data = read(root / "sequence.bin", sizeof(sequence));
+      require(data.size() == 48 || data.size() == 64, "Invalid sequence size");
+      std::memcpy(&sequence, data.data(), data.size());
+      require(data.size() == (sequence.version == 1 ? 48u : 64u),
+              "Sequence version/size mismatch");
+      require(sequence.magic == 0x31535144 &&
+                  (sequence.version == 1 || sequence.version == 2) &&
                   sequence.reserved == 0 && sequence.count >= 2 &&
-                  sequence.count <= 4 && sequence.width &&
-                  sequence.width <= 1920 && sequence.height &&
+                  sequence.count <= (sequence.version == 1 ? 4u : 8u) &&
+                  sequence.width && sequence.width <= 1920 && sequence.height &&
                   sequence.height <= 1080,
               "Invalid sequence header");
-      for (unsigned i = 0; i < 4; i++)
+      for (unsigned i = 0; i < 8; i++)
         require(i < sequence.count
                     ? (sequence.draws[i] < 16384 &&
                        (!i || sequence.draws[i] > sequence.draws[i - 1]))
                     : sequence.draws[i] == 0,
                 "Invalid sequence order/reserved slot");
       sequence_count = sequence.count;
+      sequence_version = sequence.version;
     }
     Renderer r;
     Compiler compiler;
@@ -335,13 +339,22 @@ int main(int argc, char **argv) {
         r.setRasterState(state);
         r.offscreen(w, h);
       } else {
-        require(w == first_packet.width && h == first_packet.height &&
-                    std::memcmp(&p.depth_enabled, &first_packet.depth_enabled,
-                                15 * sizeof(uint32_t)) == 0 &&
-                    p.fragment_output_mask ==
-                        first_packet.fragment_output_mask &&
-                    vs.words == first_vs && fp.words == first_fp,
-                "Sequence requires identical pipeline/shaders");
+        require(w == first_packet.width && h == first_packet.height,
+                "Sequence target mismatch");
+        bool changed =
+            std::memcmp(&p.depth_enabled, &first_packet.depth_enabled,
+                        15 * sizeof(uint32_t)) != 0 ||
+            p.fragment_output_mask != first_packet.fragment_output_mask ||
+            vs.words != first_vs || fp.words != first_fp;
+        if (changed) {
+          require(sequence.version >= 2,
+                  "Legacy sequence requires identical pipeline/shaders");
+          r.replaceReplayPipeline(vs.words, fp.words, state);
+          pipeline_switches++;
+          first_packet = p;
+          first_vs = vs.words;
+          first_fp = fp.words;
+        }
       }
       if (sequence_mode)
         require(w == sequence.width && h == sequence.height,
@@ -457,6 +470,17 @@ int main(int argc, char **argv) {
           json.size() - 2,
           ",\"selected_draw_count\":" + std::to_string(sequence_count) +
               ",\"coverage_scope\":\"selected-same-pipeline-subset-only\"");
+    }
+    if (sequence_mode) {
+      if (sequence_version >= 2) {
+        auto from = std::string("selected-same-pipeline-subset-only");
+        json.replace(json.find(from), from.size(),
+                     "selected-mixed-pipeline-subset-only");
+      }
+      json.insert(
+          json.size() - 2,
+          ",\"sequence_version\":" + std::to_string(sequence_version) +
+              ",\"pipeline_switches\":" + std::to_string(pipeline_switches));
     }
     write(output / (sequence_mode ? "sequence-vulkan-report.json"
                                   : "draw-vulkan-report.json"),

@@ -144,6 +144,15 @@ float4 ps(V v):SV_Target {float alpha=(v.uv.x>=.25 && v.uv.x<.5)||(v.uv.x>=.75)?
     require(sequence.calls==2,"Both original callbacks executed");
     {std::ifstream f(folder/"sequence-reference.rgba",std::ios::binary);std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(f)),{});require(bytes.size()==32*16*4,"Sequence RGBA size");for(size_t i=0;i<bytes.size();i+=4)require(bytes[i]==255&&bytes[i+1]==0&&bytes[i+2]==255&&bytes[i+3]==255,"Farther second draw cannot replace retained depth");}
     {std::ifstream f(folder/"sequence.bin",std::ios::binary);d2::DrawSequence v;f.read((char*)&v,sizeof(v));require(bool(f)&&v.count==2&&v.draws[0]==7&&v.draws[1]==9&&v.frame==42,"Sequence ordering and frame preserved");}
+    // A second PSO changes shader, depth, blend and write mask without clear.
+    const char mixed_fp[]="float4 main():SV_TARGET0{return float4(0,1,0,.5);}";
+    Ref<ID3DBlob> mixed_ps;check(D3DCompile(mixed_fp,sizeof(mixed_fp)-1,nullptr,nullptr,nullptr,"main","ps_5_0",0,0,mixed_ps.put(),error.put()));
+    auto mixed_pd=pd;mixed_pd.PS={mixed_ps->GetBufferPointer(),mixed_ps->GetBufferSize()};mixed_pd.DepthStencilState.DepthEnable=FALSE;
+    auto& mb=mixed_pd.BlendState.RenderTarget[0];mb.BlendEnable=TRUE;mb.SrcBlend=D3D12_BLEND_SRC_ALPHA;mb.DestBlend=D3D12_BLEND_INV_SRC_ALPHA;mb.SrcBlendAlpha=D3D12_BLEND_ONE;mb.DestBlendAlpha=D3D12_BLEND_INV_SRC_ALPHA;mb.RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_RED|D3D12_COLOR_WRITE_ENABLE_GREEN;
+    Ref<ID3D12PipelineState> mixed;check(device->CreateGraphicsPipelineState(&mixed_pd,IID_ID3D12PipelineState,(void**)mixed.put()));
+    sequence.second.pso=mixed.p;void* mixed_borrowed[]={captured.p,mixed.p,root.p,vb.p,farther.p};
+    require(d2_draw_sequence_reference(device.p,queue.p,record_sequence,&sequence,utf8.c_str(),42,32,16,sequence_ids,sequence_srvs,2,mixed_borrowed,5)==0,"Mixed original pipelines exported on same targets");
+    {std::ifstream f(folder/"sequence-reference.rgba",std::ios::binary);std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(f)),{});for(size_t i=0;i<bytes.size();i+=4)require(bytes[i]>=127&&bytes[i]<=128&&bytes[i+1]>=127&&bytes[i+1]<=128&&bytes[i+2]==255&&bytes[i+3]==255,"New shader/depth/blend/mask preserves prior blue and alpha");}
     sequence_ids[1]=7;require(d2_draw_sequence_reference(device.p,queue.p,record_sequence,&sequence,utf8.c_str(),42,32,16,sequence_ids,sequence_srvs,2,sequence_borrowed,4)<0,"Duplicate selected draw rejected");
     // BC readback must copy block rows, not texel rows/padding. Original
     // compressed bytes and SRV selectors are kept for Vulkan's decoder.
