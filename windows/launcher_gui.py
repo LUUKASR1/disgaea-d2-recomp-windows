@@ -17,7 +17,9 @@ TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 
 def run_gui(Backend, home, version, firmware_present, preview=False):
     app = tk.Tk()
-    app.title('Disgaea D2 • Windows Launcher • ' + version)
+    standalone = home.name == 'DisgaeaD2Recomp-Standalone'
+    clean = standalone or home.name == 'DisgaeaD2Recomp-ISO-Clean'
+    app.title('Disgaea D2 • ' + ('Standalone • ' if standalone else 'Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version)
     app.geometry('1040x680')
     app.minsize(920, 640)
     app.configure(bg=BG)
@@ -172,6 +174,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         threading.Thread(target=execute, daemon=False).start()
 
     def play():
+        if ready and config.get('iso_path') and not packages and not firmware.get():
+            try: save_settings(home, get_settings())
+            except (OSError, ValueError) as error:
+                messagebox.showerror('Configurações', str(error)); return
+            task(backend.play); return
+        if clean and not ready:
+            play_iso(); return
         try:
             save_settings(home, get_settings())
         except (OSError, ValueError) as error:
@@ -181,13 +190,34 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
             choose_folder()
             if not folder.get():
                 return
-        if not ready and not packages and not (home / 'auxiliar-rpcs3/dev_hdd0/game/BLUS31313/USRDIR/Data/START_7.dat').is_file():
+        if not ready and not packages and not (home / ('hdd0/game/BLUS31313/USRDIR/Data/START_7.dat' if standalone else 'auxiliar-rpcs3/dev_hdd0/game/BLUS31313/USRDIR/Data/START_7.dat')).is_file():
             choose_packages()
             if not packages:
                 status.set('Selecione a atualização USA 1.40 para a primeira preparação.')
                 return
         game, pkgs, fw = folder.get(), list(packages), firmware.get()
-        task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
+        if ready and game == config.get('game_root') and not pkgs and not fw:
+            task(backend.play)
+        else:
+            task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
+
+    def play_iso():
+        selected = filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
+            filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
+        if not selected: return
+        try:
+            save_settings(home, get_settings())
+        except (OSError, ValueError) as error:
+            messagebox.showerror('Configurações', str(error)); return
+        if not ready:
+            if not packages and not (home / ('hdd0/game/BLUS31313/USRDIR/Data/START_7.dat' if standalone else 'auxiliar-rpcs3/dev_hdd0/game/BLUS31313/USRDIR/Data/START_7.dat')).is_file():
+                choose_packages()
+                if not packages:
+                    status.set('Selecione a atualização USA 1.40; DLCs são opcionais.'); return
+            task(lambda: backend.prepare_iso_and_play(selected, list(packages), firmware.get(),
+                 lambda: events.put(('prepared', ''))))
+        else:
+            task(lambda: backend.play_iso(selected))
 
     page = bodies['Início']
     label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
@@ -196,6 +226,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     logo_item = hero.create_image(0, 0, image=logo_image, anchor='n')
     hero.bind('<Configure>', lambda event: hero.coords(logo_item, event.width // 2, 0))
     button(page, '▶  JOGAR DISGAEA D2', play, True)
+    button(page, 'Selecionar ISO e jogar' if clean else 'Jogar pela ISO (experimental)', play_iso)
     info = card(page)
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
@@ -233,15 +264,17 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     page = bodies['Preparação']
     label(page, 'PRIMEIRA VEZ E IMPORTAÇÃO', 10, GOLD, True)
     label(page, 'Arquivos da sua cópia', 28, bold=True)
-    label(page, 'Jogo USA extraído + atualização 1.40. Os arquivos do jogo não estão incluídos.', 10, MUTED)
+    label(page, 'ISO USA + atualização 1.40 em PKG; DLCs opcionais. Sem firmware.' if standalone else 'Jogo USA extraído + atualização 1.40. Os arquivos do jogo não estão incluídos.', 10, MUTED)
     setup = card(page)
     entry = tk.Entry(setup, textvariable=folder, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief='flat', font=('Segoe UI', 10))
-    entry.pack(fill='x', ipady=8); entries.append(entry)
+    if not standalone:
+        entry.pack(fill='x', ipady=8); entries.append(entry)
     def choose_folder():
         value = filedialog.askdirectory(title='Pasta do jogo ou PS3_GAME')
         if value:
             folder.set(value)
-    button(setup, 'Selecionar jogo extraído', choose_folder)
+    if not standalone: button(setup, 'Selecionar jogo extraído', choose_folder)
+    else: button(setup, 'Selecionar ISO e preparar', play_iso)
     row = tk.Frame(setup, bg=CARD); row.pack(fill='x')
     def choose_firmware():
         value = filedialog.askopenfilename(title='Firmware PS3UPDAT.PUP', filetypes=[('Firmware PS3', '*.PUP *.pup')])
@@ -251,9 +284,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         value = filedialog.askdirectory(title='Pasta do RPCS3 ou dev_flash')
         if value:
             firmware.set(value); firmware_text.set('Importar firmware: ' + value)
-    button(row, 'Selecionar firmware PUP', choose_firmware)
-    button(row, 'Importar firmware do RPCS3', import_firmware)
-    label(setup, variable=firmware_text, size=9, color=MUTED)
+    if not standalone:
+        button(row, 'Selecionar firmware PUP', choose_firmware)
+        button(row, 'Importar firmware do RPCS3', import_firmware)
+        label(setup, variable=firmware_text, size=9, color=MUTED)
     def choose_packages():
         values = filedialog.askopenfilenames(title='Atualização US 1.40 e DLCs', filetypes=[('Pacotes PS3', '*.pkg')])
         if values:
@@ -265,17 +299,18 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     label(page, 'Na primeira execução, as ferramentas são baixadas e a build é criada automaticamente. Depois, Jogar reutiliza sua build local.', 10, MUTED)
 
     page = bodies['Arquivos e suporte']
+    if not standalone: button(page, 'Testar instalação ISO limpa', backend.open_clean_iso_test)
     label(page, 'TUDO EM UM LUGAR', 10, GOLD, True)
     label(page, 'Arquivos e suporte', 28, bold=True)
     label(page, 'Sua build, configuração e saves ficam na pasta local do aplicativo.', color=MUTED)
     def open_path(path):
         path.mkdir(parents=True, exist_ok=True)
         os.startfile(path)
-    button(page, 'Abrir pasta de saves', lambda: open_path(home / 'auxiliar-rpcs3/dev_hdd0/home'))
+    button(page, 'Abrir pasta de saves', lambda: open_path(home / ('hdd0/home' if standalone else 'auxiliar-rpcs3/dev_hdd0/home')))
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
-    button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
+    if not standalone: button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
     label(page, 'Não apague a pasta local para atualizar o launcher. Android ainda não está disponível.', 10, MUTED)
     for variable in (resolution, mode, vsync):
@@ -284,7 +319,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     app.bind_all('<MouseWheel>', lambda event: canvases[active_page[0]].yview_scroll(-int(event.delta / 120), 'units'))
 
     def poll():
-        nonlocal busy, ready
+        nonlocal busy, ready, config
         while not events.empty():
             kind, message = events.get()
             if kind == 'done':
@@ -294,6 +329,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
                     widget.configure(state='readonly' if isinstance(widget, ttk.Combobox) else 'normal')
                 update_summary()
             elif kind == 'prepared':
+                config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
+                folder.set(config.get('game_root', ''))
                 ready = True; firmware.set(''); packages.clear()
                 package_text.set('Pacotes importados. Não precisam ser selecionados novamente.')
                 firmware_text.set('Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Build pronta para jogar.')

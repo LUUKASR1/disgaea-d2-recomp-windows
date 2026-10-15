@@ -31,6 +31,7 @@ def main():
     p.add_argument('--json-include', required=True, type=Path,
                    help='Directory containing nlohmann/json.hpp, supplied separately.')
     p.add_argument('--jobs', type=int, default=4)
+    p.add_argument('--iso-vfs', action='store_true', help='Build directly against ISO assets.')
     p.add_argument('--resume', action='store_true', help='Resume a verified, fully generated local build.')
     args = p.parse_args()
     if sys.version_info < (3, 11):
@@ -102,7 +103,7 @@ def main():
             '-DCMAKE_EXE_LINKER_FLAGS=-static -ldxguid -ld3d12 -ldxgi -ld3dcompiler -luuid -lpthread -lxinput9_1_0']
     run('cmake', '-S', root / 'port', '-B', build, '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release', *compiler_options,
-        '-DCMAKE_SUPPRESS_REGENERATION=ON',
+        '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DD2_ENABLE_ISO_VFS=' + ('ON' if args.iso_vfs else 'OFF'),
         '-DD2_GAME_VERSION=140',
         '-DPS3RECOMP_DIR=' + str(sdk), '-DPython3_EXECUTABLE=' + sys.executable,
         '-DD2_JSON_INCLUDE_DIR=' + str(include), '-DRECOMP_DIR=' + str(generated / 'src/recomp-140'),

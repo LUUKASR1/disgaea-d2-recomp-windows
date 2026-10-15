@@ -160,3 +160,13 @@
 !/.github/
 !/.github/workflows/
 !/.github/workflows/windows-launcher.yml
+
+# Asset-free UDF reader and native regression fixtures (generated ISO files stay out).
+!/port/vfs/
+!/port/vfs/**
+/port/vfs/build*/
+*.iso
+!/.github/workflows/iso-vfs.yml
+!/.github/workflows/iso-launcher.yml
+/build-iso-vfs/
+/ci-tools/

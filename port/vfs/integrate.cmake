@@ -1,0 +1,22 @@
+# Opt-in only: the released folder-based runner is unchanged by default.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/vfs" "${CMAKE_CURRENT_BINARY_DIR}/iso-vfs")
+set(D2_ISO_ADAPTER_DIR "${CMAKE_CURRENT_BINARY_DIR}/iso-sdk")
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/vfs/adapt_sdk.py"
+    "${PS3RECOMP_DIR}" "${D2_ISO_ADAPTER_DIR}" COMMAND_ERROR_IS_FATAL ANY)
+
+get_target_property(D2_SDK_SOURCES ps3recomp_runtime SOURCES)
+foreach(relative IN ITEMS runtime/syscalls/sys_fs.c libs/filesystem/cellFs.c
+    libs/codec/cellPngDec.c libs/codec/cellJpgDec.c libs/codec/cellGifDec.c)
+    set(original "${PS3RECOMP_DIR}/${relative}")
+    if(NOT original IN_LIST D2_SDK_SOURCES)
+        message(FATAL_ERROR "Filesystem source not found in SDK target: ${relative}")
+    endif()
+    list(REMOVE_ITEM D2_SDK_SOURCES "${original}")
+    get_filename_component(name "${relative}" NAME)
+    list(APPEND D2_SDK_SOURCES "${D2_ISO_ADAPTER_DIR}/${name}")
+endforeach()
+set_property(TARGET ps3recomp_runtime PROPERTY SOURCES "${D2_SDK_SOURCES}")
+target_link_libraries(ps3recomp_runtime PRIVATE d2_iso_vfs)
+list(REMOVE_ITEM PS3RECOMP_SCAFFOLD "${PS3RECOMP_DIR}/runtime/ppu/ppu_fs.cpp")
+list(APPEND PS3RECOMP_SCAFFOLD "${D2_ISO_ADAPTER_DIR}/ppu_fs.cpp")
