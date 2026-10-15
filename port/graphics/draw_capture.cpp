@@ -1,8 +1,11 @@
+// clang-format off: bcrypt requires Windows typedefs first.
+#include <windows.h>
+#include <bcrypt.h>
+// clang-format on
 #include "draw_capture.h"
 #include "../vulkan/draw_packet.h"
 #include "capture.h"
 #include <array>
-#include <bcrypt.h>
 #include <cstring>
 #include <d3d11shader.h>
 #include <d3d12.h>
@@ -12,7 +15,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <windows.h>
 namespace {
 template <class T> struct Ref {
   T *p = nullptr;
