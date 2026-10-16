@@ -1,6 +1,6 @@
 ; The installer owns only the launcher directory, never user game/build/save data.
 #ifdef OfficialRelease
-#define AppVersion "0.2.0"
+#define AppVersion "0.2.1"
 #define AppChannel "Stable - DirectX 12"
 #else
 #define AppVersion "0.1.10"
@@ -43,8 +43,18 @@ VersionInfoDescription=Disgaea D2 Windows Launcher - {#AppChannel}
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+brazilianportuguese.DesktopShortcut=Criar atalho na área de trabalho
+english.DesktopShortcut=Create a desktop shortcut
+brazilianportuguese.Shortcuts=Atalhos:
+english.Shortcuts=Shortcuts:
+brazilianportuguese.CheckRuntimes=Verificando bibliotecas de execução do Windows...
+english.CheckRuntimes=Checking Windows runtime libraries...
+brazilianportuguese.OpenLauncher=Abrir DisgaeaD2Launcher
+english.OpenLauncher=Open DisgaeaD2Launcher
+
 [Tasks]
-Name: "desktopicon"; Description: "Criar atalho na area de trabalho"; GroupDescription: "Atalhos:"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopShortcut}"; GroupDescription: "{cm:Shortcuts}"; Flags: unchecked
 
 [Files]
 #ifdef OfficialRelease
@@ -58,8 +68,8 @@ Name: "{userprograms}\Disgaea D2 Recomp\DisgaeaD2Launcher"; Filename: "{app}\Dis
 Name: "{userdesktop}\DisgaeaD2Launcher"; Filename: "{app}\DisgaeaD2Launcher.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\DisgaeaD2Launcher.exe"; Parameters: "--runtime-setup"; StatusMsg: "Verificando bibliotecas de execucao do Windows..."; Flags: waituntilterminated
-Filename: "{app}\DisgaeaD2Launcher.exe"; Description: "Abrir DisgaeaD2Launcher"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\DisgaeaD2Launcher.exe"; Parameters: "--runtime-setup"; StatusMsg: "{cm:CheckRuntimes}"; Flags: waituntilterminated
+Filename: "{app}\DisgaeaD2Launcher.exe"; Description: "{cm:OpenLauncher}"; Flags: nowait postinstall skipifsilent
 
 ; No [UninstallDelete] or [InstallDelete] sections: LocalAppData game/build/save
 ; folders and arbitrary extra files in the launcher directory are preserved.

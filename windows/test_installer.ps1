@@ -7,12 +7,15 @@ $dataDirectory = Join-Path $env:LOCALAPPDATA $profileName
 $fixture = Join-Path $dataDirectory $(if ($OfficialRelease) { 'hdd0/home/00000001/savedata/CI-PRESERVE-FIXTURE/probe.txt' } else { 'auxiliar-rpcs3/dev_hdd0/home/00000001/savedata/CI-PRESERVE-FIXTURE/probe.txt' })
 $config = Join-Path $dataDirectory 'build-atual.json'
 $extra = Join-Path $installDirectory 'user-extra.txt'
+$language = Join-Path $dataDirectory 'launcher-language.json'
 New-Item -ItemType Directory -Path (Split-Path $fixture), $installDirectory -Force | Out-Null
 [IO.File]::WriteAllText($fixture, 'CI-only save preservation fixture')
 [IO.File]::WriteAllText($config, '{"ci_fixture":"preserve configuration"}')
 [IO.File]::WriteAllText($extra, 'User-owned file, not installed by Setup')
 $saveHash = (Get-FileHash $fixture).Hash
 $configHash = (Get-FileHash $config).Hash
+[IO.File]::WriteAllText($language, '{"schema":1,"language":"en"}')
+$languageHash = (Get-FileHash $language).Hash
 
 function Invoke-InstallerProcess($file, $arguments, $label) {
     $process = Start-Process -FilePath $file -ArgumentList $arguments -PassThru
@@ -27,6 +30,7 @@ function Invoke-InstallerProcess($file, $arguments, $label) {
 function Assert-PreservedData {
     if ((Get-FileHash $fixture).Hash -ne $saveHash) { throw 'Save fixture changed' }
     if ((Get-FileHash $config).Hash -ne $configHash) { throw 'Build configuration changed' }
+    if ((Get-FileHash $language).Hash -ne $languageHash) { throw 'Language preference changed' }
     if (!(Test-Path $extra)) { throw 'User-owned extra file deleted' }
 }
 
@@ -43,11 +47,11 @@ $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 
 if (!(Test-Path $startShortcut) -or !(Test-Path $desktopShortcut)) { throw 'Installer shortcuts missing' }
 Assert-PreservedData
 Invoke-InstallerProcess $launcher '--self-test' 'Installed interpreter self-test'
-Invoke-InstallerProcess $installer $arguments 'Reinstall'
+Invoke-InstallerProcess $installer ($arguments.Replace('/LANG=brazilianportuguese', '/LANG=english')) 'Reinstall in English'
 Assert-PreservedData
 Invoke-InstallerProcess (Join-Path $installDirectory 'unins000.exe') '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' 'Uninstall'
 Assert-PreservedData
 if (Test-Path $launcher) { throw 'Launcher was not uninstalled' }
 if (Test-Path (Join-Path $installDirectory '_internal/vendor/cmake/bin/cmake.exe')) { throw 'Installed dependency was not removed' }
 if ((Test-Path $startShortcut) -or (Test-Path $desktopShortcut)) { throw 'Installer shortcuts remained' }
-Write-Output 'PASS: install, installed interpreter, reinstall, shortcuts, uninstall and preservation of save/config/user files.'
+Write-Output 'PASS: install, installed interpreter, reinstall, shortcuts, uninstall and preservation of save/config/language/user files.'

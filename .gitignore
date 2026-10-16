@@ -179,3 +179,8 @@
 /port/graphics/build*/
 !/.github/workflows/graphics.yml
 /build-graphics/
+
+# Launcher translation catalog (source only).
+!/windows/locales/
+/windows/locales/*
+!/windows/locales/en.json

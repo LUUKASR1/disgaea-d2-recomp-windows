@@ -1,6 +1,9 @@
-Disgaea D2 Windows Launcher 0.2.0 - Stable / DirectX 12
+Disgaea D2 Windows Launcher 0.2.1 - Stable / DirectX 12
 
 Projeto independente da comunidade. Nao e uma publicacao oficial da NIS ou Sony.
+
+Idioma / Language: Portugues (Brasil) / English, abaixo de WIN PORT.
+Select your launcher language below WIN PORT; the game language is unchanged.
 
 Feche o jogo e o launcher antes de instalar ou atualizar.
 Selecione sua propria ISO USA compativel e a atualizacao BLUS31313 US 1.40.

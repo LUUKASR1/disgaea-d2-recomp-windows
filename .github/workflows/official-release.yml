@@ -1,26 +1,30 @@
 name: Validate official DirectX 12 stable package
-run-name: Verify official 0.2.0 Stable launcher and installer
+run-name: Verify official 0.2.1 Stable launcher and installer
 on:
   push:
-    branches: [feature/native-graphics]
+    branches: [release/windows-0.2.1]
     paths: [.github/workflows/official-release.yml]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: official-dx12-020
+  group: official-dx12-021
   cancel-in-progress: false
 jobs:
   validate-package:
-    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/feature/native-graphics'
+    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/release/windows-0.2.1'
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install -r tools/requirements-lifts.txt pyinstaller==6.22.0 py7zr==1.0.0 cmake==3.31.6 ninja==1.11.1.4
+      - name: Preserve the validated 0.2.0 game runtime sources
+        run: git diff --exit-code f7659ac54ab72dd20ea0407f7f84fa99278ff865 -- port patches tools/build_windows.py tools/build_iso_preview.py tools/prepare_owned_self.py tools/import_owned_pkg.py
       - name: Launcher and preparation regressions
         run: python -m unittest discover -s windows -p 'test_*.py' -v
       - name: Native DirectX 12 graphics and FSR regressions
@@ -31,7 +35,7 @@ jobs:
         run: python windows/preview_launcher.py --official
       - uses: actions/upload-artifact@v4
         with:
-          name: Official-0.2.0-Launcher-UI
+          name: Official-0.2.1-Launcher-UI
           path: launcher-previews/
       - name: Package official single-file launcher
         run: python tools/package_launcher.py --onefile --official
@@ -75,14 +79,14 @@ jobs:
               data = Path(source).read_bytes()
               assert data[:2] == b'MZ' and len(data) > 1_000_000
               shutil.copy2(source, out / Path(source).name)
-          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-0.2.0-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-0.2.0.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
+          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-0.2.1-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-0.2.1.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
                   z.write(source, name)
-          (out / 'release-build.json').write_text(json.dumps({'version': '0.2.0', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
+          (out / 'release-build.json').write_text(json.dumps({'version': '0.2.1', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
           sums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(out.iterdir()))
           (out / 'SHA256SUMS.txt').write_text(sums)
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-0.2.0-Official-Verified-Assets
+          name: DisgaeaD2-0.2.1-Official-Verified-Assets
           path: official-assets/
           if-no-files-found: error
