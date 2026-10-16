@@ -154,6 +154,9 @@
 !/windows/*.bat
 !/windows/perfil.json
 !/windows/config.exemplo.json
+!/windows/locales/
+/windows/locales/*
+!/windows/locales/en.json
 !/port/d2_*.h
 /windows/config.local.json
 /windows/*.log

@@ -6,20 +6,25 @@ import queue
 import sys
 import threading
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog as raw_filedialog, messagebox as raw_messagebox
 import webbrowser
 
 from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_RATES, load_settings, save_settings
+from launcher_i18n import LANGUAGES, Localizer, Dialogs, load_language, save_language, text_variable_class, widget_bindings
 
 BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
 TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 
 
 def run_gui(Backend, home, version, firmware_present, preview=False, official=False):
+    translate = Localizer(load_language(home))
+    filedialog, messagebox = Dialogs(raw_filedialog, translate), Dialogs(raw_messagebox, translate)
+    TextVariable = text_variable_class(tk, translate)
     app = tk.Tk()
     standalone = home.name in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview')
     clean = standalone or home.name == 'DisgaeaD2Recomp-ISO-Clean'
-    app.title('Disgaea D2 • ' + ('Windows • Stable • ' + version if official else ('Standalone • ' if standalone else 'Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version))
+    title_source = 'Disgaea D2 • ' + ('Windows • Stable • ' + version if official else ('Standalone • ' if standalone else 'Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version)
+    app.title(translate(title_source))
     app.geometry('1040x680')
     app.minsize(920, 640)
     app.configure(bg=BG)
@@ -60,9 +65,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         pass
     folder = tk.StringVar(value=inputs.get('game_root', config.get('game_root', '')))
     firmware = tk.StringVar(value=inputs.get('firmware', ''))
-    firmware_text = tk.StringVar(value='Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Firmware: resolvido durante a primeira preparação.')
+    firmware_text = TextVariable(value='Firmware disponível no auxiliar local.' if firmware_present(home / 'auxiliar-rpcs3') else 'Firmware: resolvido durante a primeira preparação.')
     packages = list(inputs.get('packages', []))
-    package_text = tk.StringVar(value=' • '.join(Path(value).name for value in packages) or 'Nenhum pacote selecionado.')
+    package_text = TextVariable(value=' • '.join(Path(value).name for value in packages) or 'Nenhum pacote selecionado.')
     ready = bool(config.get('workspace'))
     initial_error = ''
     try:
@@ -71,22 +76,22 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         settings, initial_error = dict(DEFAULTS), str(error)
     resolution = tk.StringVar(value=settings['resolution'])
     graphics_api = tk.StringVar(value='d3d12' if official else settings['graphics_api'])
-    mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
+    mode = TextVariable(choice=True, value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
-    refresh_rate = tk.StringVar(value='Nativo' if settings['refresh_rate']=='native' else settings['refresh_rate']+' Hz')
+    refresh_rate = TextVariable(choice=True, value='Nativo' if settings['refresh_rate']=='native' else settings['refresh_rate']+' Hz')
     fps_unlimited = tk.BooleanVar(value=settings['fps_unlimited'])
     vrr = tk.BooleanVar(value=settings['vrr'])
     render_resolution = tk.StringVar(value=settings['render_resolution'])
-    upscaler = tk.StringVar(value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
+    upscaler = TextVariable(choice=True, value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
     hud_after_upscale = tk.BooleanVar(value=settings['hud_after_upscale'])
     capture_enabled = tk.BooleanVar(value=False)
     performance_enabled = tk.BooleanVar(value=False)
-    capture_goal = tk.StringVar(value="Cenário — girar câmera")
-    capture_status = tk.StringVar(value='Captura desativada.')
-    status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
-    build_status = tk.StringVar(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
-    summary = tk.StringVar()
+    capture_goal = TextVariable(choice=True, value="Cenário — girar câmera")
+    capture_status = TextVariable(value='Captura desativada.')
+    status = TextVariable(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
+    build_status = TextVariable(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
+    summary = TextVariable()
 
     def label(parent, text='', size=11, color=TEXT, bold=False, variable=None, wrap=640):
         widget = tk.Label(parent, text=text, textvariable=variable, bg=parent['bg'], fg=color,
@@ -155,6 +160,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         nav.pack(fill='x', pady=3)
         nav_buttons[name] = nav
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • ' + ('Stable / DX12' if official else 'Experimental'), 9, MUTED)
+    label(sidebar, 'Idioma / Language', 9, MUTED)
+    language_choice = tk.StringVar(value=LANGUAGES[translate.language])
+    language_combo = ttk.Combobox(sidebar, textvariable=language_choice,
+        values=tuple(LANGUAGES.values()), state='readonly', style='D2.TCombobox', width=19)
+    language_combo.pack(anchor='w', pady=(0, 4)); entries.append(language_combo)
 
     def get_settings():
         return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
@@ -462,6 +472,33 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         else:
             app.destroy()
     app.protocol('WM_DELETE_WINDOW', close)
+    bindings = widget_bindings(app, translate, excluded=(language_combo,))
+    localized_variables = (firmware_text, package_text, mode, refresh_rate, upscaler,
+                           capture_goal, capture_status, status, build_status, summary)
+    def apply_language():
+        for binding in bindings:
+            binding()
+        for variable in localized_variables:
+            variable.refresh()
+        app.title(translate(title_source))
+
+    def change_language(language):
+        if busy:
+            language_choice.set(LANGUAGES[translate.language]); return
+        try:
+            save_language(home, language)
+        except (OSError, ValueError) as error:
+            language_choice.set(LANGUAGES[translate.language])
+            messagebox.showerror('Configurações', str(error)); return
+        translate.language = language
+        language_choice.set(LANGUAGES[language])
+        apply_language()
+    language_combo.bind('<<ComboboxSelected>>', lambda event: change_language(
+        next(code for code, name in LANGUAGES.items() if name == language_choice.get())))
+    if preview:
+        app._launcher_i18n = (translate, change_language)
+        app._launcher_get_settings = get_settings
+    apply_language()
     show('Início')
     poll()
     if preview:

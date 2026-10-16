@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.53-performance-preview'
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.54-language-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -758,6 +758,9 @@ def main():
     elif '--self-test' in sys.argv:
         import capstone, construct, Crypto, tabulate, tqdm, py7zr
         import argparse, dataclasses, glob, struct, tempfile
+        from launcher_i18n import Localizer
+        if Localizer('en')('Salvar configurações') != 'Save settings':
+            raise RuntimeError('Bundled English catalog is unavailable')
         if not (ROOT / 'payload/patches/SDK-WINDOWS.lock').is_file():
             raise RuntimeError('Payload ausente')
         lock = json.loads((ROOT / 'payload/patches/SDK-WINDOWS.lock').read_text())
