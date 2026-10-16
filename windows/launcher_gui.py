@@ -87,6 +87,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     hud_after_upscale = tk.BooleanVar(value=settings['hud_after_upscale'])
     capture_enabled = tk.BooleanVar(value=False)
     performance_enabled = tk.BooleanVar(value=False)
+    texture_reuse_enabled = tk.BooleanVar(value=False)
     capture_goal = TextVariable(choice=True, value="Cenário — girar câmera")
     capture_status = TextVariable(value='Captura desativada.')
     status = TextVariable(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
@@ -190,6 +191,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             return
         busy = True
         backend.performance_enabled = performance_enabled.get()
+        backend.texture_reuse_enabled = texture_reuse_enabled.get()
         backend.capture_enabled = capture_enabled.get()
         backend.capture_goal = "draw" if capture_goal.get().startswith("Desenho") else "shaders" if capture_goal.get().startswith("Shaders") else "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
         for widget in buttons + entries:
@@ -387,6 +389,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     if not official:
         measurement = card(page)
         label(measurement, 'MEDIÇÃO LEVE DE DESEMPENHO', 12, GOLD, True)
+        reuse_toggle = tk.Checkbutton(measurement, text='Reaproveitar texturas compatíveis — experimental',
+            variable=texture_reuse_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
+            activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
+        reuse_toggle.pack(anchor='w', pady=4); entries.append(reuse_toggle)
+        label(measurement, 'Compare com a opção desligada usando as mesmas configurações. Requer fechar e abrir o jogo; não amplia o cache de texturas.', 10, MUTED)
         toggle = tk.Checkbutton(measurement, text='Medir na próxima abertura do jogo — sem imagens',
             variable=performance_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
             activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))

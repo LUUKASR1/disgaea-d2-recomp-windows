@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.54-language-preview'
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.55-texture-reuse-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -250,6 +250,7 @@ class Backend:
         self.notify = notify
         self.capture_enabled = False
         self.performance_enabled = False
+        self.texture_reuse_enabled = False
         self.last_performance_report = None
         self.capture_goal = "scenery"
         self.capture_session = None
@@ -658,12 +659,16 @@ class Backend:
         env = clean_capture_environment(env)
         from performance_report import PerformanceSession, clean_environment
         env = clean_environment(env)
+        from texture_reuse_settings import texture_reuse_environment
+        reuse_enabled = bool(self.texture_reuse_enabled and not OFFICIAL_RELEASE)
+        env = texture_reuse_environment(env, reuse_enabled, OFFICIAL_RELEASE)
         self.last_performance_report = None
         performance = None
         if self.performance_enabled and not OFFICIAL_RELEASE:
             if self.capture_enabled:
                 raise RuntimeError('Desative as capturas de imagens antes de medir desempenho.')
-            performance = PerformanceSession(self.home, VERSION, settings)
+            performance = PerformanceSession(self.home, VERSION,
+                dict(settings, texture_reuse_experiment=reuse_enabled))
             env = performance.environment(env)
             self.notify('Medição leve: F6 Castle, F7 batalha, F9 Mothman, F10 concluir. Feche o jogo para receber o ZIP.')
         session = None

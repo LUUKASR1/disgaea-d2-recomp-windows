@@ -9,6 +9,8 @@ on:
       - 'windows/launcher_i18n.py'
       - 'windows/locales/**'
       - 'windows/test_launcher_i18n.py'
+      - 'windows/texture_reuse_settings.py'
+      - 'windows/test_texture_reuse_settings.py'
       - 'windows/assets/**'
       - 'windows/test_branding.py'
       - 'windows/portable_tools.py'

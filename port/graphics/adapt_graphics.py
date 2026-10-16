@@ -21,6 +21,26 @@ def generate(source, output):
     profile_header = output.parent / 'd2_frame_profile.h'
     generate_frame_profile(source.parent / 'd2_frame_light.h', profile_header)
     text = data.decode()
+    # The original scratch SRVs at 1+slot can overlap draw windows from slot 32.
+    # Relocating them is necessary before changing which texture slot is reused.
+    # Keep original addresses when the experiment is off; reserve tail space.
+    text = replace(text, '#define SRV_HEAP_SIZE (DRAW_SRV_BASE + MAX_DRAWS * 4)',
+        '#define D2_TEXTURE_SCRATCH_BASE (DRAW_SRV_BASE + MAX_DRAWS * 4)\n'
+        '#define SRV_HEAP_SIZE (D2_TEXTURE_SCRATCH_BASE + VP_TEX_SLOTS)\n'
+        'static int d2_texture_reuse_enabled(void) {\n'
+        '    static int enabled=-1;\n'
+        '    if(enabled<0){const char* e=getenv("D2_TEXTURE_REUSE");enabled=e && strcmp(e,"1")==0;}\n'
+        '    return enabled;\n}\n')
+    text = replace(text, '    sh.ptr += (u64)(1 + slot) * s_d3d.srv_inc;',
+        '    sh.ptr += (u64)d2_texture_descriptor_index(DRAW_SRV_BASE, MAX_DRAWS, (size_t)slot, d2_texture_reuse_enabled()) * s_d3d.srv_inc;')
+    text = replace(text, 'static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, u32 src_pitch)',
+        '#include "texture_reuse_adapter.inc"\n\n'
+        'static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, u32 src_pitch)')
+    text = replace(text, '    if (slot < 0) slot = freeslot;',
+        '    if (slot < 0) slot = d2_texture_reuse_slot(freeslot, w, h, fmt, cube);')
+    text = replace(text, '    for (int _i = 0; _i < VP_TEX_SLOTS; _i++) s_d3d.vp_tex[_i].used = 0;',
+        '    for (int _i = 0; _i < VP_TEX_SLOTS; _i++) s_d3d.vp_tex[_i].used = 0;\n'
+        '    d2_texture_reserve_frame();')
     # Wrap API calls only in this backend, not in headers or other modules.
     for old, new in [('D3DCompile(', 'd2_profile_compile('),
                      ('s_d3d.device->lpVtbl->CreateCommittedResource(', 'd2_profile_create_resource('),
