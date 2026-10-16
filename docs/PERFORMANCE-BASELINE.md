@@ -4,7 +4,7 @@ Esta etapa coleta uma referência para decidir onde otimizar. Não há ganho de 
 
 ## Como testar
 
-1. Abra o launcher de desenvolvimento **0.1.52-performance-preview**. Em **Arquivos e suporte**, marque **Medir na próxima abertura do jogo — sem imagens**. Deixe as capturas de desenvolvimento desativadas; os dois modos não podem ser usados juntos.
+1. Abra o launcher de desenvolvimento **0.1.53-performance-preview**. Em **Arquivos e suporte**, marque **Medir na próxima abertura do jogo — sem imagens**. Deixe as capturas de desenvolvimento desativadas; os dois modos não podem ser usados juntos.
 2. Mantenha a resolução, FSR, HUD, VSync e Hz iguais nos testes que deseja comparar. Na primeira execução após atualizar as fontes, aguarde a compilação local automática.
 3. Entre no Castle Hallway, deixe a janela do jogo em foco e pressione **F6**. Jogue por aproximadamente 30 segundos. A coleta não começa na tela de loading; começa quando você marca um cenário.
 4. Numa batalha comum, pressione **F7** e jogue por aproximadamente 30 segundos.
@@ -26,10 +26,24 @@ O coletor existente foi adaptado numa cópia de build auditada, preservando o SD
 
 Compartilhe o ZIP para análise. Ele contém apenas `session.json`, `summary.json` e, se houver amostras, `frames.csv`: não inclui assets, shaders, saves ou o log completo do jogo.
 
+## Detalhamento da preparação — 0.1.53
+
+O CSV acrescenta três fases: `prepare_setup_ms` (início da preparação, incluindo pipeline base/atlas), `prepare_targets_ms` (pré-passe dos alvos fora da tela) e `prepare_draws_ms` (resolução das texturas/SRVs e dos pipelines por desenho). Etapas auxiliares posteriores não entram necessariamente na soma dessas três fases. São tempos de parede agregados; nenhuma fase é uma medição de execução da GPU.
+
+Chamadas a `CreateCommittedResource`, `D3DCompile` e `CreateGraphicsPipelineState` neste backend recebem tempo e contadores separados. Desenhos que encontram esses recursos em cache não recebem relógios individuais. Os contadores de criação contam **tentativas**, incluindo falhas; a classificação textura significa recurso que não é buffer. Os wrappers passam os argumentos, saídas e HRESULT originais adiante, sem cache novo ou mudança de política de recursos. O modo desligado não lê o relógio nesses wrappers.
+
+Esses tempos de chamadas são subconjuntos das fases, e podem também abranger trabalho do backend entre callbacks visíveis. **Não os some às fases.** O tempo de compilação antigo continua sendo o caminho completo de falta do cache de pipelines de fragmentos; o novo `shader_compile_host_ms` mede apenas as chamadas ao compilador observadas neste backend. Não inclui outros módulos. O resumo schema 2 preserva leitura do CSV da 0.1.52, identifica a disponibilidade dos detalhes e lista os dez maiores intervalos por cenário junto aos respectivos custos e contadores.
+
+Na primeira captura (6.212 amostras, 1280×720, native, VSync desligado), as médias entre callbacks foram 59,38 FPS no Castle Hallway, 58,69 em batalha e 59,28 no trecho marcado Mothman. Ocorreram 11/6/6 intervalos acima de 33,34 ms, respectivamente. Apenas 2/3/0 dos intervalos acima de 20 ms coincidiram com faltas no cache de pipelines de fragmentos. Isso não explica todas as quedas. Picos de preparação sem essas faltas motivaram o detalhamento; não há ganho de desempenho demonstrado nesta versão. Os cenários são marcas do usuário, não identificação automática da ação exibida.
+
 ## English
 
-Development launcher 0.1.52 adds an opt-in, bounded DirectX 12 host-frame baseline. The public 0.2.0 release is unchanged; no performance improvement is claimed yet.
+Development launcher 0.1.53 extends the opt-in, bounded DirectX 12 host-frame baseline. The public 0.2.0 release is unchanged; no performance improvement is claimed yet.
 
 Enable **Medir na próxima abertura do jogo — sem imagens** under **Arquivos e suporte**, with image captures disabled. Keep graphics settings consistent. With the game window focused, use **F6** for Castle Hallway, **F7** for ordinary battle and **F9** for Mothman's attack. Observe roughly 30 seconds per available scenario. **F10** finishes collection; close the game normally to produce the ZIP in Downloads, or the application profile if that directory is unavailable. The report-folder button opens the actual destination. Maximum: 18,000 samples.
 
 The report covers callback intervals, host wall times for rendering/preparation/fence waits/presentation, completed FIFO-drain time and fragment-pipeline cache misses. **These are not GPU execution times or CPU/GPU utilization measurements.** Categories may overlap; never add them to infer utilization. Missing samples are explicitly reported. No image readbacks, per-draw clocks or five-second percentile sorting are enabled. Instrumentation overhead on the target PC has not been established.
+
+Version 0.1.53 separates preparation setup, offscreen-target preparation and draw-resource preparation. It times expensive backend calls to `CreateCommittedResource`, `D3DCompile` and `CreateGraphicsPipelineState`, including failure counters. Cache-hit draws have no individual clocks. Wrappers preserve arguments, outputs, HRESULTs and ownership; disabled wrappers do not read the clock. Call times are subsets of phase times and may include work between visible callbacks: **do not add them**. Compilation in other modules is not covered. Creation counters count attempted calls; non-buffer resources are classified as textures. Summary schema 2 also accepts the 0.1.52 CSV and includes the ten slowest intervals per marked stage. These stages are user labels, not automatic scene detection.
+
+The initial 6,212-sample native 720p capture averaged 59.38/58.69/59.28 visible callbacks per second in Castle Hallway/battle/Mothman. There were 11/6/6 intervals above 33.34 ms. Only 2/3/0 intervals above 20 ms coincided with fragment-pipeline cache misses. Preparation spikes without those misses warrant this targeted breakdown; they do not establish a GPU bottleneck or a performance gain.

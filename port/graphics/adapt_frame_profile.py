@@ -3,6 +3,12 @@ from pathlib import Path
 import hashlib
 
 EXPECTED = '25327e7524f4e8885e22397dfe06e8c40c7a0431776d7373f8e3f8ffc2343bb7'
+DETAIL_TIMES = (('prepare_setup_ms', 'setup_ms'), ('prepare_targets_ms', 'targets_ms'),
+                ('prepare_draws_ms', 'draws_ms'), ('resource_create_host_ms', 'resource_ms'),
+                ('shader_compile_host_ms', 'shader_ms'), ('pso_create_host_ms', 'pso_ms'))
+DETAIL_COUNTS = (('texture_create_calls', 'textures'), ('buffer_create_calls', 'buffers'),
+                 ('resource_create_failures', 'resource_failures'), ('shader_compile_calls', 'shader_calls'),
+                 ('pso_create_calls', 'pso_calls'), ('pso_create_failures', 'pso_failures'))
 
 
 def replace(text, old, new):
@@ -54,4 +60,29 @@ def generate(source, destination):
                    '    d2_lite_previous=now;d2_lite_last_compile=d2_lite_compile_ms;d2_lite_last_misses=d2_lite_misses;\n'
                    '    d2_last_wait_ms=d2_profile_wait_ms;d2_last_prepare_ms=d2_profile_prepare_ms;\n'
                    '    d2_last_present_ms=d2_profile_present_ms;d2_last_wait_calls=d2_profile_wait_calls;')
+    # Versioned, bounded detail columns; counters are snapshotted even before a
+    # stage starts, so startup costs cannot leak into the first recorded frame.
+    fields = DETAIL_TIMES + DETAIL_COUNTS
+    declarations = ''.join('    ' + kind + ' ' + name + ';\n'
+                           for kind, entries in [('double', DETAIL_TIMES), ('unsigned', DETAIL_COUNTS)]
+                           for name, _ in entries)
+    text = replace(text, '    unsigned wait_calls;', '    unsigned wait_calls;\n' + declarations)
+    text = replace(text, 'static unsigned d2_last_wait_calls;',
+                   'static unsigned d2_last_wait_calls;\n' + ''.join(
+                       'static ' + kind + ' d2_last_' + counter + ';\n'
+                       for kind, entries in [('double', DETAIL_TIMES), ('unsigned', DETAIL_COUNTS)]
+                       for _, counter in entries))
+    text = replace(text, 'present_host_ms,wait_fence_calls\\n',
+                   'present_host_ms,wait_fence_calls,' + ','.join(name for name, _ in fields) + '\\n')
+    text = replace(text, '%.6f,%u\\n",i,d2_lite_names[p->stage],',
+                   '%.6f,%u,' + ','.join(['%.6f'] * len(DETAIL_TIMES) + ['%u'] * len(DETAIL_COUNTS)) + '\\n",i,d2_lite_names[p->stage],')
+    text = replace(text, 'p->present_ms,p->wait_calls);',
+                   'p->present_ms,p->wait_calls,' + ','.join('p->' + name for name, _ in fields) + ');')
+    text = replace(text, '        p->wait_calls=d2_profile_wait_calls-d2_last_wait_calls;',
+                   '        p->wait_calls=d2_profile_wait_calls-d2_last_wait_calls;\n' + ''.join(
+                       '        p->' + name + '=d2_profile_' + counter + '-d2_last_' + counter + ';\n'
+                       for name, counter in fields))
+    text = replace(text, 'd2_last_wait_calls=d2_profile_wait_calls;',
+                   'd2_last_wait_calls=d2_profile_wait_calls;\n' + ''.join(
+                       '    d2_last_' + counter + '=d2_profile_' + counter + ';\n' for _, counter in fields))
     Path(destination).write_text(text, encoding='utf-8', newline='\n')

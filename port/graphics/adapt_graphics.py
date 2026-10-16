@@ -21,6 +21,24 @@ def generate(source, output):
     profile_header = output.parent / 'd2_frame_profile.h'
     generate_frame_profile(source.parent / 'd2_frame_light.h', profile_header)
     text = data.decode()
+    # Wrap API calls only in this backend, not in headers or other modules.
+    for old, new in [('D3DCompile(', 'd2_profile_compile('),
+                     ('s_d3d.device->lpVtbl->CreateCommittedResource(', 'd2_profile_create_resource('),
+                     ('s_d3d.device->lpVtbl->CreateGraphicsPipelineState(', 'd2_profile_create_pso(')]:
+        if old not in text: raise RuntimeError('Missing expensive-call anchor: ' + old)
+        text = text.replace(old, new)
+    text = replace(text, '#include <d3dcompiler.h>',
+                   '#include <d3dcompiler.h>\n#include "frame_profile_calls.h"')
+    text = replace(text, '    /* Render-to-texture pre-pass: make sure an offscreen RT resource exists for',
+        '    double d2_profile_phase=d2_lite_enabled()?d2_lite_now():0;\n'
+        '    if(d2_profile_phase>0)d2_profile_setup_ms+=(d2_profile_phase-d2_profile_prepare_start)*1000;\n'
+        '    /* Render-to-texture pre-pass: make sure an offscreen RT resource exists for')
+    text = replace(text, '    double _pre0 = perf_on() ? perf_now() : 0.0;',
+        '    if(d2_profile_phase>0){double now=d2_lite_now();d2_profile_targets_ms+=(now-d2_profile_phase)*1000;d2_profile_phase=now;}\n'
+        '    double _pre0 = perf_on() ? perf_now() : 0.0;')
+    text = replace(text, '    /* Transition render target to RENDER_TARGET state */',
+        '    if(d2_profile_phase>0)d2_profile_draws_ms+=(d2_lite_now()-d2_profile_phase)*1000;\n'
+        '    /* Transition render target to RENDER_TARGET state */')
     text = replace(text, '#include "d2_frame_light.h"',
                    '#include "' + profile_header.resolve().as_posix() + '"')
     text = replace(text, '    wait_for_gpu_impl();',

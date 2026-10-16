@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from performance_report import COLUMNS, PerformanceSession, analyze, clean_environment
+from performance_report import BASE_COLUMNS, COLUMNS, PerformanceSession, analyze, clean_environment
 
 
 def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
@@ -39,13 +39,31 @@ class PerformanceTests(unittest.TestCase):
             self.assertEqual(stage['wait_fence_calls_total'], 4)
             self.assertFalse(report['gpu_timestamps_available'])
             self.assertFalse(report['whole_game_cpu_time_available'])
+            self.assertTrue(report['preparation_detail_available'])
+            self.assertEqual(stage['slowest_frames'][0]['frame'], 3)
+
+    def test_detail_counters_and_legacy_compatibility(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'frames.csv'
+            write_csv(path, (20, 40), resource_create_host_ms=3, texture_create_calls=2,
+                      buffer_create_calls=1, shader_compile_calls=1, pso_create_calls=4)
+            stage = analyze(path)['stages']['castle']
+            self.assertEqual(stage['host_timings_ms']['resource_create_host_ms']['maximum'], 3)
+            self.assertEqual(stage['preparation_call_counts']['texture_create_calls'], 4)
+            with path.open('w', encoding='utf-8', newline='') as output:
+                writer = csv.writer(output); writer.writerow(BASE_COLUMNS)
+                writer.writerow((0, 'castle', 20, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1))
+            report = analyze(path)
+            self.assertFalse(report['preparation_detail_available'])
+            self.assertNotIn('preparation_call_counts', report['stages']['castle'])
 
     def test_invalid_times_stages_sequence_and_counters_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'frames.csv'
             for invalid in ({'interval_ms': 'nan'}, {'render_host_ms': 'inf'},
                             {'interval_ms': 0}, {'interval_ms': '1e308'}, {'stage': 'unknown'}, {'frame': 3},
-                            {'pipeline_misses': -1}, {'wait_fence_calls': 2**32}):
+                            {'pipeline_misses': -1}, {'wait_fence_calls': 2**32},
+                            {'pso_create_failures': -1}, {'resource_create_host_ms': 'nan'}):
                 with self.subTest(invalid=invalid):
                     write_csv(path, **invalid)
                     with self.assertRaises(ValueError): analyze(path)
@@ -65,7 +83,7 @@ class PerformanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'frames.csv'; write_csv(path, (16,))
             with path.open('a', encoding='utf-8', newline='') as f:
-                csv.writer(f).writerow((1, 'mothman', 40, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1))
+                csv.writer(f).writerow((1, 'mothman', 40, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1) + (0,) * 12)
             report = analyze(path)
             self.assertEqual(report['stages']['mothman']['average_present_callback_fps'], 25)
             self.assertEqual(report['stages']['castle']['samples'], 1)
