@@ -13,9 +13,13 @@ Selecione sua própria **ISO USA compatível** e o PKG da atualização **BLUS31
 
 A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` por compatibilidade com a linha testada. Não apague essa pasta. Outros perfis são preservados, sem migração universal automática.
 
+**Save do PS3:** [guia de importação experimental — PT-BR / English](docs/SAVES-PS3.md). A compatibilidade com saves reais do console ainda não foi validada.
+
 ## Official project release — 0.2.0 Stable
 
 Download the **installer** or **portable ZIP** from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest). Provide your own supported US ISO, **BLUS31313 US 1.40** update PKG and optional DLCs. First-run downloads and local compilation are automatic and require internet. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android are unavailable. See the [release guide](docs/RELEASE-0.2.0.md) for requirements, save compatibility and known limitations.
+
+**PS3 saves:** [experimental import guide — English / PT-BR](docs/SAVES-PS3.md#english). Actual console-save compatibility has not been verified.
 
 **No game data, updates/DLC, firmware, keys, saves or game-derived compiled code is distributed.** Independent community project, not an official release from the game's rights holders.
 

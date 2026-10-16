@@ -27,6 +27,8 @@ O nome é mantido por compatibilidade. Instalador e portátil usam o mesmo perfi
 
 Perfis antigos `DisgaeaD2Recomp` e `DisgaeaD2Recomp-Standalone` não são removidos. A adoção compatível do perfil Standalone preserva os arquivos originais; não há migração automática de todos os perfis antigos.
 
+**Saves do PS3 original:** consulte o [guia de importação experimental](SAVES-PS3.md). O launcher não descriptografa esses saves e a compatibilidade ainda não foi validada.
+
 ### Validação e limitações
 
 O mantenedor confirmou batalha, save/load, áudio, DLCs e fechamento no PC de teste com RTX 5070. Os testes automatizados verificam componentes do launcher, preparação, renderização e instalação; não executam a campanha comercial completa. Não há garantia de 60 FPS constantes, de todas as DLCs ou de compatibilidade com todo hardware. Windows x64 e driver com DirectX 12 são necessários. O executável não possui assinatura Authenticode.
@@ -46,3 +48,5 @@ The installer and portable executable share `%LOCALAPPDATA%\DisgaeaD2Recomp-Grap
 The maintainer confirmed battles, audio, save/load, DLC recognition and closing on the RTX 5070 test PC. Automated checks cover components and installation, not the full commercial campaign. Locked 60 FPS, every DLC and all hardware are not guaranteed. Requires Windows x64 and a DirectX 12 driver. The executable is not Authenticode-signed.
 
 No game data, update/DLC, firmware, keys, saves or game-derived compiled code is included. Report bugs through [Issues](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml) with version, hardware, reproduction steps and the session log. Review local paths before sharing logs; do not upload game content or keys.
+
+Original PS3 saves: see the [experimental import guide](SAVES-PS3.md#english). The launcher does not decrypt console saves, and compatibility has not been verified.
