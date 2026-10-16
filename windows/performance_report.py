@@ -20,7 +20,10 @@ DETAIL_TIMES = ('prepare_setup_ms', 'prepare_targets_ms', 'prepare_draws_ms',
                 'resource_create_host_ms', 'shader_compile_host_ms', 'pso_create_host_ms')
 DETAIL_COUNTS = ('texture_create_calls', 'buffer_create_calls', 'resource_create_failures',
                  'shader_compile_calls', 'pso_create_calls', 'pso_create_failures')
-COLUMNS = BASE_COLUMNS + DETAIL_TIMES + DETAIL_COUNTS
+DETAIL_COLUMNS = BASE_COLUMNS + DETAIL_TIMES + DETAIL_COUNTS
+FIFO_TIMES = ('fifo_lock_wait_ms',)
+FIFO_COUNTS = ('fifo_lock_calls', 'fifo_flip_held_calls')
+COLUMNS = DETAIL_COLUMNS + FIFO_TIMES + FIFO_COUNTS
 ENVIRONMENT = {'D2_FRAME_LIGHT', 'D2_PERF_CSV', 'D2_FIFO_FRAME_TIME'}
 
 
@@ -38,14 +41,16 @@ def analyze(path):
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_CSV_BYTES:
         raise ValueError('CSV de desempenho ausente, inválido ou grande demais.')
     groups = {}
+    all_rows = []
     with path.open(encoding='utf-8', newline='') as source:
         reader = csv.DictReader(source)
         columns = tuple(reader.fieldnames or ())
-        if columns not in (BASE_COLUMNS, COLUMNS):
+        if columns not in (BASE_COLUMNS, DETAIL_COLUMNS, COLUMNS):
             raise ValueError('Formato de medição incompatível com esta versão.')
-        detail = columns == COLUMNS
-        times = TIMES + (DETAIL_TIMES if detail else ())
-        counts = COUNTS + (DETAIL_COUNTS if detail else ())
+        detail = columns != BASE_COLUMNS
+        fifo_detail = columns == COLUMNS
+        times = TIMES + (DETAIL_TIMES if detail else ()) + (FIFO_TIMES if fifo_detail else ())
+        counts = COUNTS + (DETAIL_COUNTS if detail else ()) + (FIFO_COUNTS if fifo_detail else ())
         for index, raw in enumerate(reader):
             if index >= LIMIT or None in raw or any(v is None for v in raw.values()):
                 raise ValueError('CSV fora do limite ou com colunas incompletas.')
@@ -59,6 +64,7 @@ def analyze(path):
             if any(not 0 <= row[k] <= 0xffffffff for k in counts):
                 raise ValueError('Contador de medição inválido.')
             groups.setdefault(raw['stage'], []).append(row)
+            all_rows.append((raw['stage'], row))
     stages = {}
     for stage, rows in groups.items():
         intervals = [r['interval_ms'] for r in rows]
@@ -81,12 +87,28 @@ def analyze(path):
             'draws_mean': sum(r['draws'] for r in rows) / len(rows)}
         if detail:
             stages[stage]['preparation_call_counts'] = {k: sum(r[k] for r in rows) for k in DETAIL_COUNTS}
+            stages[stage]['preparation_calls_per_1000_frames'] = {
+                k: sum(r[k] for r in rows) * 1000 / len(rows) for k in DETAIL_COUNTS}
+        if fifo_detail:
+            stages[stage]['fifo_call_counts'] = {k: sum(r[k] for r in rows) for k in FIFO_COUNTS}
         stages[stage]['slowest_frames'] = sorted([
             {'frame': r['frame'], 'interval_ms': r['interval_ms'],
              **{k: r[k] for k in (*times, *counts)}} for r in rows],
             key=lambda r: r['interval_ms'], reverse=True)[:10]
+        # Post-process only, after collection. Preserve chronological neighbors
+        # across stage boundaries; never mistake a stage label for an action.
+        stages[stage]['slow_frame_context'] = []
+        for peak in stages[stage]['slowest_frames']:
+            index = peak['frame']
+            stages[stage]['slow_frame_context'].append({
+                'peak_frame': index,
+                'frames': [dict(frame=r['frame'], stage=label,
+                                interval_ms=r['interval_ms'],
+                                **{k: r[k] for k in (*times, *counts)})
+                           for label, r in all_rows[max(0, index - 2):index + 3]]})
     return {'schema': 2, 'purpose': 'dx12-host-frame-baseline',
             'preparation_detail_available': detail,
+            'fifo_lock_detail_available': fifo_detail,
             'status': 'measured' if stages else 'no-samples',
             'samples': sum(len(rows) for rows in groups.values()), 'stages': stages,
             'gpu_timestamps_available': False, 'gpu_utilization_available': False,
@@ -96,10 +118,13 @@ def analyze(path):
                            'Host timings are wall times, not CPU utilization or GPU execution time.',
                            'Preparation includes compilation/uploads and may overlap fence waits; do not sum categories.',
                            'FIFO time is completed-drain host time; it may overlap other threads and categories.',
+                           'FIFO lock wait includes acquisition overhead; separately exchanged atomic counters have approximate frame attribution.',
+                           'Flip-held calls count visits while held, not time spent held or a proven cause of frame drops.',
                            'Offscreen work is not represented by render_host_ms alone.',
                            'Compilation time tracks the SDK fragment-pipeline cache; it does not cover all shader compilation.',
                            'Detailed compile/resource/PSO call times cover this backend only and overlap preparation phases.',
                            'Creation counters count attempted calls, including failures; texture counts mean non-buffer resources.',
+                           'Neighboring frames show temporal association, not causation or the identity of a game action.',
                            'Instrumentation overhead has not been measured on the target PC.']}
 
 

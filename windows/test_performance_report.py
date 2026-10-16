@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from performance_report import BASE_COLUMNS, COLUMNS, PerformanceSession, analyze, clean_environment
+from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, PerformanceSession, analyze, clean_environment
 
 
 def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
@@ -54,6 +54,7 @@ class PerformanceTests(unittest.TestCase):
                 writer = csv.writer(output); writer.writerow(BASE_COLUMNS)
                 writer.writerow((0, 'castle', 20, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1))
             report = analyze(path)
+            self.assertFalse(report['fifo_lock_detail_available'])
             self.assertFalse(report['preparation_detail_available'])
             self.assertNotIn('preparation_call_counts', report['stages']['castle'])
 
@@ -67,6 +68,27 @@ class PerformanceTests(unittest.TestCase):
                 with self.subTest(invalid=invalid):
                     write_csv(path, **invalid)
                     with self.assertRaises(ValueError): analyze(path)
+
+    def test_fifo_counts_and_previous_detail_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'frames.csv'
+            write_csv(path, (16, 24), fifo_lock_wait_ms=2, fifo_lock_calls=4,
+                      fifo_flip_held_calls=1)
+            report = analyze(path)
+            self.assertTrue(report['fifo_lock_detail_available'])
+            self.assertEqual(report['stages']['castle']['fifo_call_counts'],
+                             {'fifo_lock_calls': 8, 'fifo_flip_held_calls': 2})
+            self.assertEqual(report['stages']['castle']['host_timings_ms']['fifo_lock_wait_ms']['mean'], 2)
+            with path.open('w', encoding='utf-8', newline='') as output:
+                writer = csv.DictWriter(output, fieldnames=DETAIL_COLUMNS)
+                writer.writeheader()
+                row = dict.fromkeys(DETAIL_COLUMNS, 0)
+                row.update(frame=0, stage='mothman', interval_ms=20)
+                writer.writerow(row)
+            report = analyze(path)
+            self.assertTrue(report['preparation_detail_available'])
+            self.assertFalse(report['fifo_lock_detail_available'])
+            self.assertNotIn('fifo_call_counts', report['stages']['mothman'])
 
     def test_limit_incomplete_row_and_legacy_format_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -83,10 +105,25 @@ class PerformanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'frames.csv'; write_csv(path, (16,))
             with path.open('a', encoding='utf-8', newline='') as f:
-                csv.writer(f).writerow((1, 'mothman', 40, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1) + (0,) * 12)
+                csv.writer(f).writerow((1, 'mothman', 40, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1) + (0,) * (len(COLUMNS) - len(BASE_COLUMNS)))
             report = analyze(path)
             self.assertEqual(report['stages']['mothman']['average_present_callback_fps'], 25)
             self.assertEqual(report['stages']['castle']['samples'], 1)
+
+    def test_context_keeps_real_neighbors_across_stage_boundaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'frames.csv'
+            write_csv(path, (16, 80), texture_create_calls=2)
+            with path.open('a', encoding='utf-8', newline='') as f:
+                csv.writer(f).writerow((2, 'mothman', 20, 8, 0, 0, 1, 2, 3, 2, 4, 1, 1) + (0,) * (len(COLUMNS) - len(BASE_COLUMNS)))
+            report = analyze(path)
+            stage = report['stages']['castle']
+            self.assertEqual(stage['preparation_calls_per_1000_frames']['texture_create_calls'], 2000)
+            context = stage['slow_frame_context'][0]
+            self.assertEqual(context['peak_frame'], 1)
+            self.assertEqual([r['frame'] for r in context['frames']], [0, 1, 2])
+            self.assertEqual(context['frames'][-1]['stage'], 'mothman')
+            self.assertEqual(report['stages']['mothman']['samples'], 1)
 
     def test_session_is_unique_unicode_safe_and_excludes_heavy_profiling(self):
         with tempfile.TemporaryDirectory() as tmp:

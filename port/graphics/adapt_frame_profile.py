@@ -85,4 +85,26 @@ def generate(source, destination):
     text = replace(text, 'd2_last_wait_calls=d2_profile_wait_calls;',
                    'd2_last_wait_calls=d2_profile_wait_calls;\n' + ''.join(
                        '    d2_last_' + counter + '=d2_profile_' + counter + ';\n' for _, counter in fields))
+    text = replace(text, '    unsigned wait_calls;',
+                   '    unsigned wait_calls;\n    double fifo_lock_wait_ms;\n'
+                   '    unsigned fifo_lock_calls, fifo_flip_held_calls;')
+    text = replace(text, 'extern double d2_fifo_frame_take_ms(void);',
+                   'extern double d2_fifo_frame_take_ms(void);\n'
+                   'extern void d2_fifo_lock_take(double*,unsigned*,unsigned*);')
+    text = replace(text, '    double d2_fifo_ms=d2_fifo_frame_take_ms();',
+                   '    double d2_fifo_ms=d2_fifo_frame_take_ms();\n'
+                   '    double d2_lock_ms; unsigned d2_lock_calls,d2_held_calls;\n'
+                   '    d2_fifo_lock_take(&d2_lock_ms,&d2_lock_calls,&d2_held_calls);')
+    text = replace(text, '        p->fifo_ms=d2_fifo_ms;',
+                   '        p->fifo_ms=d2_fifo_ms;\n'
+                   '        p->fifo_lock_wait_ms=d2_lock_ms;\n'
+                   '        p->fifo_lock_calls=d2_lock_calls;\n'
+                   '        p->fifo_flip_held_calls=d2_held_calls;')
+    text = replace(text, 'pso_create_failures\\n',
+                   'pso_create_failures,fifo_lock_wait_ms,fifo_lock_calls,fifo_flip_held_calls\\n')
+    text = replace(text, 'p->pso_create_failures);',
+                   'p->pso_create_failures,p->fifo_lock_wait_ms,p->fifo_lock_calls,p->fifo_flip_held_calls);')
+    # Append a floating time and two integer counts to the final format fields.
+    old_format = ','.join(['%.6f'] * len(DETAIL_TIMES) + ['%u'] * len(DETAIL_COUNTS)) + '\\n",i,'
+    text = replace(text, old_format, old_format.replace('\\n",i,', ',%.6f,%u,%u\\n",i,'))
     Path(destination).write_text(text, encoding='utf-8', newline='\n')

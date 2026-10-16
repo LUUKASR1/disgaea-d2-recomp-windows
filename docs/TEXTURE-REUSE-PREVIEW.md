@@ -21,7 +21,25 @@ A adaptação ocorre só na cópia auditada de build; SDK e lock permanecem inta
 
 A opção começa desligada em cada abertura do launcher, não é exposta na interface oficial e ignora flags herdadas do shell. A medição continua sem imagens ou clocks por desenho; tempos de host não são utilização de CPU/GPU nem duração de execução da GPU.
 
-## English
+## Resultado inicial no PC de teste — 16/10/2026
+
+O usuário confirmou funcionamento sem defeitos percebidos. As sessões `071640-4315547b` (desligado) e `072014-fbbd6847` (ligado) têm durações diferentes; as contagens abaixo são normalizadas por mil quadros.
+
+| Trecho | Criações de textura OFF → ON / mil quadros | P99 OFF → ON (ms) |
+|---|---:|---:|
+| Castle | 74,26 → 35,05 | 24,44 → 19,33 |
+| Batalha | 114,68 → 79,63 | 26,70 → 26,11 |
+| Mothman | 179,54 → 80,71 | 25,89 → 28,44 |
+
+Não ocorreram falhas de criação de recursos. Isso demonstra redução observada de alocações, não estabilidade garantida ou ganho geral de FPS.
+
+Nos dois arquivos, os grandes picos aparecem no padrão de draws `1 → 21 → 17 → 17 → 294`. No teste ligado, o quadro 4883 demora 153,07 ms entre callbacks, mas o callback medido demora 0,45 ms, sem criação de textura ou compilação. Não é possível atribuir esse intervalo inteiro à preparação gráfica. A ação do jogador não é identificada pelo CSV: a sequência sugere uma transição, mas não a prova.
+
+No trecho Mothman ligado, o quadro 6681 registra 40,85 ms entre callbacks e 25,01 ms de preparação, com sete criações de textura, sem compilação. Existem padrões diferentes a investigar. A próxima comparação deve repetir o mesmo ataque, marcando F9 imediatamente antes e F10 após algumas repetições, sem sair da batalha. Fazer ambas as execuções após um aquecimento equivalente para reduzir diferenças de compilação inicial.
+
+O analisador passa a incluir cinco quadros de contexto por pico (dois anteriores e dois posteriores, quando disponíveis) e contagens por mil quadros. Esse processamento acontece após a coleta e aceita CSVs anteriores; não adiciona clocks, capturas ou processamento por draw ao jogo. Categorias de tempo podem se sobrepor e não devem ser somadas para calcular um suposto tempo restante.
+
+## English instructions
 
 Development 0.1.55 adds an opt-in comparison under **Files and support → Reuse compatible textures — experimental**. The public 0.2.1 release is unchanged. First launch rebuilds locally. Keep graphics settings identical, measure once with reuse off, close the game, then repeat with reuse on. Use F6 for Castle Hallway, F7 for battle, F9 for Mothman and F10 to finish; close normally to generate each ZIP. Reports record `settings.texture_reuse_experiment`. Check visual correctness as well as resource-creation counts, preparation spikes and callback-interval P95/P99. Avoid mixing scene transitions into an attack-only segment.
 

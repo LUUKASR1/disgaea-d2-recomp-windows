@@ -8,6 +8,7 @@
 typedef uint32_t u32;
 static struct { HWND hwnd; } s_d3d;
 double d2_fifo_frame_take_ms(void) { return 0.25; }
+void d2_fifo_lock_take(double* ms,unsigned* calls,unsigned* held) { *ms=0;*calls=0;*held=0; }
 #include "d2_frame_profile.h"
 
 int main(void)
@@ -29,7 +30,7 @@ int main(void)
     if(!f) return 2;
     char text[4096]={0}; size_t n=fread(text,1,sizeof(text)-1,f); fclose(f);
     if(!n || !strstr(text,"wait_fence_host_ms,prepare_host_ms,present_host_ms,wait_fence_calls,prepare_setup_ms") ||
-        !strstr(text,"0,mothman,20.000000,9.000000,2.000000,1,4,17,3.000000,1.500000,4.000000,0.500000,2,1.000000,2.000000,3.000000,4.000000,5.000000,6.000000,7,8,9,10,11,12\n")) return 3;
+        !strstr(text,"0,mothman,20.000000,9.000000,2.000000,1,4,17,3.000000,1.500000,4.000000,0.500000,2,1.000000,2.000000,3.000000,4.000000,5.000000,6.000000,7,8,9,10,11,12,0.000000,0,0\n")) return 3;
     /* Failed output must not mark unflushed samples as saved. */
     SetEnvironmentVariableW(L"D2_PERF_CSV",L"missing-parent-for-profile-test/frames.csv");
     d2_lite_n=2;
