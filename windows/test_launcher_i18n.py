@@ -43,6 +43,8 @@ class LanguageTests(unittest.TestCase):
         path = 'C:\\Users\\João\\Área de Trabalho\\Disgaea D2\\START_7.dat'
         self.assertEqual(t('Relatório de desempenho: ' + path), 'Performance report: ' + path)
         self.assertEqual(t('Executando: Preparar SDK Windows'), 'Running: Prepare Windows SDK')
+        self.assertEqual(t('Baixando ferramentas portáteis: llvm. Somente na primeira preparação.'),
+                         'Downloading portable tools: llvm. First-time setup only.')
         self.assertEqual(t('Preparar SDK Windows falhou (codigo 5). Consulte ' + path),
                          'Prepare Windows SDK failed (code 5). See ' + path)
         self.assertEqual(t('1920 × 1080  •  Janela  •  VSync desligado'),

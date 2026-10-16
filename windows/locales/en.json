@@ -228,5 +228,22 @@
   "O instalador nao concluiu. Confira a janela oficial e tente novamente.": "The installer did not finish. Check the official window and try again.",
   "O Windows precisa autorizar a instalação dos runtimes.": "Windows needs to authorize runtime installation.",
   "Ferramenta ausente: {tool}. Use \"Instalar ferramentas\".": "Missing tool: {tool}. Use \"Install tools\".",
-  "Nenhuma instalacao C++ com clang-cl utilizavel foi encontrada. Confira o componente LLVM no Visual Studio Installer.\n{details}": "No usable C++ installation with clang-cl was found. Check the LLVM component in Visual Studio Installer.\n{details}"
+  "Nenhuma instalacao C++ com clang-cl utilizavel foi encontrada. Confira o componente LLVM no Visual Studio Installer.\n{details}": "No usable C++ installation with clang-cl was found. Check the LLVM component in Visual Studio Installer.\n{details}",
+  "Baixando ferramentas portáteis: {name}. Somente na primeira preparação.": "Downloading portable tools: {name}. First-time setup only.",
+  "Baixando runtime oficial necessário: {name}": "Downloading required official runtime: {name}",
+  "Instalando bibliotecas de execução. O Windows pode pedir autorização; não são ferramentas de desenvolvimento.": "Installing runtime libraries. Windows may request approval; these are not development tools.",
+  "Lista de runtimes inválida.": "Invalid runtime list.",
+  "Runtime desconhecido ou repetido.": "Unknown or duplicate runtime.",
+  "Instalador de runtime falhou na verificação SHA-256.": "Runtime installer failed SHA-256 verification.",
+  "Instalador oficial {name} falhou: {code}": "Official installer {name} failed: {code}",
+  "O Windows não autorizou a instalação dos runtimes necessários.": "Windows did not authorize installation of the required runtimes.",
+  "A instalação dos runtimes ainda não terminou. Aguarde o instalador do Windows.": "Runtime installation has not finished yet. Wait for the Windows installer.",
+  "A instalação dos runtimes não foi concluída. Código: {code}": "Runtime installation did not complete. Code: {code}",
+  "Os runtimes ainda não estão disponíveis. Confira o instalador oficial; pode ser necessário reiniciar o Windows.": "Runtimes are not available yet. Check the official installer; Windows may need to restart.",
+  "Caminho inseguro no pacote de ferramentas: {name}": "Unsafe path in the tools package: {name}",
+  "Pacote de ferramentas incompleto: {name}: {files}": "Incomplete tools package: {name}: {files}",
+  "Ferramenta portátil ausente: {name}": "Portable tool missing: {name}",
+  "Testar SDK com Git portátil": "Test SDK with portable Git",
+  "Compilar runtime com ferramentas portáteis": "Compile runtime with portable tools",
+  "Verificar runtimes oficiais do Windows": "Check official Windows runtimes"
 }
