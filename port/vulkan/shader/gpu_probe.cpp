@@ -438,6 +438,76 @@ int main(int argc, char **argv) {
       checks.finish(r);
     }
     {
+      // Live registration after a submitted frame: old commands keep their
+      // handles, while new shaders and independent raster states coexist.
+      Renderer r;
+      r.start(nullptr, validation);
+      rejected([&] { r.acquireRsxPipeline(vs.words, plain.words, {}); });
+      r.setRsxProgram(vs.words, plain.words);
+      r.offscreen(width, height);
+      r.setParameters(params);
+      r.setRsxGeometry(q, indices);
+      std::array<Row, 514> world{};
+      world[512] = {1, 1, 1, 1};
+      std::array<Row, 2> color{};
+      color[0] = {0, 1, 1, 1};
+      color[1] = {.5f, 0, 0, 0};
+      r.setRsxConstants(world, color);
+      require(r.draw(), "Initial runtime frame failed");
+      RasterState masked;
+      masked.color_mask = 6; // G+B only, preserve prior R and alpha.
+      const auto cyan = r.acquireRsxPipeline(vs.words, buffered.words, masked);
+      RasterState full;
+      const auto full_cyan =
+          r.acquireRsxPipeline(vs.words, buffered.words, full);
+      require(cyan != 0 && full_cyan != cyan, "Raster states aliased");
+      DrawCommand opaque;
+      opaque.count = 6;
+      opaque.indexed = true;
+      opaque.blend = false;
+      opaque.rsx_program = full_cyan;
+      checks.verify(r,
+                    [](unsigned, unsigned) { return Pixel{0, 255, 255, 255}; },
+                    {&opaque, 1});
+      require(r.acquireRsxPipeline(vs.words, plain.words, {}) == 0,
+              "Initial program not found in runtime cache");
+      for (unsigned frame = 0; frame < 12; ++frame) {
+        require(r.acquireRsxPipeline(vs.words, buffered.words, masked) == cyan,
+                "Cached pipeline handle changed");
+        std::array<DrawCommand, 2> commands{};
+        for (auto &c : commands) {
+          c.count = 6;
+          c.indexed = true;
+          c.blend = false;
+        }
+        commands[1].rsx_program = cyan;
+        commands[1].scissor = {width / 2, 0, width / 2, height};
+        checks.verify(
+            r,
+            [](unsigned x, unsigned) {
+              return x >= width / 2 ? Pixel{255, 255, 255, 255}
+                                    : Pixel{255, 0, 0, 255};
+            },
+            commands);
+      }
+      const auto before = r.info();
+      require(before.rsx_pipeline_entries == 3 &&
+                  before.rsx_pipeline_cache_misses == 2 &&
+                  before.rsx_pipeline_cache_hits == 13,
+              "Runtime pipeline cache counters disagree");
+      RasterState invalid;
+      invalid.color_mask = 16;
+      rejected([&] { r.acquireRsxPipeline(vs.words, plain.words, invalid); });
+      rejected(
+          [&] { r.acquireRsxPipeline(unsupported.words, plain.words, {}); });
+      require(r.info().rsx_pipeline_entries == 3 &&
+                  r.info().rsx_pipeline_cache_misses == 2,
+              "Rejected pipeline polluted the cache");
+      checks.verify(r,
+                    [](unsigned, unsigned) { return Pixel{255, 0, 0, 255}; });
+      checks.finish(r);
+    }
+    {
       auto too_many = compiler.compile(
           "float4 main():SV_TARGET4{return float4(1,0,0,1);}", Stage::fragment);
       Renderer r;

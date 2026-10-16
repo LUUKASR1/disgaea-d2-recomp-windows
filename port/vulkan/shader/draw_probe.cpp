@@ -329,6 +329,7 @@ int main(int argc, char **argv) {
         state.color_op = operation(p.color_op);
         state.alpha_op = operation(p.alpha_op);
       }
+      uint32_t pipeline = 0;
       if (index == 0) {
         first_packet = p;
         first_vs = vs.words;
@@ -349,13 +350,15 @@ int main(int argc, char **argv) {
         if (changed) {
           require(sequence.version >= 2,
                   "Legacy sequence requires identical pipeline/shaders");
-          r.replaceReplayPipeline(vs.words, fp.words, state);
+          // Preserve prior pipeline handles for later frames/draws.
+          // This replay still synchronizes uploads; it is not the game backend.
           pipeline_switches++;
           first_packet = p;
           first_vs = vs.words;
           first_fp = fp.words;
         }
       }
+      pipeline = r.acquireRsxPipeline(vs.words, fp.words, state);
       if (sequence_mode)
         require(w == sequence.width && h == sequence.height,
                 "Sequence target mismatch");
@@ -394,6 +397,7 @@ int main(int argc, char **argv) {
       r.setRsxGeometry(vertices);
       r.setRsxConstants(constants, fragment);
       DrawCommand draw;
+      draw.rsx_program = pipeline;
       draw.count = p.vertices;
       draw.blend = p.blend != 0;
       draw.depth = !p.depth_enabled ? DepthMode::disabled

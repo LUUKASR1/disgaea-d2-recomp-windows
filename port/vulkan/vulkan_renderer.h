@@ -50,6 +50,8 @@ struct Info {
   std::string adapter;
   uint32_t api_version = 0, device_type = 0, present_mode = 0,
            validation_errors = 0;
+  uint32_t rsx_pipeline_entries = 0;
+  uint64_t rsx_pipeline_cache_hits = 0, rsx_pipeline_cache_misses = 0;
 };
 // Immutable pipeline state for an isolated RSX draw. Defaults preserve the
 // existing synthetic probes; samplers remain independently configurable.
@@ -85,6 +87,7 @@ struct RasterState {
   BlendFactor src_alpha = BlendFactor::one,
               dst_alpha = BlendFactor::inv_src_alpha;
   BlendOperation color_op = BlendOperation::add, alpha_op = BlendOperation::add;
+  bool operator==(const RasterState &) const = default;
 };
 class Renderer {
   class Impl;
@@ -117,6 +120,15 @@ public:
   // Bounded to 32 distinct programs per renderer.
   uint32_t addRsxProgram(std::span<const uint32_t> vertex,
                          std::span<const uint32_t> fragment);
+  // Register immutable shader+raster combinations after target creation.
+  // Handles remain valid across frames and swapchain resize until close().
+  // Exact matches reuse existing pipelines without a GPU wait or recompilation.
+  // Misses compile synchronously on the owning render thread; bounded to 128
+  // entries (six depth/blend variants each), with no eviction of in-flight
+  // work.
+  uint32_t acquireRsxPipeline(std::span<const uint32_t> vertex,
+                              std::span<const uint32_t> fragment,
+                              const RasterState &state);
   // Capture constants in independent GPU buffers, so different draws in the
   // same submission cannot overwrite each other's values. At most 64 snapshots
   // including mutable default 0. Textures remain renderer-global in this stage.

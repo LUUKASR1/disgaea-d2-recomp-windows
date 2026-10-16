@@ -17,6 +17,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -184,8 +185,10 @@ class Renderer::Impl {
     std::vector<uint32_t> vertex, fragment;
     RsxContract vs_contract, fp_contract;
     std::array<VkPipeline, 6> pipelines{};
+    std::optional<RasterState> state;
   };
   std::vector<Program> programs;
+  uint64_t pipeline_cache_hits = 0, pipeline_cache_misses = 0;
   std::vector<Constants> constant_states;
   std::array<VkDescriptorSetLayout, 2> rsx_layouts{};
   VkDescriptorPool rsx_pool = VK_NULL_HANDLE;
@@ -222,6 +225,8 @@ class Renderer::Impl {
     throw std::runtime_error("Required Vulkan memory type unavailable");
   }
   void makePipeline(Program *program = nullptr) {
+    const auto &raster_state =
+        program && program->state ? *program->state : this->raster_state;
     VkShaderModuleCreateInfo shader{
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
     shader.codeSize =
@@ -437,8 +442,11 @@ class Renderer::Impl {
       OK(vkCreateRenderPass(device, &rp, nullptr, &load_pass));
     }
     if (rsxMode()) {
-      for (auto &program : programs)
+      for (auto &program : programs) {
+        if (!program.state)
+          program.state = raster_state;
         makePipeline(&program);
+      }
     } else
       makePipeline();
     for (VkImage image : images) {
@@ -543,6 +551,16 @@ class Renderer::Impl {
   }
 
 public:
+  Info info() const {
+    return {adapter,
+            api_version,
+            device_type,
+            present_mode,
+            validation_errors.load(),
+            uint32_t(programs.size()),
+            pipeline_cache_hits,
+            pipeline_cache_misses};
+  }
   std::atomic<unsigned> validation_errors{0};
   std::string adapter;
   uint32_t api_version = 0, device_type = 0, present_mode = 0;
@@ -1094,7 +1112,8 @@ public:
             {f.begin(), f.end()},
             std::move(vs_contract),
             std::move(fp_contract),
-            {}};
+            {},
+            std::nullopt};
   }
   uint32_t addRsxProgram(std::span<const uint32_t> v,
                          std::span<const uint32_t> f) {
@@ -1108,6 +1127,52 @@ public:
     if (programs.size() >= 32)
       throw std::runtime_error("RSX program limit reached");
     programs.push_back(std::move(program));
+    return uint32_t(programs.size() - 1);
+  }
+  uint32_t acquireRsxPipeline(std::span<const uint32_t> v,
+                              std::span<const uint32_t> f,
+                              const RasterState &state) {
+    if (!device || !rsxMode() || !pass)
+      throw std::runtime_error(
+          "Runtime RSX pipelines require an existing target");
+    validateRasterState(state);
+    // Exact words and explicit fields: no padding-dependent memcmp or hash-only
+    // identity. Never destroy or modify a pipeline referenced by queued work.
+    for (uint32_t i = 0; i < programs.size(); ++i) {
+      const auto &p = programs[i];
+      if (p.state && *p.state == state && p.vertex.size() == v.size() &&
+          p.fragment.size() == f.size() &&
+          std::equal(v.begin(), v.end(), p.vertex.begin()) &&
+          std::equal(f.begin(), f.end(), p.fragment.begin())) {
+        ++pipeline_cache_hits;
+        return i;
+      }
+    }
+    if (programs.size() >= 128)
+      throw std::runtime_error("Runtime RSX pipeline cache limit reached");
+    auto next = checkedProgram(v, f);
+    for (auto output : next.fp_contract.outputs)
+      if (output >= color_count && !state.discard_unbound_outputs)
+        throw std::runtime_error("RSX shader output has no bound color target");
+    next.state = state;
+    // Reserve before creating Vulkan objects so a vector allocation failure
+    // cannot orphan pipelines. Programs contain immutable value handles.
+    programs.reserve(programs.size() + 1);
+    try {
+      makePipeline(&next);
+    } catch (...) {
+      for (auto p : next.pipelines)
+        if (p)
+          vkDestroyPipeline(device, p, nullptr);
+      if (vert)
+        vkDestroyShaderModule(device, vert, nullptr);
+      if (frag)
+        vkDestroyShaderModule(device, frag, nullptr);
+      vert = frag = VK_NULL_HANDLE;
+      throw;
+    }
+    programs.push_back(std::move(next));
+    ++pipeline_cache_misses;
     return uint32_t(programs.size() - 1);
   }
   uint32_t allocateConstants() {
@@ -1220,6 +1285,7 @@ public:
           "Pipeline replacement requires sole-program offscreen replay");
     validateRasterState(state);
     auto next = checkedProgram(v, f);
+    next.state = state;
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     auto previous = raster_state;
     raster_state = state;
@@ -1267,7 +1333,9 @@ public:
       throw std::runtime_error("MRT requires independentBlend on this device");
     for (const auto &program : programs)
       for (auto output : program.fp_contract.outputs)
-        if (output >= count && !raster_state.discard_unbound_outputs)
+        if (output >= count &&
+            !(program.state ? program.state->discard_unbound_outputs
+                            : raster_state.discard_unbound_outputs))
           throw std::runtime_error(
               "RSX shader output has no bound color target");
   }
@@ -1714,6 +1782,11 @@ void Renderer::setTextureUnitBlocks(uint32_t unit, uint32_t w, uint32_t h,
     throw std::runtime_error("Invalid compressed texture unit/format");
   impl_->uploadTexture(unit, w, h, blocks, format, mapping);
 }
+uint32_t Renderer::acquireRsxPipeline(std::span<const uint32_t> v,
+                                      std::span<const uint32_t> f,
+                                      const RasterState &state) {
+  return impl_->acquireRsxPipeline(v, f, state);
+}
 void Renderer::replaceReplayPipeline(std::span<const uint32_t> v,
                                      std::span<const uint32_t> f,
                                      const RasterState &state) {
@@ -1730,10 +1803,7 @@ bool Renderer::needsResize() const { return impl_->dirty; }
 std::vector<uint8_t> Renderer::readPixels(uint32_t attachment) {
   return impl_->readPixels(attachment);
 }
-Info Renderer::info() const {
-  return {impl_->adapter, impl_->api_version, impl_->device_type,
-          impl_->present_mode, impl_->validation_errors.load()};
-}
+Info Renderer::info() const { return impl_->info(); }
 void Renderer::setGeometry(std::span<const Vertex> vertices,
                            std::span<const uint32_t> indices) {
   impl_->setGeometry(vertices, indices);
