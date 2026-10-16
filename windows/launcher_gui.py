@@ -113,13 +113,18 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         widget.pack(fill='x', pady=9)
         return widget
 
-    sidebar = tk.Frame(app, bg=PANEL, width=220, padx=22, pady=20)
+    sidebar = tk.Frame(app, bg=PANEL, width=220, padx=22, pady=16)
     sidebar.pack(side='left', fill='y')
     sidebar.pack_propagate(False)
     tk.Label(sidebar, image=sidebar_image, bg=PANEL, bd=0).pack(anchor='center', pady=(0, 8))
     label(sidebar, 'DISGAEA D2', 17, TEXT, True)
     label(sidebar, 'WIN PORT', 12, GOLD, True)
-    tk.Frame(sidebar, bg=RED, height=3).pack(fill='x', pady=(8, 25))
+    label(sidebar, 'Idioma / Language', 9, MUTED)
+    language_choice = tk.StringVar(value=LANGUAGES[translate.language])
+    language_combo = ttk.Combobox(sidebar, textvariable=language_choice,
+        values=tuple(LANGUAGES.values()), state='readonly', style='D2.TCombobox', width=19)
+    language_combo.pack(anchor='w', pady=(0, 4)); entries.append(language_combo)
+    tk.Frame(sidebar, bg=RED, height=3).pack(fill='x', pady=(8, 12))
     main = tk.Frame(app, bg=BG, padx=28, pady=24)
     main.pack(side='right', fill='both', expand=True)
     footer = tk.Frame(main, bg=PANEL, padx=16, pady=12)
@@ -156,15 +161,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         bodies[name], canvases[name] = body, canvas
         nav = tk.Button(sidebar, text=name, command=lambda n=name: show(n), bg=PANEL, fg=TEXT,
                         activebackground=RED, activeforeground=TEXT, font=('Segoe UI', 11), bd=0,
-                        anchor='w', padx=14, pady=10, cursor='hand2')
+                        anchor='w', padx=14, pady=8, cursor='hand2')
         nav.pack(fill='x', pady=3)
         nav_buttons[name] = nav
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • ' + ('Stable / DX12' if official else 'Experimental'), 9, MUTED)
-    label(sidebar, 'Idioma / Language', 9, MUTED)
-    language_choice = tk.StringVar(value=LANGUAGES[translate.language])
-    language_combo = ttk.Combobox(sidebar, textvariable=language_choice,
-        values=tuple(LANGUAGES.values()), state='readonly', style='D2.TCombobox', width=19)
-    language_combo.pack(anchor='w', pady=(0, 4)); entries.append(language_combo)
 
     def get_settings():
         return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
