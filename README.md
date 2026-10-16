@@ -2,28 +2,31 @@
 
 # Disgaea D2 WINPORT — Windows / DirectX 12
 
-## Versão pública oficial do projeto — 0.2.0 Stable
+## Versão pública oficial do projeto — 0.2.1 Stable
 
 Baixe o **instalador** ou o **ZIP portátil** em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest).
+Idioma do launcher: **Português (Brasil) / English**, com seleção abaixo de WIN PORT.
 Selecione sua própria **ISO USA compatível** e o PKG da atualização **BLUS31313 US 1.40**; DLCs são opcionais. A primeira preparação baixa ferramentas portáteis e compila o jogo automaticamente no seu computador. Precisa de internet e pode demorar. Não requer instalar ferramentas manualmente nem importar firmware.
 
 **DirectX 12**, configurações de resolução interna/saída, janela/tela cheia sem bordas, VSync, Hz e FSR 1 espacial. Vulkan, DLSS, Frame Generation e Android ainda não estão disponíveis. HUD após upscaling permanece experimental e desligado por padrão.
 
-[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-0.2.0.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
+[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-0.2.1.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
 
 A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` por compatibilidade com a linha testada. Não apague essa pasta. Outros perfis são preservados, sem migração universal automática.
 
 **Save do PS3:** [guia de importação experimental — PT-BR / English](docs/SAVES-PS3.md). A compatibilidade com saves reais do console ainda não foi validada.
 
-## Official project release — 0.2.0 Stable
+## Official project release — 0.2.1 Stable
 
-Download the **installer** or **portable ZIP** from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest). Provide your own supported US ISO, **BLUS31313 US 1.40** update PKG and optional DLCs. First-run downloads and local compilation are automatic and require internet. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android are unavailable. See the [release guide](docs/RELEASE-0.2.0.md) for requirements, save compatibility and known limitations.
+Launcher languages: **Português (Brasil) / English**, selected below WIN PORT.
+
+Download the **installer** or **portable ZIP** from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest). Provide your own supported US ISO, **BLUS31313 US 1.40** update PKG and optional DLCs. First-run downloads and local compilation are automatic and require internet. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android are unavailable. See the [release guide](docs/RELEASE-0.2.1.md) for requirements, save compatibility and known limitations.
 
 **PS3 saves:** [experimental import guide — English / PT-BR](docs/SAVES-PS3.md#english). Actual console-save compatibility has not been verified.
 
 **No game data, updates/DLC, firmware, keys, saves or game-derived compiled code is distributed.** Independent community project, not an official release from the game's rights holders.
 
-**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v0.2.0](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v0.2.0). Use this tag when building the released version from source.
+**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v0.2.1](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v0.2.1). Use this tag when building the released version from source.
 
 ## Sobre o projeto
 
@@ -55,12 +58,12 @@ This work builds on the original project by **Sean13128** and on **ps3recomp**, 
 
 ## Technical overview
 
-Windows x64 adaptation of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). The official 0.2.0 launcher uses DirectX 12 and generates the recognized US 1.40 runtime locally from user-provided files. The GPU command translation layer remains part of the runtime. A launcher release is not evidence that the entire campaign, every DLC or every PC configuration has been validated.
+Windows x64 adaptation of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). The official 0.2.1 launcher uses DirectX 12 and generates the recognized US 1.40 runtime locally from user-provided files. The GPU command translation layer remains part of the runtime. A launcher release is not evidence that the entire campaign, every DLC or every PC configuration has been validated.
 
-Vulkan and temporal upscaling development remain experimental and separate from the public playable renderer. See [LICENSE](LICENSE), [third-party credits](THIRD_PARTY_NOTICES.md), [test history](docs/STATUS-WINDOWS.md) and the [0.2.0 guide](docs/RELEASE-0.2.0.md).
+Vulkan and temporal upscaling development remain experimental and separate from the public playable renderer. See [LICENSE](LICENSE), [third-party credits](THIRD_PARTY_NOTICES.md), [test history](docs/STATUS-WINDOWS.md) and the [0.2.1 guide](docs/RELEASE-0.2.1.md).
 
 ## Visão geral técnica
 
-Adaptação Windows x64 do projeto de Sean13128, baseada no ps3recomp. O launcher oficial 0.2.0 usa DirectX 12 e gera o runtime US 1.40 reconhecido no computador do usuário. A camada de tradução dos comandos gráficos continua fazendo parte do runtime. A campanha inteira, todas as DLCs e todas as configurações de PC não foram validadas. O desenvolvimento Vulkan e temporal continua separado do renderizador público jogável.
+Adaptação Windows x64 do projeto de Sean13128, baseada no ps3recomp. O launcher oficial 0.2.1 usa DirectX 12 e gera o runtime US 1.40 reconhecido no computador do usuário. A camada de tradução dos comandos gráficos continua fazendo parte do runtime. A campanha inteira, todas as DLCs e todas as configurações de PC não foram validadas. O desenvolvimento Vulkan e temporal continua separado do renderizador público jogável.
 
 Créditos: Sean13128 e colaboradores pelo projeto original; Ned Heller / sp00nznet e colaboradores pelo ps3recomp; respectivos autores pelas bibliotecas de terceiros. Desenvolvimento assistido por IA, com direção e testes manuais do usuário. Mantenedor e testes Windows: [LUUKASR1](https://github.com/LUUKASR1). Projeto independente, sem afiliação com os titulares do jogo.
