@@ -16,8 +16,9 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.51-vulkan-mixed-sequence-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
+OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -655,7 +656,7 @@ class Backend:
         env = clean_capture_environment(env)
         session = None
         self.last_capture_report = None
-        if self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+        if not OFFICIAL_RELEASE and self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
             session = CaptureSession(self.home, VERSION, settings, capture_goal=self.capture_goal)
             env = session.environment(env)
         self.capture_session = session
@@ -718,7 +719,7 @@ class Backend:
 def gui():
     from launcher_gui import run_gui
     Backend(lambda text: None).adopt_standalone_for_graphics()
-    run_gui(Backend, HOME, VERSION, firmware_present)
+    run_gui(Backend, HOME, VERSION, firmware_present, official=OFFICIAL_RELEASE)
 
 
 def main():
@@ -747,6 +748,9 @@ def main():
         for asset in ('logo-winport.png', 'launcher-icon.png', 'launcher.ico'):
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
+        if OFFICIAL_RELEASE:
+            if VERSION != '0.2.0' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+                raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
     elif '--native-preparation-test' in sys.argv:

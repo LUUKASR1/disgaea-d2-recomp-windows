@@ -1,0 +1,44 @@
+name: Erro / Bug report
+description: Reporte um problema no launcher ou no jogo / Report a launcher or game bug
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Não envie arquivos do jogo, PKGs ou chaves. Confira caminhos pessoais nos logs antes de publicar.
+        Do not upload game files, PKGs or keys. Review personal paths in logs before sharing.
+  - type: input
+    id: version
+    attributes:
+      label: Versão do launcher / Launcher version
+      placeholder: 0.2.0 Stable / DirectX 12
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema e resultado esperado / Problem and expected result
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Como reproduzir / Steps to reproduce
+      description: Inclua a cena, personagem ou golpe, quando aplicável / Include scene, character or attack where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Windows, CPU, GPU, RAM e driver / System specifications
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Resolução interna/saída, FSR e VSync / Graphics settings
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log ou imagem / Log or screenshot
+      description: Arquivos e suporte → Abrir logs do jogo. Arraste somente o log ou uma imagem, sem conteúdo do jogo.

@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 
 from launcher import Backend, VERSION
 from launcher_gui import run_gui
@@ -24,7 +25,8 @@ $bitmap.Dispose()
 def main():
     out = Path('launcher-previews'); out.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as root:
-        app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', VERSION, lambda directory: False, preview=True)
+        official = '--official' in sys.argv
+        app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', '0.2.0' if official else VERSION, lambda directory: False, preview=True, official=official)
         try:
             for page, name in [('Início', 'inicio'), ('Vídeo', 'video'), ('Preparação', 'preparacao'), ('Arquivos e suporte', 'capturas')]:
                 show(page); app.update(); app.update_idletasks()

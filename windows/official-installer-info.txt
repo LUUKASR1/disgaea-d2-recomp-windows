@@ -1,0 +1,29 @@
+Disgaea D2 Windows Launcher 0.2.0 - Stable / DirectX 12
+
+Projeto independente da comunidade. Nao e uma publicacao oficial da NIS ou Sony.
+
+Feche o jogo e o launcher antes de instalar ou atualizar.
+Selecione sua propria ISO USA compativel e a atualizacao BLUS31313 US 1.40.
+DLCs sao opcionais. A primeira preparacao baixa ferramentas portateis e gera a
+build no seu computador. Precisa de internet e pode demorar. Nao exige instalar
+Git, Visual Studio ou LLVM manualmente, nem importar firmware.
+
+A preparacao e os saves usam o perfil ja testado:
+%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview
+O nome e mantido por compatibilidade. Nao apague essa pasta.
+Perfis anteriores sao preservados; nem todos sao migrados automaticamente.
+
+Renderizador: DirectX 12. Vulkan, DLSS, Frame Generation e Android indisponiveis.
+FSR 1 e configuracoes de video estao disponiveis. HUD apos upscaling e experimental.
+Nao ha garantia de 60 FPS constantes ou de compatibilidade com todo hardware.
+Requer Windows x64 e driver DirectX 12. O executavel nao e assinado digitalmente.
+
+Jogo, atualizacoes, DLCs, firmware, chaves, saves e codigo recompilado do jogo
+nao fazem parte deste instalador. Use seus proprios arquivos e licencas.
+
+Suporte / Bug reports:
+https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues
+
+English: Provide your own supported US ISO and US 1.40 update. First-run tools
+and compilation are automatic and need internet. Saves stay in the profile
+above. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android unavailable.

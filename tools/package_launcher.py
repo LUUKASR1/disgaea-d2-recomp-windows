@@ -8,7 +8,10 @@ import sys
 import urllib.request
 
 onefile = '--onefile' in sys.argv
-package_name = 'DisgaeaD2Launcher-HUD-Output-Preview' if onefile else 'DisgaeaD2Launcher'
+official = '--official' in sys.argv
+if official and not onefile:
+    raise RuntimeError('Official releases require --onefile.')
+package_name = 'DisgaeaD2Launcher-HUD-Output-Preview' if onefile and not official else 'DisgaeaD2Launcher'
 
 root = Path(__file__).resolve().parents[1]
 staging = root / 'launcher-package'
@@ -35,6 +38,8 @@ vendor = staging / 'vendor'
 if onefile:
     (vendor / 'standalone.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
     (vendor / 'graphics.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
+if official:
+    (vendor / 'official-release.json').write_text(json.dumps({'version': '0.2.0', 'graphics_api': 'd3d12'}), encoding='utf-8')
 for name in ('cmake', 'ninja'):
     tool = shutil.which(name)
     if not tool:

@@ -15,11 +15,11 @@ BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
 TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 
 
-def run_gui(Backend, home, version, firmware_present, preview=False):
+def run_gui(Backend, home, version, firmware_present, preview=False, official=False):
     app = tk.Tk()
     standalone = home.name in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview')
     clean = standalone or home.name == 'DisgaeaD2Recomp-ISO-Clean'
-    app.title('Disgaea D2 • ' + ('Standalone • ' if standalone else 'Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version)
+    app.title('Disgaea D2 • ' + ('Windows • Stable • ' + version if official else ('Standalone • ' if standalone else 'Teste ISO limpo • ' if clean else 'Windows Launcher • ') + version))
     app.geometry('1040x680')
     app.minsize(920, 640)
     app.configure(bg=BG)
@@ -70,7 +70,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     except (OSError, ValueError) as error:
         settings, initial_error = dict(DEFAULTS), str(error)
     resolution = tk.StringVar(value=settings['resolution'])
-    graphics_api = tk.StringVar(value=settings['graphics_api'])
+    graphics_api = tk.StringVar(value='d3d12' if official else settings['graphics_api'])
     mode = tk.StringVar(value='Janela' if settings['mode'] == 'windowed' else 'Tela cheia sem bordas')
     vsync = tk.BooleanVar(value=settings['vsync'])
     refresh_rate = tk.StringVar(value='Nativo' if settings['refresh_rate']=='native' else settings['refresh_rate']+' Hz')
@@ -258,10 +258,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     api_dx12 = tk.Radiobutton(video, text='DirectX 12', variable=graphics_api, value='d3d12',
         bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT)
     api_dx12.pack(anchor='w'); entries.append(api_dx12)
-    api_vulkan = tk.Radiobutton(video, text='Vulkan — em implementação', variable=graphics_api, value='vulkan',
-        state='disabled', bg=CARD, fg=MUTED, selectcolor=PANEL, disabledforeground=MUTED)
-    api_vulkan.pack(anchor='w', pady=(0, 8))
-    label(video, 'Vulkan será habilitado quando o backend do jogo estiver disponível. O teste de inicialização já funciona.', 10, MUTED)
+    if not official:
+        api_vulkan = tk.Radiobutton(video, text='Vulkan — em implementação', variable=graphics_api, value='vulkan',
+            state='disabled', bg=CARD, fg=MUTED, selectcolor=PANEL, disabledforeground=MUTED)
+        api_vulkan.pack(anchor='w', pady=(0, 8))
+        label(video, 'Vulkan será habilitado quando o backend do jogo estiver disponível. O teste de inicialização já funciona.', 10, MUTED)
     label(video, 'Modo de exibição', bold=True)
     mode_combo = ttk.Combobox(video, textvariable=mode, values=('Janela', 'Tela cheia sem bordas'), state='readonly', style='D2.TCombobox', width=32)
     mode_combo.pack(anchor='w', pady=(0, 18)); entries.append(mode_combo)
@@ -302,8 +303,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
         bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI',11))
     hud_toggle.pack(anchor='w',pady=8);entries.append(hud_toggle)
     label(graphics, 'Desenha a interface na resolução de saída nas cenas reconhecidas. Cenas sem suporte usam o caminho atual. Requer reiniciar o jogo.', 10, MUTED)
-    label(graphics, 'DLSS e Frame Generation: etapa de diagnóstico de câmera e movimento.', 10, MUTED)
-    label(graphics, 'Ainda indisponíveis para jogar. Capturas F8 agora incluem temporal-probe.json com constantes de dois frames.', 10, MUTED)
+    label(graphics, 'DLSS e Frame Generation ainda não estão disponíveis.', 10, MUTED)
+    if not official:
+        label(graphics, 'Capturas F8 incluem temporal-probe.json com constantes de dois frames.', 10, MUTED)
     label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
     def save_video():
         try:
@@ -368,7 +370,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False):
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
     capture_button = None
-    if home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+    if not official and home.name == 'DisgaeaD2Recomp-Graphics-Preview':
         diagnostic = card(page)
         label(diagnostic, 'CAPTURAS EXPERIMENTAIS: CENÁRIO, SPRITES E SHADERS', 12, GOLD, True)
         toggle = tk.Checkbutton(diagnostic, text='Habilitar captura na próxima abertura do jogo',
