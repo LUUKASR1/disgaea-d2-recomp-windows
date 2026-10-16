@@ -25,7 +25,7 @@ jobs:
       - name: Native DirectX 12 graphics and FSR regressions
         run: python tools/check_graphics.py
       - name: Native ISO reader regressions
-        run: python tools/check_iso_vfs.py
+        run: python tools/check_iso_vfs.py --sdk-directory iso-check-sdk
       - name: Actual official launcher UI
         run: python windows/preview_launcher.py --official
       - uses: actions/upload-artifact@v4
