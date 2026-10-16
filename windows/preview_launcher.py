@@ -31,6 +31,15 @@ def main():
         try:
             translate, choose_language = app._launcher_i18n
             original_settings = app._launcher_get_settings()
+            def all_widgets(widget):
+                yield widget
+                for child in widget.winfo_children(): yield from all_widgets(child)
+            app.geometry('1040x640'); app.update(); app.update_idletasks()
+            language_picker = next(w for w in all_widgets(app) if 'values' in w.keys()
+                and tuple(w.cget('values')) == ('Português (Brasil)', 'English'))
+            picker_bottom = language_picker.winfo_rooty() - app.winfo_rooty() + language_picker.winfo_height()
+            assert picker_bottom <= app.winfo_height() - 20, 'Language picker clipped at minimum height'
+            app.geometry('1040x680')
             for language in ('pt-BR', 'en'):
                 choose_language(language)
                 assert load_language(Path(root) / 'DisgaeaD2Recomp-Graphics-Preview') == language

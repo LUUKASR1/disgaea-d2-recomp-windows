@@ -113,10 +113,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         widget.pack(fill='x', pady=9)
         return widget
 
-    sidebar = tk.Frame(app, bg=PANEL, width=220, padx=22, pady=26)
+    sidebar = tk.Frame(app, bg=PANEL, width=220, padx=22, pady=20)
     sidebar.pack(side='left', fill='y')
     sidebar.pack_propagate(False)
-    tk.Label(sidebar, image=sidebar_image, bg=PANEL, bd=0).pack(anchor='center', pady=(0, 12))
+    tk.Label(sidebar, image=sidebar_image, bg=PANEL, bd=0).pack(anchor='center', pady=(0, 8))
     label(sidebar, 'DISGAEA D2', 17, TEXT, True)
     label(sidebar, 'WIN PORT', 12, GOLD, True)
     tk.Frame(sidebar, bg=RED, height=3).pack(fill='x', pady=(8, 25))
@@ -156,7 +156,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         bodies[name], canvases[name] = body, canvas
         nav = tk.Button(sidebar, text=name, command=lambda n=name: show(n), bg=PANEL, fg=TEXT,
                         activebackground=RED, activeforeground=TEXT, font=('Segoe UI', 11), bd=0,
-                        anchor='w', padx=14, pady=14, cursor='hand2')
+                        anchor='w', padx=14, pady=10, cursor='hand2')
         nav.pack(fill='x', pady=3)
         nav_buttons[name] = nav
     label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • ' + ('Stable / DX12' if official else 'Experimental'), 9, MUTED)
