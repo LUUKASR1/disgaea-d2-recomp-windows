@@ -1,4 +1,5 @@
 name: Validate official DirectX 12 stable package
+run-name: Verify official 0.2.0 Stable launcher and installer
 on:
   push:
     branches: [feature/native-graphics]

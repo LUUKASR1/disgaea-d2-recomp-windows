@@ -153,7 +153,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
                         anchor='w', padx=14, pady=14, cursor='hand2')
         nav.pack(fill='x', pady=3)
         nav_buttons[name] = nav
-    label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • Experimental', 9, MUTED)
+    label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • ' + ('Stable / DX12' if official else 'Experimental'), 9, MUTED)
 
     def get_settings():
         return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
@@ -401,6 +401,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             report = backend.last_capture_report
             open_path(Path(report).parent if report else Path.home() / 'Downloads')
         button(diagnostic, 'Abrir pasta do relatório', open_report_folder, while_playing=True)
+    if official:
+        button(page, 'Relatar um problema', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml'))
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
     if not standalone: button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
