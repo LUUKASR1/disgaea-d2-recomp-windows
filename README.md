@@ -1,57 +1,25 @@
 <img width="1920" height="1080" alt="Sem-Título-1" src="https://github.com/user-attachments/assets/60258dd9-584b-4cd2-aa43-afb01ee681fc" />
 
-# Disgaea D2 WINPORT (PROJETO EM DESENVOLVIMENTO)
+# Disgaea D2 WINPORT — Windows / DirectX 12
 
-## Launcher experimental 0.1.28 disponível
+## Versão pública oficial do projeto — 0.2.0 Stable
 
-[Baixar o executável Windows x64](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/download/v0.1.28-graphics-preview/DisgaeaD2Launcher-HUD-Output-Preview.exe) · [Notas e ZIP da versão](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/tag/v0.1.28-graphics-preview)
+Baixe o **instalador** ou o **ZIP portátil** em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest).
+Selecione sua própria **ISO USA compatível** e o PKG da atualização **BLUS31313 US 1.40**; DLCs são opcionais. A primeira preparação baixa ferramentas portáteis e compila o jogo automaticamente no seu computador. Precisa de internet e pode demorar. Não requer instalar ferramentas manualmente nem importar firmware.
 
-Abra o EXE e forneça sua própria ISO compatível do jogo americano, atualização US 1.40 e DLCs opcionais conforme solicitado. A primeira preparação ocorre no seu PC e pode baixar ferramentas/compilar automaticamente. Nenhum arquivo do jogo ou código recompilado do jogo acompanha a distribuição.
+**DirectX 12**, configurações de resolução interna/saída, janela/tela cheia sem bordas, VSync, Hz e FSR 1 espacial. Vulkan, DLSS, Frame Generation e Android ainda não estão disponíveis. HUD após upscaling permanece experimental e desligado por padrão.
 
-Esta **pré-release experimental** oferece resolução interna/saída, FSR 1 espacial, opções de HUD, seleção de Hz e VRR quando suportado. **DLSS e Frame Generation ainda não estão implementados.** Capturas F8 são diagnósticos parciais e podem pausar o jogo; mantenha-as desligadas para jogar normalmente. A validação real do novo raster geométrico continua pendente.
+[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-0.2.0.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
 
-O perfil `DisgaeaD2Recomp-Graphics-Preview` é separado da versão anterior. Previews gráficas anteriores reutilizam a preparação e os saves desse perfil. Não apague suas pastas de saves. A documentação abaixo da 0.1.10 descreve o fluxo anterior por pasta extraída.
+A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` por compatibilidade com a linha testada. Não apague essa pasta. Outros perfis são preservados, sem migração universal automática.
 
-### Experimental launcher 0.1.28
+## Official project release — 0.2.0 Stable
 
-[Download the Windows x64 EXE](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/download/v0.1.28-graphics-preview/DisgaeaD2Launcher-HUD-Output-Preview.exe) · [Release notes and ZIP](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/tag/v0.1.28-graphics-preview)
+Download the **installer** or **portable ZIP** from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest). Provide your own supported US ISO, **BLUS31313 US 1.40** update PKG and optional DLCs. First-run downloads and local compilation are automatic and require internet. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android are unavailable. See the [release guide](docs/RELEASE-0.2.0.md) for requirements, save compatibility and known limitations.
 
-Run the EXE and supply your own compatible US game ISO, US 1.40 update and optional DLCs. First-run preparation runs locally and may download tools/build automatically. No game files or recompiled game code are bundled.
+**No game data, updates/DLC, firmware, keys, saves or game-derived compiled code is distributed.** Independent community project, not an official release from the game's rights holders.
 
-This experimental prerelease includes internal/output resolution, spatial FSR 1, HUD options, refresh-rate selection and supported VRR. **DLSS and Frame Generation are not implemented.** F8 captures are partial diagnostics and can pause gameplay; disable them for ordinary play. Real-game validation of the latest geometry raster is pending. The graphics preview uses a separate profile; existing graphics previews reuse its preparation and saves. The 0.1.10 guide below describes the older extracted-folder flow.
-
-
-## Guia anterior — Windows 0.1.10
-
-Baixe o instalador ou a versão portátil em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). Esta seção descreve o launcher anterior **0.1.10-preview**. A primeira preparação gera e compila o jogo no seu computador; as sessões seguintes reutilizam essa build.
-
-Você precisa da sua própria cópia **extraída** do jogo americano **BLUS31313** e do PKG de atualização **US 1.40**. DLCs são opcionais e precisam dos seus próprios arquivos e licenças. A entrada direta de ISO está disponível na preview 0.1.28 acima; a 0.1.10 usa pasta extraída.
-
-1. Instale `DisgaeaD2Launcher-Setup-Windows-x64.exe` e abra o launcher. Se usar o ZIP portátil, extraia tudo e mantenha a pasta `_internal` junto do executável.
-2. Clique em **Jogar**, selecione a pasta do jogo (ou `PS3_GAME`) e a atualização 1.40; inclua seus PKGs de DLC, se desejar. Também pode selecionar esses arquivos na aba **Preparação**.
-3. Aguarde a primeira preparação. O launcher baixa ferramentas portáteis, o auxiliar oficial e o firmware PS3 oficial verificado; gera a build local e inicia o jogo. Não é necessário instalar Git, Visual Studio ou LLVM manualmente. A primeira vez requer internet e pode demorar; nas próximas, **Jogar** reutiliza a build. Firmware próprio ou do RPCS3 continua disponível como opção avançada. Se faltarem runtimes de execução C++/Vulkan no Windows, os instaladores oficiais são obtidos automaticamente; o Windows pode pedir autorização de administrador. Um driver de vídeo adequado continua necessário.
-
-**Já tem uma build funcionando?** Feche o jogo e o launcher, instale a atualização do launcher e clique em **Jogar**. Na atualização para 0.1.10, a build compatível e os saves são preservados; não é necessário recompilar ou importar novamente os pacotes. Não apague `%LOCALAPPDATA%\DisgaeaD2Recomp`.
-
-Se o launcher apontar um arquivo ausente ou vazio, restaure-o da sua própria cópia extraída. A verificação cobre 18 arquivos de início e não substitui uma conferência completa dos dados. Consulte o [guia do launcher](docs/LAUNCHER-WINDOWS.md) para os detalhes.
-
-A aba **Vídeo** oferece resolução de exibição em janela, tela cheia sem bordas e VSync. A resolução de exibição amplia a imagem; a resolução interna permanece original. As opções são aplicadas na próxima abertura do jogo.
-
-## Previous guide — Windows 0.1.10
-
-Download the installer or portable package from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases). This section describes the previous **0.1.10-preview** launcher. The first preparation generates and compiles the game on your computer; later sessions reuse that build.
-
-You need your own **extracted** US game copy (**BLUS31313**) and the **US 1.40** update PKG. DLCs are optional and require your own files and licenses. Direct ISO input is available in preview 0.1.28 above; 0.1.10 uses an extracted folder.
-
-1. Install `DisgaeaD2Launcher-Setup-Windows-x64.exe` and open the launcher. For the portable ZIP, extract everything and keep `_internal` next to the executable.
-2. Click **Jogar**, select the game folder (or `PS3_GAME`) and the 1.40 update; add your DLC PKGs if desired. These files can also be selected in the **Preparação** tab.
-3. Wait for the first preparation. The launcher downloads private portable tools, the official helper and verified official PS3 firmware, generates the local build, and starts the game. No manual Git, Visual Studio or LLVM installation is needed. The first run requires internet and can take time; later sessions reuse the build. Importing your existing firmware remains an advanced option. Missing Windows C++/Vulkan runtimes are obtained through official installers; Windows may request administrator permission. A suitable graphics driver is still required.
-
-**Already have a working build?** Close the game and launcher, install the launcher update, and click **Jogar**. Updating to 0.1.10 preserves your compatible build and saves; no recompilation or package reimport is needed. Do not delete `%LOCALAPPDATA%\DisgaeaD2Recomp`.
-
-If the launcher reports a missing or empty file, restore it from your own extracted copy. This check covers 18 startup files and does not validate all game data. See the [launcher guide](docs/LAUNCHER-WINDOWS.md) for details.
-
-The **Vídeo** tab offers window display resolution, borderless fullscreen, and VSync. Display resolution scales the image; internal rendering resolution remains unchanged. Settings apply on the next game launch.
+**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v0.2.0](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v0.2.0). Use this tag when building the released version from source.
 
 ## Sobre o projeto
 
@@ -83,34 +51,12 @@ This work builds on the original project by **Sean13128** and on **ps3recomp**, 
 
 ## Technical overview
 
-Experimental Windows x64 port of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). Current target: US game update 1.40, Direct3D 12, clang-cl. Android is not supported by this candidate yet.
+Windows x64 adaptation of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). The official 0.2.0 launcher uses DirectX 12 and generates the recognized US 1.40 runtime locally from user-provided files. The GPU command translation layer remains part of the runtime. A launcher release is not evidence that the entire campaign, every DLC or every PC configuration has been validated.
 
-**The repository contains source code, and releases provide the launcher and its dependencies. No game executable, generated game code, game data, updates/DLC, keys or saves are distributed.** Generate and compile the game locally from your own copy. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-Automatic preparation in an empty application folder was confirmed on the main PC using already installed compilers: firmware, US 1.40 update, code generation, and all 199 build steps completed. DLC import and save/load were also confirmed in that build. The second PC completed compilation with Clang 19.1.5; after restoring missing audio files, the user confirmed gameplay, save/load, DLCs, and closing. The user also confirmed that the 0.1.7 launcher update works. Windows CI passed 21 tests and installer/reinstall/uninstall checks with preservation of test saves and configuration.
-
-On the main PC (Ryzen 7 5700X3D / RTX 5070 / 32 GB RAM), the user reported 55–60 FPS in a later test, without a controlled frametime capture. No FPS measurement was reported for the second PC. This remains experimental: locked 60 FPS, the entire campaign, every DLC, and the full tool installation process on a completely clean Windows system have not been validated. Android is a future goal. See the [dated test history](docs/STATUS-WINDOWS.md).
-
-- [Windows GUI launcher: select your extracted game and update PKGs](docs/LAUNCHER-WINDOWS.md) (experimental; first-run local compilation)
-- [Windows build and run](docs/WINDOWS.md)
-- [Observed status and performance](docs/STATUS-WINDOWS.md)
-- [Windows changes](docs/CHANGELOG-WINDOWS.md)
-- [Original project documentation](docs/UPSTREAM-README.md)
+Vulkan and temporal upscaling development remain experimental and separate from the public playable renderer. See [LICENSE](LICENSE), [third-party credits](THIRD_PARTY_NOTICES.md), [test history](docs/STATUS-WINDOWS.md) and the [0.2.0 guide](docs/RELEASE-0.2.0.md).
 
 ## Visão geral técnica
 
-Adaptação experimental para Windows x64 do projeto [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), baseada no [ps3recomp](https://github.com/sp00nznet/ps3recomp). O alvo atual é a versão americana do jogo com a atualização 1.40, usando Direct3D 12 e clang-cl. Esta versão candidata ainda não oferece suporte a Android.
+Adaptação Windows x64 do projeto de Sean13128, baseada no ps3recomp. O launcher oficial 0.2.0 usa DirectX 12 e gera o runtime US 1.40 reconhecido no computador do usuário. A camada de tradução dos comandos gráficos continua fazendo parte do runtime. A campanha inteira, todas as DLCs e todas as configurações de PC não foram validadas. O desenvolvimento Vulkan e temporal continua separado do renderizador público jogável.
 
-**O repositório contém o código-fonte, e as releases oferecem o launcher e suas dependências. Não são distribuídos o executável do jogo, código gerado a partir do jogo, dados do jogo, atualizações/DLCs, chaves ou saves.** Gere e compile o jogo localmente a partir da sua própria cópia. Consulte [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-A preparação automática numa pasta vazia do aplicativo foi confirmada no PC principal, usando compiladores já instalados: firmware, atualização US 1.40, geração de código e as 199 etapas de compilação foram concluídos. A importação de DLCs e o save/load também foram confirmados nessa build. O segundo PC concluiu a compilação com Clang 19.1.5; após restaurar arquivos de áudio ausentes, o usuário confirmou o jogo, save/load, DLCs e fechamento. O usuário também confirmou o funcionamento da atualização do launcher para 0.1.7. A validação automática no Windows passou nos 21 testes e nas verificações de instalação, reinstalação e desinstalação, preservando os saves e a configuração de teste.
-
-No PC principal (Ryzen 7 5700X3D / RTX 5070 / 32 GB de RAM), o usuário relatou 55–60 FPS num reteste posterior, sem captura controlada de frametimes. Não foi informado FPS no segundo PC. O projeto continua experimental: ainda não foram validados 60 FPS travados, a campanha inteira, cada DLC e todo o processo de instalação de ferramentas num Windows completamente limpo. Android é um objetivo futuro. Consulte o [histórico datado dos testes](docs/STATUS-WINDOWS.md).
-
-- [Launcher com interface gráfica para Windows: selecione seu jogo extraído e os PKGs de atualização](docs/LAUNCHER-WINDOWS.md) (experimental; compilação local na primeira preparação)
-- [Compilar e executar no Windows](docs/WINDOWS.md)
-- [Estado observado e desempenho](docs/STATUS-WINDOWS.md)
-- [Alterações para Windows](docs/CHANGELOG-WINDOWS.md)
-- [Documentação do projeto original](docs/UPSTREAM-README.md)
-
-Créditos: Sean13128 e colaboradores pelo projeto original; Ned Heller / sp00nznet e colaboradores pelo ps3recomp; respectivos autores pelas bibliotecas de terceiros. Desenvolvimento assistido por IA, com direção e testes manuais do usuário. Mantenedor e testes Windows: [LUUKASR1](https://github.com/LUUKASR1). Projeto independente e não oficial, sem afiliação com os titulares do jogo.
+Créditos: Sean13128 e colaboradores pelo projeto original; Ned Heller / sp00nznet e colaboradores pelo ps3recomp; respectivos autores pelas bibliotecas de terceiros. Desenvolvimento assistido por IA, com direção e testes manuais do usuário. Mantenedor e testes Windows: [LUUKASR1](https://github.com/LUUKASR1). Projeto independente, sem afiliação com os titulares do jogo.
