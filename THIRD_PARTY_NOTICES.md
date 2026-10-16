@@ -75,3 +75,10 @@ pinned primary references. RPCS3 implementation code and binaries are not
 incorporated in these modules or invoked by the standalone preparation path.
 AES operations use the already bundled PyCryptodome dependency and its existing
 license notices. Owned update/ELF files and generated game code stay local.
+
+## AMD FidelityFX FSR 1
+
+The unchanged AMD FSR 1 headers in port/graphics/vendor/fsr1 are MIT-licensed.
+The full license and pinned source/hash provenance are included in that folder.
+The native graphics preview embeds their EASU/RCAS shader implementations.
+DLSS and frame generation are not included or claimed as active.

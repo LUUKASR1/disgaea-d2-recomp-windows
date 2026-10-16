@@ -1,0 +1,88 @@
+name: Validate official DirectX 12 stable package
+run-name: Verify official 0.2.0 Stable launcher and installer
+on:
+  push:
+    branches: [feature/native-graphics]
+    paths: [.github/workflows/official-release.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: official-dx12-020
+  cancel-in-progress: false
+jobs:
+  validate-package:
+    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/feature/native-graphics'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r tools/requirements-lifts.txt pyinstaller==6.22.0 py7zr==1.0.0 cmake==3.31.6 ninja==1.11.1.4
+      - name: Launcher and preparation regressions
+        run: python -m unittest discover -s windows -p 'test_*.py' -v
+      - name: Native DirectX 12 graphics and FSR regressions
+        run: python tools/check_graphics.py
+      - name: Native ISO reader regressions
+        run: python tools/check_iso_vfs.py --sdk-directory iso-check-sdk
+      - name: Actual official launcher UI
+        run: python windows/preview_launcher.py --official
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Official-0.2.0-Launcher-UI
+          path: launcher-previews/
+      - name: Package official single-file launcher
+        run: python tools/package_launcher.py --onefile --official
+      - name: Test frozen launcher, native preparation and portable compilation
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path dist/DisgaeaD2Launcher.exe).Path
+          foreach ($argument in @('--self-test', '--native-preparation-test', '--toolchain-test')) {
+            $process = Start-Process $exe -ArgumentList $argument -PassThru
+            if (!$process.WaitForExit(780000)) { Stop-Process -Id $process.Id -Force; throw "$argument timed out" }
+            $process.Refresh()
+            if ($process.ExitCode -ne 0) {
+              Get-Content "$env:LOCALAPPDATA/DisgaeaD2Recomp-Graphics-Preview/preparacao.log" -Tail 100 -ErrorAction SilentlyContinue
+              throw "$argument failed: $($process.ExitCode)"
+            }
+          }
+          foreach ($name in @('self-test-ok.txt', 'toolchain-test-ok.txt', 'native-preparation-test.log')) {
+            if (!(Test-Path "$env:LOCALAPPDATA/DisgaeaD2Recomp-Graphics-Preview/$name")) { throw "Missing $name" }
+          }
+      - name: Build and verify installer with preservation of saves
+        shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $iscc = if ($compiler) { $compiler.Source } else {
+            Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter 'Inno Setup*' |
+              ForEach-Object { Join-Path $_.FullName 'ISCC.exe' } |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (!$iscc) { throw 'Inno Setup missing' }
+          & $iscc /DOfficialRelease windows/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          ./windows/test_installer.ps1 -OfficialRelease
+      - name: Prepare public assets and checksums
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, json, os, shutil, zipfile
+          out = Path('official-assets'); out.mkdir()
+          for source in ('dist/DisgaeaD2Launcher.exe', 'dist-installer/DisgaeaD2Launcher-Setup-Windows-x64.exe'):
+              data = Path(source).read_bytes()
+              assert data[:2] == b'MZ' and len(data) > 1_000_000
+              shutil.copy2(source, out / Path(source).name)
+          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-0.2.0-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-0.2.0.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
+                  z.write(source, name)
+          (out / 'release-build.json').write_text(json.dumps({'version': '0.2.0', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
+          sums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(out.iterdir()))
+          (out / 'SHA256SUMS.txt').write_text(sums)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2-0.2.0-Official-Verified-Assets
+          path: official-assets/
+          if-no-files-found: error

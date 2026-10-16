@@ -1,0 +1,79 @@
+name: Publish authorized official 0.2.0 stable release
+on:
+  push:
+    branches: [feature/native-graphics]
+    paths: [.github/workflows/publish-official-020.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-official-dx12-020
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/feature/native-graphics'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f7659ac54ab72dd20ea0407f7f84fa99278ff865
+      - name: Verify tested artifacts and publish the user-authorized stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, io, json, pathlib, subprocess, zipfile
+          repo = 'LUUKASR1/disgaea-d2-recomp-windows'
+          commit = 'f7659ac54ab72dd20ea0407f7f84fa99278ff865'
+          run_id, artifact_id = 38831021540, 12016709321
+          archive_digest = 'df35466bc5f69e4dfd1e19f90ba41449a6d41b2aaaaa21f1bc9df60d42154131'
+          def gh(*args):
+              return subprocess.check_output(['gh', *args])
+          def api(path):
+              return json.loads(gh('api', 'repos/' + repo + '/' + path))
+          run = api('actions/runs/' + str(run_id))
+          assert run['conclusion'] == 'success' and run['head_sha'] == commit
+          artifact = api('actions/artifacts/' + str(artifact_id))
+          assert not artifact['expired'] and artifact['workflow_run']['head_sha'] == commit
+          assert artifact['name'] == 'DisgaeaD2-0.2.0-Official-Verified-Assets'
+          archive = gh('api', 'repos/' + repo + '/actions/artifacts/' + str(artifact_id) + '/zip')
+          assert hashlib.sha256(archive).hexdigest() == archive_digest
+          expected = {'DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher-Setup-Windows-x64.exe', 'DisgaeaD2Launcher-0.2.0-Windows-x64.zip', 'SHA256SUMS.txt', 'release-build.json'}
+          out = pathlib.Path('verified-assets'); out.mkdir()
+          with zipfile.ZipFile(io.BytesIO(archive)) as z:
+              assert set(z.namelist()) == expected
+              for name in expected:
+                  (out / name).write_bytes(z.read(name))
+          meta = json.loads((out / 'release-build.json').read_text())
+          assert meta['source_commit'] == commit and meta['renderer'] == 'd3d12' and not meta['game_content_bundled']
+          expected_hashes = {
+              'DisgaeaD2Launcher.exe': 'ac47acf01498a25a2b60c560a37687da2ed3ab9500d3fb5225043739a2785fe8',
+              'DisgaeaD2Launcher-Setup-Windows-x64.exe': '89475dd81b1de2f0a4abdacf12197b98eb70f4e37b16888d83f00c99a8534194',
+              'DisgaeaD2Launcher-0.2.0-Windows-x64.zip': 'afc5c56b4e9a1fc4f832197c5c75a74757bc416cc393ba3f3d99b26ea9e78f5b',
+              'release-build.json': 'a8ef80df98221c446f468cfdfd96a91cb15c55a4ffe3a779bfd542aaf05f509d'}
+          listed = {}
+          for line in (out / 'SHA256SUMS.txt').read_text().splitlines():
+              digest, name = line.split('  ', 1)
+              assert name in expected_hashes and digest == expected_hashes[name]
+              assert hashlib.sha256((out / name).read_bytes()).hexdigest() == digest
+              listed[name] = digest
+          assert listed == expected_hashes
+          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-0.2.0-Windows-x64.zip') as z:
+              assert set(z.namelist()) == {'DisgaeaD2Launcher.exe', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'}
+              assert z.read('DisgaeaD2Launcher.exe') == (out / 'DisgaeaD2Launcher.exe').read_bytes()
+          tag = 'v0.2.0'
+          # Upload every verified asset to a draft before making it public.
+          # Existing releases are never deleted or overwritten by this job.
+          gh('release', 'create', tag, '--repo', repo, '--target', commit,
+              '--title', 'Disgaea D2 Windows 0.2.0 — Stable / DirectX 12',
+              '--notes-file', 'docs/RELEASE-0.2.0.md', '--draft')
+          gh('release', 'upload', tag, *map(str, sorted(out.iterdir())), '--repo', repo)
+          gh('release', 'edit', tag, '--repo', repo, '--draft=false', '--prerelease=false', '--latest')
+          release = api('releases/tags/' + tag)
+          assert not release['draft'] and not release['prerelease']
+          assert {a['name'] for a in release['assets']} == expected
+          print(release['html_url'])
+          PY

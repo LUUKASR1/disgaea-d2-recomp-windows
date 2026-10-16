@@ -172,6 +172,7 @@ endif()
 # different reason. add_subdirectory hands all of that over with the target.
 add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
+include(graphics/integrate.cmake)
 
 # ---------------------------------------------------------------------------
 # The HLE NID table

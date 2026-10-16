@@ -33,6 +33,8 @@
     "D2_BOOT_TRACE",
     "D2_CAPTURE_F8",
     "D2_CAPTURE_MASK_STATE",
+    "D2_SHADER_CORPUS",
+    "D2_DRAW_CAPTURE",
     "D2_FIFO_DETAIL",
     "D2_FIFO_SAMPLE",
     "D2_FRAME_LIGHT",
@@ -81,6 +83,7 @@
     "VP_SUBMIT",
     "VRAMSCAN",
     "VTX_DUMP",
-    "YDKJ_RWATCH"
+    "YDKJ_RWATCH",
+    "D2_PERF_CSV"
   ]
 }

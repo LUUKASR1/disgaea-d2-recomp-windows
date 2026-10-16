@@ -45,6 +45,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <atomic>
+#ifdef _WIN32
+#include "graphics/backend_choice.h"
+#endif
 #ifdef D2_ENABLE_ISO_VFS
 #include "iso_runtime.h"
 #include <filesystem>
@@ -511,6 +514,13 @@ extern "C" int d2_settings_self_test(void);
 
 int main(int argc, char** argv)
 {
+#ifdef _WIN32
+    if (const char* error = d2::graphics::unavailable_reason(
+            d2::graphics::requested_api(getenv("D2_GRAPHICS_API")))) {
+        fprintf(stderr, "[graphics] %s\n", error);
+        return 2;
+    }
+#endif
 #ifdef __APPLE__
     if (argc == 2 && strcmp(argv[1], "--settings-test") == 0) return d2_settings_self_test();
     d2_settings_init();

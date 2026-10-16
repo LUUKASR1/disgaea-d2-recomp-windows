@@ -1,0 +1,69 @@
+name: Publish validated graphics preview
+on:
+  push:
+    branches: [feature/native-graphics]
+    paths: [.github/workflows/publish-graphics-preview.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: publish-graphics-preview-0128
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/feature/native-graphics'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify existing build and publish experimental assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, io, json, pathlib, subprocess, zipfile
+          repo = 'LUUKASR1/disgaea-d2-recomp-windows'
+          commit = 'a745c593592236b15d8d9f2aeffd6eaec0a35a4d'
+          artifact_id = 11866752729
+          digest = '1673e86cf4ce1c8d998469b467e0b6783054156c8713b3e6afe13a93763b75c5'
+          tag = 'v0.1.28-graphics-preview'
+          def gh(*args):
+              return subprocess.check_output(['gh', *args])
+          def api(path):
+              return json.loads(gh('api', 'repos/' + repo + '/' + path))
+          for run_id in (38504885725, 38504885705, 38504885677):
+              run = api('actions/runs/' + str(run_id))
+              assert run['head_sha'] == commit and run['conclusion'] == 'success', 'Build verification failed'
+          artifact = api('actions/artifacts/' + str(artifact_id))
+          assert not artifact['expired']
+          assert artifact['name'] == 'DisgaeaD2Launcher-HUD-Output-Preview-Windows-x64'
+          assert artifact['workflow_run']['head_sha'] == commit
+          archive = gh('api', 'repos/' + repo + '/actions/artifacts/' + str(artifact_id) + '/zip')
+          assert hashlib.sha256(archive).hexdigest() == digest, 'Artifact digest mismatch'
+          archive_path = pathlib.Path('DisgaeaD2Launcher-0.1.28-Graphics-Preview-Windows-x64.zip')
+          archive_path.write_bytes(archive)
+          exe_name = 'DisgaeaD2Launcher-HUD-Output-Preview.exe'
+          with zipfile.ZipFile(io.BytesIO(archive)) as z:
+              matches = [p for p in z.namelist() if pathlib.PurePosixPath(p).name == exe_name]
+              assert len(matches) == 1, 'Expected one tested launcher'
+              exe = z.read(matches[0])
+              assert len(exe) > 1000000 and exe[:2] == b'MZ', 'Invalid launcher executable'
+              pathlib.Path(exe_name).write_bytes(exe)
+          pathlib.Path('SHA256SUMS.txt').write_text(
+              hashlib.sha256(exe).hexdigest() + '  ' + exe_name + '\n' +
+              digest + '  ' + archive_path.name + '\n')
+          notes = "## Português\nPreview experimental 0.1.28 para Windows x64.\n\n- Launcher com resolução interna/saída, FSR 1 espacial, opções de HUD, seleção de Hz e VRR quando suportado.\n- Diagnóstico de geometria/vetores de movimento por F8. Alpha/blend e visibilidade completa ainda não são reproduzidos nesse diagnóstico.\n- **DLSS e Frame Generation NÃO estão implementados.** Não habilitados nesta versão.\n- O ritmo original do jogo é preservado; selecionar mais Hz não gera frames adicionais.\n- Dez testes gráficos em WARP, 62 testes Windows do launcher, preparação incorporada e testes de ISO passaram. A captura geométrica 0.1.28 ainda aguarda validação real.\n\nBaixe `DisgaeaD2Launcher-HUD-Output-Preview.exe` e execute. Forneça sua própria ISO compatível, atualização e DLCs conforme solicitado pelo launcher. Nenhum arquivo do jogo, firmware ou código recompilado do jogo é incluído; a preparação ocorre no PC do usuário. A primeira preparação pode exigir downloads e compilação automática.\n\nEsta preview usa o perfil separado `DisgaeaD2Recomp-Graphics-Preview`. Previews gráficas anteriores reutilizam sua preparação e saves; não presumir migração de saves de outros perfis. Capturas podem causar pausas: deixe-as desabilitadas para jogar normalmente.\n\nPara o diagnóstico: 1280×720 interno e saída, upscaling desligado, capturas habilitadas; no Castle Hallway pressione F8, gire a câmera em dez segundos e aguarde concluir.\n\n## English\nExperimental Windows x64 launcher preview 0.1.28. Includes internal/output resolution, spatial FSR 1, HUD options, refresh-rate selection and supported VRR.\n\n**DLSS and Frame Generation are not implemented.** F8 motion diagnostics provide partial candidate geometry coverage, not validated full-scene motion vectors. Native game pacing is preserved; higher monitor refresh does not generate extra frames.\n\nTen WARP graphics suites, 62 Windows launcher tests, embedded preparation and ISO checks passed. Real-game 0.1.28 geometry capture validation remains pending.\n\nRun the attached EXE and provide your own compatible game ISO, update and DLCs. Game files, firmware and recompiled game code are not bundled; preparation runs locally and may require automatic downloads/build steps. The graphics preview has a separate profile. Disable captures during ordinary gameplay.\n\nValidated runtime source: `a745c593592236b15d8d9f2aeffd6eaec0a35a4d`.\n"
+          pathlib.Path('release-notes.md').write_text(notes, encoding='utf-8')
+          # Publish only after all verified assets have been uploaded to a draft.
+          gh('release', 'create', tag, '--repo', repo, '--target', commit,
+              '--title', 'Disgaea D2 Launcher 0.1.28 — Experimental Graphics Preview',
+              '--notes-file', 'release-notes.md', '--prerelease', '--latest=false', '--draft')
+          gh('release', 'upload', tag, exe_name, str(archive_path), 'SHA256SUMS.txt', '--repo', repo)
+          gh('release', 'edit', tag, '--repo', repo, '--draft=false', '--prerelease', '--latest=false')
+          release = api('releases/tags/' + tag)
+          assert release['prerelease'] and not release['draft']
+          names = {a['name'] for a in release['assets']}
+          assert {exe_name, archive_path.name, 'SHA256SUMS.txt'} <= names
+          print(release['html_url'])
+          PY

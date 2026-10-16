@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build and test ISO VFS on CI; Windows uses our verified portable compiler."""
+import argparse
 import hashlib
 import os
 from pathlib import Path
@@ -28,7 +29,10 @@ def run(*args, env=None):
 
 
 def main():
-    sdk = ROOT / 'ps3recomp'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--sdk-directory', type=Path, default=ROOT / 'ps3recomp',
+                        help='Fresh SDK directory; existing directories remain protected')
+    sdk = parser.parse_args().sdk_directory.resolve()
     run(sys.executable, ROOT / 'tools/bootstrap_windows.py', sdk)
     build = ROOT / 'build-iso-vfs'
     options = ['-DBUILD_TESTING=ON', '-DCMAKE_BUILD_TYPE=Release', '-DD2_ISO_SDK_DIR=' + sdk.as_posix()]

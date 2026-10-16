@@ -1,0 +1,31 @@
+name: Native graphics and FSR 1
+on:
+  push:
+    paths: ['port/graphics/**', 'tools/check_graphics.py', '.github/workflows/graphics.yml', '.gitattributes']
+  pull_request:
+    paths: ['port/graphics/**', 'tools/check_graphics.py', '.github/workflows/graphics.yml', '.gitattributes']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  graphics:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install cmake==3.31.6 ninja==1.11.1.4
+      - name: Compile renderer adapter and verify GPU shader output
+        shell: pwsh
+        run: |
+          python tools/check_graphics.py *> graphics-check.log
+          $result = $LASTEXITCODE
+          Get-Content graphics-check.log
+          exit $result
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DisgaeaD2-Graphics-Test-Report
+          path: graphics-check.log

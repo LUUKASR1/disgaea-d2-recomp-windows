@@ -16,12 +16,13 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.13-standalone-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
+OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.56-fifo-wait-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
-    'DisgaeaD2Recomp-Standalone' if _standalone else 'DisgaeaD2Recomp-ISO-Clean' if _clean_iso else 'DisgaeaD2Recomp')
+    'DisgaeaD2Recomp-Graphics-Preview' if (ROOT / 'vendor/graphics.json').is_file() else 'DisgaeaD2Recomp-Standalone' if _standalone else 'DisgaeaD2Recomp-ISO-Clean' if _clean_iso else 'DisgaeaD2Recomp')
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 RPCS3_URL = 'https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3-v0.0.43-20284-2ba2f75b_win64_msvc.7z'
 RPCS3_SHA = '8914810c74508b0e53c6b6cb39d4ed334ecee99639973062d259b1481bfa1720'
@@ -247,10 +248,25 @@ class Backend:
     def __init__(self, notify, home=HOME):
         self.home = Path(home)
         self.notify = notify
+        self.capture_enabled = False
+        self.performance_enabled = False
+        self.texture_reuse_enabled = False
+        self.last_performance_report = None
+        self.capture_goal = "scenery"
+        self.capture_session = None
+        self.last_capture_report = None
+
+    def request_frame_capture(self):
+        if self.capture_session is None:
+            raise RuntimeError('Habilite a captura antes de abrir o jogo.')
+        self.capture_session.request()
+
+    def frame_capture_status(self):
+        return self.capture_session.status() if self.capture_session else 'Nenhuma sessão de captura ativa.'
 
     @property
     def standalone(self):
-        return self.home.name == 'DisgaeaD2Recomp-Standalone'
+        return self.home.name in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview')
 
     def run(self, args, env=None, timeout=None, cwd=None, label=None, log_path=None, on_started=None):
         self.home.mkdir(parents=True, exist_ok=True)
@@ -600,12 +616,35 @@ class Backend:
         metadata = self.prepare_iso_source(image)
         self.play(iso_path=image, iso_executable=preview / 'build/DisgaeaD2Recomp.exe', iso_root=metadata)
 
+    def adopt_standalone_for_graphics(self):
+        if self.home.name != 'DisgaeaD2Recomp-Graphics-Preview' or (self.home / 'build-atual.json').exists(): return
+        previous = self.home.parent / 'DisgaeaD2Recomp-Standalone/build-atual.json'
+        if not previous.is_file(): return
+        config = json.loads(previous.read_text(encoding='utf-8'))
+        repo = Path(config['workspace'])
+        if (config.get('native_iso') and config.get('standalone') and
+                digest(repo / 'work/v140/EBOOT.elf') == ELF_SHA):
+            self.save(config)
+
+    def graphics_runtime(self, config):
+        source = ROOT / 'payload'
+        identity = build_source_signature(source) + digest(source / 'tools/build_iso_preview.py') + str(Path(config['workspace']).resolve())
+        key = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        output = self.home / 'graphics-builds' / key
+        env = self.compiler_environment()
+        self.run([sys.executable, source / 'tools/build_iso_preview.py', '--source', source,
+                  '--workspace', config['workspace'], '--preview', output,
+                  '--json-include', ROOT / 'vendor/include'], env, label='Preparar runtime gráfico separado')
+        return output / 'build/DisgaeaD2Recomp.exe'
+
     def play(self, iso_path=None, iso_executable=None, iso_root=None):
         config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
         repo = Path(config['workspace'])
         if iso_path is None and config.get('iso_path'):
             iso_path = Path(config['iso_path'])
             iso_executable = repo / 'port/build-windows-140/DisgaeaD2Recomp.exe'
+        if self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+            iso_executable = self.graphics_runtime(config)
         if iso_path is None:
             self.check_game_files(config['game_root'])
         elif not Path(iso_path).is_file() or not iso_executable or not Path(iso_executable).is_file():
@@ -616,6 +655,28 @@ class Backend:
         from display_settings import load_settings, display_environment, configure_game_window
         settings = load_settings(self.home)
         env = display_environment(launch_environment(profile, config, os.environ), settings)
+        from frame_capture import CaptureSession, clean_capture_environment
+        env = clean_capture_environment(env)
+        from performance_report import PerformanceSession, clean_environment
+        env = clean_environment(env)
+        from texture_reuse_settings import texture_reuse_environment
+        reuse_enabled = bool(self.texture_reuse_enabled and not OFFICIAL_RELEASE)
+        env = texture_reuse_environment(env, reuse_enabled, OFFICIAL_RELEASE)
+        self.last_performance_report = None
+        performance = None
+        if self.performance_enabled and not OFFICIAL_RELEASE:
+            if self.capture_enabled:
+                raise RuntimeError('Desative as capturas de imagens antes de medir desempenho.')
+            performance = PerformanceSession(self.home, VERSION,
+                dict(settings, texture_reuse_experiment=reuse_enabled))
+            env = performance.environment(env)
+            self.notify('Medição leve: F6 Castle, F7 batalha, F9 Mothman, F10 concluir. Feche o jogo para receber o ZIP.')
+        session = None
+        self.last_capture_report = None
+        if not OFFICIAL_RELEASE and self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
+            session = CaptureSession(self.home, VERSION, settings, capture_goal=self.capture_goal)
+            env = session.environment(env)
+        self.capture_session = session
         env.pop('D2_GAME_ISO', None)
         if iso_root is not None:
             env['PS3_VFS_ROOT'] = str(iso_root)
@@ -623,6 +684,7 @@ class Backend:
         stop = threading.Event()
         workers = []
         def on_started(process):
+            if session: session.started()
             def configure():
                 try:
                     configure_game_window(process, settings, self.notify, stop)
@@ -644,7 +706,18 @@ class Backend:
             stop.set()
             for thread in workers:
                 thread.join(timeout=1)
-        self.notify('Jogo encerrado.')
+            if session:
+                try:
+                    self.last_capture_report = session.finish(log)
+                except Exception as error:
+                    self.notify('Não foi possível gerar o ZIP. As capturas permanecem em ' + str(session.directory) + ': ' + str(error))
+            if performance:
+                try:
+                    self.last_performance_report = performance.finish()
+                    self.notify('Relatório de desempenho: ' + str(self.last_performance_report))
+                except Exception as error:
+                    self.notify('Não foi possível resumir o desempenho. Dados preservados em ' + str(performance.directory) + ': ' + str(error))
+        self.notify('Jogo encerrado.' + (' Desempenho: ' + str(self.last_performance_report) if self.last_performance_report else '') + (' Capturas: ' + str(self.last_capture_report) if self.last_capture_report else ''))
 
     def install_tools(self):
         winget = shutil.which('winget')
@@ -668,7 +741,8 @@ class Backend:
 
 def gui():
     from launcher_gui import run_gui
-    run_gui(Backend, HOME, VERSION, firmware_present)
+    Backend(lambda text: None).adopt_standalone_for_graphics()
+    run_gui(Backend, HOME, VERSION, firmware_present, official=OFFICIAL_RELEASE)
 
 
 def main():
@@ -689,6 +763,9 @@ def main():
     elif '--self-test' in sys.argv:
         import capstone, construct, Crypto, tabulate, tqdm, py7zr
         import argparse, dataclasses, glob, struct, tempfile
+        from launcher_i18n import Localizer
+        if Localizer('en')('Salvar configurações') != 'Save settings':
+            raise RuntimeError('Bundled English catalog is unavailable')
         if not (ROOT / 'payload/patches/SDK-WINDOWS.lock').is_file():
             raise RuntimeError('Payload ausente')
         lock = json.loads((ROOT / 'payload/patches/SDK-WINDOWS.lock').read_text())
@@ -697,6 +774,9 @@ def main():
         for asset in ('logo-winport.png', 'launcher-icon.png', 'launcher.ico'):
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
+        if OFFICIAL_RELEASE:
+            if VERSION != '0.2.0' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+                raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
     elif '--native-preparation-test' in sys.argv:
@@ -708,7 +788,7 @@ def main():
         with (HOME / 'native-preparation-test.log').open('w', encoding='utf-8') as output:
             result = unittest.TextTestRunner(stream=output, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(test_native_preparation))
         if not result.wasSuccessful(): raise RuntimeError('Embedded PKG/SELF regressions failed')
-        if HOME.name != 'DisgaeaD2Recomp-Standalone': raise RuntimeError('Standalone profile isolation failed')
+        if HOME.name not in ('DisgaeaD2Recomp-Standalone', 'DisgaeaD2Recomp-Graphics-Preview'): raise RuntimeError('Standalone profile isolation failed')
     elif '--toolchain-test' in sys.argv:
         backend = Backend(lambda text: None)
         env = backend.compiler_environment()
