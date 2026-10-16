@@ -2,6 +2,8 @@ name: Windows launcher
 on:
   push:
     paths:
+      - 'windows/performance_report.py'
+      - 'windows/test_performance_report.py'
       - 'windows/launcher.py'
       - 'windows/launcher_gui.py'
       - 'windows/assets/**'

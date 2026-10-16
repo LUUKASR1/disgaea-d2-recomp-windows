@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import re
 import sys
+from adapt_frame_profile import generate as generate_frame_profile
 
 EXPECTED = '5ae65fef33ca9089af988486deafd08e1664be659e42f95c566c6d6839585421'
 
@@ -15,7 +16,20 @@ def replace(text, old, new):
 def generate(source, output):
     source = Path(source).resolve(); data = source.read_bytes()
     if hashlib.sha256(data).hexdigest() != EXPECTED: raise RuntimeError('Pinned renderer differs; SDK preserved')
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    profile_header = output.parent / 'd2_frame_profile.h'
+    generate_frame_profile(source.parent / 'd2_frame_light.h', profile_header)
     text = data.decode()
+    text = replace(text, '#include "d2_frame_light.h"',
+                   '#include "' + profile_header.resolve().as_posix() + '"')
+    text = replace(text, '    wait_for_gpu_impl();',
+        '    double d2_wait_start=d2_lite_enabled()?d2_lite_now():0;\n'
+        '    wait_for_gpu_impl();\n'
+        '    if(d2_wait_start>0){d2_profile_wait_ms+=(d2_lite_now()-d2_wait_start)*1000.0;d2_profile_wait_calls++;}')
+    text = replace(text, '    if (perf_on()) s_perf_pre += perf_now() - _pre0;',
+        '    if(d2_profile_prepare_start>0)d2_profile_prepare_ms+=(d2_lite_now()-d2_profile_prepare_start)*1000.0;\n'
+        '    if (perf_on()) s_perf_pre += perf_now() - _pre0;')
     text = replace(text, '    s_d3d.width = width;\n    s_d3d.height = height;',
         '    if (d2_graphics_configure(width, height) != 0) return -1;\n'
         '    width = d2_graphics_render_width(); height = d2_graphics_render_height();\n'
@@ -82,7 +96,9 @@ def generate(source, output):
         '            const char* reason=d2_post_snapshotted?"separate":d2_post_reason;\n'
         '            if(!previous || strcmp(previous,reason)!=0){previous=reason;\n'
         '                fprintf(stderr,"[D2POSTHUD] presentation=%s reason=%s\\n",d2_post_snapshotted?"HUD-after-upscale":"fallback",reason);}}\n'
-        '        if(d2_display_present(s_d3d.swap_chain,(UINT)d2_interval)!=0){s_d3d.window_closed=1;return;}')
+        '        double d2_present_start=d2_lite_enabled()?d2_lite_now():0;\n'
+        '        if(d2_display_present(s_d3d.swap_chain,(UINT)d2_interval)!=0){s_d3d.window_closed=1;return;}\n'
+        '        if(d2_present_start>0)d2_profile_present_ms+=(d2_lite_now()-d2_present_start)*1000.0;')
     text = replace(text, '    /* Release D3D12 resources */',
         '    d2_posthud_shutdown();\n    d2_hud_shutdown();\n    d2_draw_release();\n    d2_draw_capture_close();\n    d2_capture_shutdown();\n    d2_graphics_shutdown();\n    /* Release D3D12 resources */')
     text = replace(text, '    u32 d2_diag_valid;',
@@ -111,7 +127,7 @@ def generate(source, output):
     text = replace(text, '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);',
         '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);\n                d2_alpha_record_pso(d,dpso);')
     text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
-        '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
+        '    wait_for_gpu();\n    d2_posthud_frame(fi);\n    double d2_profile_prepare_start=d2_lite_enabled()?d2_lite_now():0;\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',
         '    u32 d2_capture_index=0,d2_hud_start=s_d3d.draw_count;\n'
         '    int d2_hud_snapshotted=0;\n'
@@ -194,7 +210,7 @@ def generate(source, output):
         return '#include "'+path.resolve().as_posix()+'"' if path.is_file() else match[0]
     text = re.sub(r'#\s*include\s*"([^"\n]+)"', includes, text)
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text('#include "draw_capture.h"\n#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n#include "hud_present.h"\n'+text, encoding='utf-8', newline='\n')
+    output.write_text('#include "frame_profile_state.h"\n#include "draw_capture.h"\n#include "graphics.h"\n#include "capture.h"\n#include "hud_capture.h"\n#include "hud_present.h"\n'+text, encoding='utf-8', newline='\n')
 
 
 if __name__ == '__main__': generate(sys.argv[1], sys.argv[2])

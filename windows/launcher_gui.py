@@ -81,6 +81,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
     hud_after_upscale = tk.BooleanVar(value=settings['hud_after_upscale'])
     capture_enabled = tk.BooleanVar(value=False)
+    performance_enabled = tk.BooleanVar(value=False)
     capture_goal = tk.StringVar(value="Cenário — girar câmera")
     capture_status = tk.StringVar(value='Captura desativada.')
     status = tk.StringVar(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
@@ -174,7 +175,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         nonlocal busy
         if busy:
             return
+        if performance_enabled.get() and capture_enabled.get():
+            messagebox.showinfo('Desempenho', 'Desative a captura de imagens para medir sem esse custo.')
+            return
         busy = True
+        backend.performance_enabled = performance_enabled.get()
         backend.capture_enabled = capture_enabled.get()
         backend.capture_goal = "draw" if capture_goal.get().startswith("Desenho") else "shaders" if capture_goal.get().startswith("Shaders") else "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
         for widget in buttons + entries:
@@ -369,6 +374,17 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(page, 'Abrir pasta de saves', lambda: open_path(home / ('hdd0/home' if standalone else 'auxiliar-rpcs3/dev_hdd0/home')))
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
+    if not official:
+        measurement = card(page)
+        label(measurement, 'MEDIÇÃO LEVE DE DESEMPENHO', 12, GOLD, True)
+        toggle = tk.Checkbutton(measurement, text='Medir na próxima abertura do jogo — sem imagens',
+            variable=performance_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
+            activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
+        toggle.pack(anchor='w', pady=4); entries.append(toggle)
+        label(measurement, 'Com o jogo em foco: F6 Castle Hallway, F7 batalha, F9 Mothman. Meça cerca de 30 segundos por cenário; F10 encerra a coleta. Feche o jogo para gerar o ZIP. Limite: 18.000 amostras.', 10, MUTED)
+        label(measurement, 'Mede intervalos e tempos do host. Não mede utilização da CPU/GPU nem tempo de execução da GPU. Mantenha capturas desativadas.', 10, MUTED)
+        button(measurement, 'Abrir pasta do relatório de desempenho', lambda: open_path(
+            Path(backend.last_performance_report).parent if backend.last_performance_report else home / 'performance'), while_playing=True)
     capture_button = None
     if not official and home.name == 'DisgaeaD2Recomp-Graphics-Preview':
         diagnostic = card(page)

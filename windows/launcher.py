@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.52-performance-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -249,6 +249,8 @@ class Backend:
         self.home = Path(home)
         self.notify = notify
         self.capture_enabled = False
+        self.performance_enabled = False
+        self.last_performance_report = None
         self.capture_goal = "scenery"
         self.capture_session = None
         self.last_capture_report = None
@@ -654,6 +656,16 @@ class Backend:
         env = display_environment(launch_environment(profile, config, os.environ), settings)
         from frame_capture import CaptureSession, clean_capture_environment
         env = clean_capture_environment(env)
+        from performance_report import PerformanceSession, clean_environment
+        env = clean_environment(env)
+        self.last_performance_report = None
+        performance = None
+        if self.performance_enabled and not OFFICIAL_RELEASE:
+            if self.capture_enabled:
+                raise RuntimeError('Desative as capturas de imagens antes de medir desempenho.')
+            performance = PerformanceSession(self.home, VERSION, settings)
+            env = performance.environment(env)
+            self.notify('Medição leve: F6 Castle, F7 batalha, F9 Mothman, F10 concluir. Feche o jogo para receber o ZIP.')
         session = None
         self.last_capture_report = None
         if not OFFICIAL_RELEASE and self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
@@ -694,7 +706,13 @@ class Backend:
                     self.last_capture_report = session.finish(log)
                 except Exception as error:
                     self.notify('Não foi possível gerar o ZIP. As capturas permanecem em ' + str(session.directory) + ': ' + str(error))
-        self.notify('Jogo encerrado.' + (' Capturas: ' + str(self.last_capture_report) if self.last_capture_report else ''))
+            if performance:
+                try:
+                    self.last_performance_report = performance.finish()
+                    self.notify('Relatório de desempenho: ' + str(self.last_performance_report))
+                except Exception as error:
+                    self.notify('Não foi possível resumir o desempenho. Dados preservados em ' + str(performance.directory) + ': ' + str(error))
+        self.notify('Jogo encerrado.' + (' Desempenho: ' + str(self.last_performance_report) if self.last_performance_report else '') + (' Capturas: ' + str(self.last_capture_report) if self.last_capture_report else ''))
 
     def install_tools(self):
         winget = shutil.which('winget')

@@ -111,6 +111,12 @@ if(D2_GRAPHICS_SDK_DIR)
     set(gcm_adapted "${CMAKE_CURRENT_BINARY_DIR}/cellGcmSys.c")
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/adapt_pacing.py"
         "${D2_GRAPHICS_SDK_DIR}/libs/video/cellGcmSys.c" "${gcm_adapted}" COMMAND_ERROR_IS_FATAL ANY)
+    if(BUILD_TESTING)
+        add_executable(d2_frame_profile_tests tests/frame_profile_tests.c)
+        target_include_directories(d2_frame_profile_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+        target_link_libraries(d2_frame_profile_tests PRIVATE d2_graphics user32)
+        add_test(NAME lightweight_frame_profile COMMAND d2_frame_profile_tests)
+    endif()
     add_library(d2_graphics_sdk_check OBJECT "${adapted}" "${gcm_adapted}")
     target_include_directories(d2_graphics_sdk_check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
         "${D2_GRAPHICS_SDK_DIR}/include" "${D2_GRAPHICS_SDK_DIR}/libs/video"

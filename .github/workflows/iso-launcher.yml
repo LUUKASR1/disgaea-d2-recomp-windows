@@ -2,6 +2,8 @@ name: Experimental ISO launcher
 on:
   push:
     paths:
+      - 'windows/performance_report.py'
+      - 'windows/test_performance_report.py'
       - 'windows/launcher.py'
       - 'windows/launcher_gui.py'
       - 'windows/test_iso_preview.py'
@@ -21,6 +23,8 @@ on:
       - '.github/workflows/iso-launcher.yml'
   pull_request:
     paths:
+      - 'windows/performance_report.py'
+      - 'windows/test_performance_report.py'
       - 'windows/launcher.py'
       - 'windows/launcher_gui.py'
       - 'windows/test_iso_preview.py'

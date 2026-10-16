@@ -72,6 +72,22 @@ extern "C" const char* d2_capture_directory(void) {
     }
     directory.resize(bytes-1); return directory.c_str();
 }
+extern "C" const char* d2_performance_csv_path(void) {
+    static std::string value;
+    DWORD size = GetEnvironmentVariableW(L"D2_PERF_CSV", nullptr, 0);
+    if (!size || size > 32768) return nullptr;
+    std::wstring path(size, L'\0');
+    DWORD copied = GetEnvironmentVariableW(L"D2_PERF_CSV", path.data(), size);
+    if (!copied || copied >= size) return nullptr;
+    int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+        path.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (!bytes) return nullptr;
+    value.resize(bytes);
+    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+        path.c_str(), -1, value.data(), bytes, nullptr, nullptr)) return nullptr;
+    value.resize(bytes - 1);
+    return value.c_str();
+}
 extern "C" FILE* d2_capture_fopen(const char* path, const char* mode) {
     auto p = wide(path), m = wide(mode);
     return p.empty() || m.empty() ? nullptr : _wfopen(p.c_str(), m.c_str());

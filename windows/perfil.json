@@ -83,6 +83,7 @@
     "VP_SUBMIT",
     "VRAMSCAN",
     "VTX_DUMP",
-    "YDKJ_RWATCH"
+    "YDKJ_RWATCH",
+    "D2_PERF_CSV"
   ]
 }
