@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, LOOP_COLUMNS, REASON_LOOP_COLUMNS, PerformanceSession, analyze, analyze_fifo_samples, analyze_render_loop, clean_environment
+from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, LOOP_COLUMNS, REASON_LOOP_COLUMNS, STATE_LOOP_COLUMNS, PerformanceSession, analyze, analyze_fifo_samples, analyze_render_loop, clean_environment
 
 
 def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
@@ -24,6 +24,36 @@ def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
 
 
 class PerformanceTests(unittest.TestCase):
+    def test_no_flip_state_report_validation_and_packaging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = PerformanceSession(Path(tmp), 'test', {})
+            write_csv(session.csv)
+            path = session.directory / 'frames.csv.loop.csv'
+            row = dict.fromkeys(STATE_LOOP_COLUMNS, 0)
+            row.update(frame=0, stage='mothman', interval_ms=20, wait_ms=16,
+                       fifo_ms=3, present_ms=1, wait_calls=2,
+                       wait_no_pending_flip_ms=16, wait_no_pending_flip_calls=2,
+                       no_flip_host_empty_ms=10, no_flip_host_empty_calls=1,
+                       no_flip_guest_put_get_differ_ms=6, no_flip_guest_put_get_differ_calls=1,
+                       wait_event_wakes=1, wait_timeouts=1)
+            def write():
+                with path.open('w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=STATE_LOOP_COLUMNS)
+                    writer.writeheader(); writer.writerow(row)
+            write(); report = analyze_render_loop(path)
+            self.assertTrue(report['no_flip_state_detail_available'])
+            self.assertEqual(report['stages']['mothman']['no_flip_entry_states']['host_empty'],
+                             {'calls': 1, 'total_ms': 10})
+            with zipfile.ZipFile(session.finish(Path(tmp))) as z:
+                self.assertTrue(json.loads(z.read('summary.json'))['render_loop']['no_flip_state_detail_available'])
+                self.assertIn('frames.csv.loop.csv', z.namelist())
+            for invalid in (-1, 2**32, 'nan'):
+                row['no_flip_host_empty_calls'] = invalid; write()
+                with self.assertRaises(ValueError): analyze_render_loop(path)
+            row['no_flip_host_empty_calls'] = 1
+            row['no_flip_host_empty_ms'] = 'nan'; write()
+            with self.assertRaises(ValueError): analyze_render_loop(path)
+
     def test_wait_reason_report_and_legacy_availability(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'loop.csv'
@@ -39,6 +69,7 @@ class PerformanceTests(unittest.TestCase):
                     writer.writeheader();writer.writerow(row)
             write();report=analyze_render_loop(path)
             self.assertTrue(report['wait_reason_detail_available'])
+            self.assertFalse(report['no_flip_state_detail_available'])
             self.assertEqual(report['stages']['mothman']['classified_event_waits']['clock_gate'],
                              {'calls': 1, 'total_ms': 6})
             row['wait_clock_gate_calls']=-1;write()

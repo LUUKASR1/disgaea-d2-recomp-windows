@@ -34,6 +34,10 @@ WAIT_TIMES = tuple('wait_' + name + '_ms' for name in WAIT_REASONS)
 WAIT_COUNTS = tuple('wait_' + name + '_calls' for name in WAIT_REASONS)
 WAIT_OUTCOMES = ('wait_event_wakes', 'wait_timeouts', 'wait_other_results')
 REASON_LOOP_COLUMNS = LOOP_COLUMNS + WAIT_TIMES + WAIT_COUNTS + WAIT_OUTCOMES
+NO_FLIP_STATES = ('label_wait', 'host_queued', 'guest_put_get_differ', 'host_empty', 'legacy')
+NO_FLIP_TIMES = tuple('no_flip_' + name + '_ms' for name in NO_FLIP_STATES)
+NO_FLIP_COUNTS = tuple('no_flip_' + name + '_calls' for name in NO_FLIP_STATES)
+STATE_LOOP_COLUMNS = REASON_LOOP_COLUMNS + NO_FLIP_TIMES + NO_FLIP_COUNTS
 
 
 def clean_environment(original):
@@ -53,11 +57,12 @@ def analyze_render_loop(path):
     with path.open(encoding='utf-8', newline='') as source:
         reader = csv.DictReader(source)
         columns = tuple(reader.fieldnames or ())
-        if columns not in (LOOP_COLUMNS, REASON_LOOP_COLUMNS):
+        if columns not in (LOOP_COLUMNS, REASON_LOOP_COLUMNS, STATE_LOOP_COLUMNS):
             raise ValueError('Invalid render loop columns')
-        reasons = columns == REASON_LOOP_COLUMNS
-        times = LOOP_TIMES + (WAIT_TIMES if reasons else ())
-        counts = LOOP_COUNTS + (WAIT_COUNTS + WAIT_OUTCOMES if reasons else ())
+        states = columns == STATE_LOOP_COLUMNS
+        reasons = columns != LOOP_COLUMNS
+        times = LOOP_TIMES + (WAIT_TIMES if reasons else ()) + (NO_FLIP_TIMES if states else ())
+        counts = LOOP_COUNTS + (WAIT_COUNTS + WAIT_OUTCOMES if reasons else ()) + (NO_FLIP_COUNTS if states else ())
         for index, raw in enumerate(reader):
             if (index >= LIMIT or None in raw or any(v is None for v in raw.values())
                     or int(raw['frame']) != index or raw['stage'] not in STAGES):
@@ -66,6 +71,8 @@ def analyze_render_loop(path):
             if any(not math.isfinite(v) or not 0 <= v <= 1e12 for v in row.values()) or row['interval_ms'] <= 0:
                 raise ValueError('Invalid render loop timing')
             row.update({k: int(raw[k]) for k in counts})
+            if states and any(not 0 <= row[k] <= 0xffffffff for k in NO_FLIP_COUNTS):
+                raise ValueError('Invalid no-flip state counters')
             if reasons and any(not 0 <= row[k] <= 0xffffffff for k in WAIT_COUNTS + WAIT_OUTCOMES):
                 raise ValueError('Invalid wait reason counters')
             if (not 0 <= row['wait_calls'] <= 0xffffffff or
@@ -89,7 +96,12 @@ def analyze_render_loop(path):
                 name: {'calls': sum(r[count] for r in rows), 'total_ms': sum(r[time] for r in rows)}
                 for name, time, count in zip(WAIT_REASONS, WAIT_TIMES, WAIT_COUNTS)}
             stages[stage]['event_wait_outcomes'] = {k: sum(r[k] for r in rows) for k in WAIT_OUTCOMES}
+        if states:
+            stages[stage]['no_flip_entry_states'] = {
+                name: {'calls': sum(r[count] for r in rows), 'total_ms': sum(r[time] for r in rows)}
+                for name, time, count in zip(NO_FLIP_STATES, NO_FLIP_TIMES, NO_FLIP_COUNTS)}
     return {'schema': 1, 'status': 'measured' if stages else 'no-samples', 'stages': stages,
+            'no_flip_state_detail_available': states,
             'wait_reason_detail_available': reasons,
             'samples': sum(len(rows) for rows in groups.values()),
             'limitations': ['Render-loop intervals end after guest submission; they are not visible-render callback intervals.',
@@ -100,6 +112,9 @@ def analyze_render_loop(path):
                            'Wait reasons are snapshots under the flip lock before the original event wait; state can change immediately afterward.',
                            'Reason durations cover completed event waits, not how long a condition remained true; atomic counters have approximate cross-thread attribution.',
                            'These sequential loop sections are separate from and may overlap backend or sampled-callback categories.',
+                           'No-flip substates are separate entry loads: label flag first, then host slots, then guest PUT/GET; not a coherent producer snapshot.',
+                           'No-flip timings are a subset of no_pending_flip waits, not producer CPU time, proof of a stall or condition duration.',
+                           'Host-empty can include ordinary idle; PUT/GET differences do not establish why copying or publication has not completed.',
                            'Host-loop instrumentation overhead has not been measured on the target PC.']}
 
 

@@ -9,6 +9,8 @@ struct D2LoopFrame {
     double interval,section[6],max_wait,max_wait_target;
     unsigned stage,wait_calls,late_waits;
     unsigned long long vblank;
+    double no_flip_ms[D2_NO_FLIP_STATES];
+    unsigned no_flip_calls[D2_NO_FLIP_STATES];
     double reason_ms[D2_WAIT_REASONS];
     unsigned reason_calls[D2_WAIT_REASONS],outcomes[3];
 };
@@ -17,6 +19,7 @@ static unsigned d2_loop_n,d2_loop_saved,d2_loop_stage,d2_loop_keys,d2_loop_finis
 static double d2_loop_previous,d2_loop_checkpoint,d2_loop_sections[6],d2_loop_max_wait,d2_loop_max_target;
 static unsigned d2_loop_wait_calls,d2_loop_late_waits;
 static const char* d2_loop_names[]={"inicio","castle","batalha","mothman"};
+static const char* d2_no_flip_names[]={"label_wait","host_queued","guest_put_get_differ","host_empty","legacy"};
 static const char* d2_wait_names[]={"no_pending_flip","fifo_pending","ticket_order","clock_gate","eligible_at_entry"};
 static void d2_loop_save(void)
 {
@@ -31,7 +34,10 @@ static void d2_loop_save(void)
     fprintf(f,"frame,stage,interval_ms,wait_ms,tick_ms,present_ms,fifo_ms,pump_ms,other_ms,max_wait_ms,max_wait_target_ms,wait_calls,late_waits,vblank");
     for(unsigned i=0;i<D2_WAIT_REASONS;i++)fprintf(f,",wait_%s_ms",d2_wait_names[i]);
     for(unsigned i=0;i<D2_WAIT_REASONS;i++)fprintf(f,",wait_%s_calls",d2_wait_names[i]);
-    fprintf(f,",wait_event_wakes,wait_timeouts,wait_other_results\n");
+    fprintf(f,",wait_event_wakes,wait_timeouts,wait_other_results");
+    for(unsigned i=0;i<D2_NO_FLIP_STATES;i++)fprintf(f,",no_flip_%s_ms",d2_no_flip_names[i]);
+    for(unsigned i=0;i<D2_NO_FLIP_STATES;i++)fprintf(f,",no_flip_%s_calls",d2_no_flip_names[i]);
+    fprintf(f,"\n");
     for(unsigned i=0;i<d2_loop_n;i++){
         const D2LoopFrame& r=d2_loop_samples[i];
         fprintf(f,"%u,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%u,%u,%llu",
@@ -40,7 +46,10 @@ static void d2_loop_save(void)
             r.wait_calls,r.late_waits,r.vblank);
         for(unsigned k=0;k<D2_WAIT_REASONS;k++)fprintf(f,",%.6f",r.reason_ms[k]);
         for(unsigned k=0;k<D2_WAIT_REASONS;k++)fprintf(f,",%u",r.reason_calls[k]);
-        fprintf(f,",%u,%u,%u\n",r.outcomes[0],r.outcomes[1],r.outcomes[2]);
+        fprintf(f,",%u,%u,%u",r.outcomes[0],r.outcomes[1],r.outcomes[2]);
+        for(unsigned k=0;k<D2_NO_FLIP_STATES;k++)fprintf(f,",%.6f",r.no_flip_ms[k]);
+        for(unsigned k=0;k<D2_NO_FLIP_STATES;k++)fprintf(f,",%u",r.no_flip_calls[k]);
+        fprintf(f,"\n");
     }
     if(fclose(f)==0){d2_loop_saved=d2_loop_n;fprintf(stderr,"[D2LOOP] saved %u frames\n",d2_loop_n);}
 }
@@ -75,8 +84,12 @@ static void d2_loop_complete(unsigned long long vblank)
 {
     if(!d2_loop_enabled())return;
     double now=d2_loop_checkpoint;
+    double no_flip_ms[D2_NO_FLIP_STATES];
+    unsigned no_flip_calls[D2_NO_FLIP_STATES];
     double reason_ms[D2_WAIT_REASONS];unsigned reason_calls[D2_WAIT_REASONS],outcomes[3];
     d2_fifo_wait_take(reason_ms,reason_calls,outcomes);
+    double no_flip_ms[D2_NO_FLIP_STATES];unsigned no_flip_calls[D2_NO_FLIP_STATES];
+    d2_fifo_no_flip_take(no_flip_ms,no_flip_calls);
     unsigned keys=0;const int vk[]={0x75,0x76,0x78,0x79};
     DWORD owner=0;HWND focused=GetForegroundWindow();
     if(focused)GetWindowThreadProcessId(focused,&owner);
@@ -95,6 +108,8 @@ static void d2_loop_complete(unsigned long long vblank)
         r.wait_calls=d2_loop_wait_calls;r.late_waits=d2_loop_late_waits;r.vblank=vblank;
         memcpy(r.reason_ms,reason_ms,sizeof reason_ms);memcpy(r.reason_calls,reason_calls,sizeof reason_calls);
         memcpy(r.outcomes,outcomes,sizeof outcomes);
+        memcpy(r.no_flip_ms,no_flip_ms,sizeof no_flip_ms);
+        memcpy(r.no_flip_calls,no_flip_calls,sizeof no_flip_calls);
         if(d2_loop_n==D2_LOOP_FRAME_MAX){d2_loop_save();d2_loop_finished=1;}
     }
     memset(d2_loop_sections,0,sizeof d2_loop_sections);
