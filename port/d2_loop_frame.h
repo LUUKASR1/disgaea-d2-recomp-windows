@@ -2,6 +2,7 @@
  * Host wall sections; not PPU CPU usage or GPU execution time. */
 #ifndef D2_LOOP_FRAME_H
 #define D2_LOOP_FRAME_H
+#include "graphics/capture.h"
 #define D2_LOOP_FRAME_MAX 18000u
 struct D2LoopFrame {
     double interval,section[6],max_wait,max_wait_target;
@@ -12,11 +13,15 @@ static D2LoopFrame d2_loop_samples[D2_LOOP_FRAME_MAX];
 static unsigned d2_loop_n,d2_loop_saved,d2_loop_stage,d2_loop_keys,d2_loop_finished;
 static double d2_loop_previous,d2_loop_checkpoint,d2_loop_sections[6],d2_loop_max_wait,d2_loop_max_target;
 static unsigned d2_loop_wait_calls,d2_loop_late_waits;
-static const char* d2_loop_names[]={"inicio","castle","batalha","save"};
+static const char* d2_loop_names[]={"inicio","castle","batalha","mothman"};
 static void d2_loop_save(void)
 {
     if(!d2_loop_n || d2_loop_saved==d2_loop_n)return;
-    FILE* f=fopen("tempos-loop.csv","w");
+    const char* csv=d2_performance_csv_path();
+    char path[32768];
+    if(!csv || strlen(csv)+sizeof ".loop.csv">sizeof path)return;
+    strcpy(path,csv);strcat(path,".loop.csv");
+    FILE* f=d2_capture_fopen(path,"w");
     if(!f){fprintf(stderr,"[D2LOOP] could not open tempos-loop.csv\n");return;}
     fprintf(f,"frame,stage,interval_ms,wait_ms,tick_ms,present_ms,fifo_ms,pump_ms,other_ms,max_wait_ms,max_wait_target_ms,wait_calls,late_waits,vblank\n");
     for(unsigned i=0;i<d2_loop_n;i++){
@@ -32,7 +37,7 @@ static bool d2_loop_enabled(void)
 {
     static int enabled=-1;
     if(enabled<0){const char* e=getenv("D2_LOOP_FRAME");enabled=e && strcmp(e,"1")==0;
-        if(enabled){atexit(d2_loop_save);fprintf(stderr,"[D2LOOP] F6 castle, F7 battle, F9 save, F10 finish\n");}}
+        if(enabled){atexit(d2_loop_save);fprintf(stderr,"[D2LOOP] F6 castle, F7 battle, F9 mothman, F10 finish\n");}}
     return enabled && !d2_loop_finished;
 }
 static double d2_loop_now(void)
@@ -60,7 +65,10 @@ static void d2_loop_complete(unsigned long long vblank)
     if(!d2_loop_enabled())return;
     double now=d2_loop_checkpoint;
     unsigned keys=0;const int vk[]={0x75,0x76,0x78,0x79};
-    for(unsigned i=0;i<4;i++)if(GetAsyncKeyState(vk[i])&0x8000)keys|=1u<<i;
+    DWORD owner=0;HWND focused=GetForegroundWindow();
+    if(focused)GetWindowThreadProcessId(focused,&owner);
+    if(owner==GetCurrentProcessId())
+        for(unsigned i=0;i<4;i++)if(GetAsyncKeyState(vk[i])&0x8000)keys|=1u<<i;
     unsigned edges=keys & ~d2_loop_keys;d2_loop_keys=keys;
     if(edges){
         if(edges&8u){d2_loop_save();d2_loop_finished=1;return;}

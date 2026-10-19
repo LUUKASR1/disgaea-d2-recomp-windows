@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, PerformanceSession, analyze, analyze_fifo_samples, clean_environment
+from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, LOOP_COLUMNS, PerformanceSession, analyze, analyze_fifo_samples, analyze_render_loop, clean_environment
 
 
 def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
@@ -24,6 +24,41 @@ def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
 
 
 class PerformanceTests(unittest.TestCase):
+    def test_render_loop_sections_and_packaging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = PerformanceSession(Path(tmp), 'test', {})
+            write_csv(session.csv)
+            path = session.directory / 'frames.csv.loop.csv'
+            def write(**changes):
+                row = dict(frame=0, stage='mothman', interval_ms=33, wait_ms=10,
+                           tick_ms=2, present_ms=12, fifo_ms=5, pump_ms=1, other_ms=3,
+                           max_wait_ms=9, max_wait_target_ms=7, wait_calls=2, late_waits=1, vblank=99)
+                row.update(changes)
+                with path.open('w', encoding='utf-8', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=LOOP_COLUMNS)
+                    writer.writeheader(); writer.writerow(row)
+            write()
+            report = analyze_render_loop(path)
+            stage = report['stages']['mothman']
+            self.assertEqual(stage['maximum_section_sum_error_ms'], 0)
+            self.assertEqual(stage['host_timings_ms']['present_ms']['mean'], 12)
+            self.assertEqual(stage['waits_exceeding_requested_plus_1ms'], 1)
+            with zipfile.ZipFile(session.finish(Path(tmp))) as z:
+                self.assertIn('frames.csv.loop.csv', z.namelist())
+                self.assertEqual(json.loads(z.read('summary.json'))['render_loop']['samples'], 1)
+            for invalid in ({'wait_ms': 'nan'}, {'frame': 2}, {'stage': 'save'},
+                            {'late_waits': 3}, {'vblank': -1}, {'present_ms': -1}):
+                write(**invalid)
+                with self.assertRaises(ValueError): analyze_render_loop(path)
+
+    def test_invalid_loop_report_does_not_block_main_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = PerformanceSession(Path(tmp), 'test', {})
+            write_csv(session.csv)
+            (session.directory / 'frames.csv.loop.csv').write_text('invalid')
+            with zipfile.ZipFile(session.finish(Path(tmp))) as z:
+                self.assertNotIn('frames.csv.loop.csv', z.namelist())
+                self.assertEqual(json.loads(z.read('summary.json'))['render_loop']['status'], 'invalid-loop-report')
     def test_sampled_callbacks_are_validated_and_packaged(self):
         with tempfile.TemporaryDirectory() as tmp:
             session = PerformanceSession(Path(tmp), 'test', {})
@@ -164,6 +199,7 @@ class PerformanceTests(unittest.TestCase):
             self.assertEqual(env['Path'], 'keep')
             self.assertEqual(env['D2_PERF_CSV'], str(a.csv))
             self.assertEqual(env['D2_FRAME_LIGHT'], '1')
+            self.assertEqual(env['D2_LOOP_FRAME'], '1')
             write_csv(a.csv)
             report = a.finish(Path(tmp))
             self.assertEqual(a.finish(Path(tmp)), report)
@@ -181,7 +217,7 @@ class PerformanceTests(unittest.TestCase):
 
     def test_disabled_environment_drops_inherited_measurement_flags(self):
         self.assertEqual(clean_environment({'d2_frame_light': '1', 'D2_PERF_CSV': 'stale',
-                                            'D2_FIFO_FRAME_TIME': '1', 'keep': 'yes'}), {'keep': 'yes'})
+                                            'D2_FIFO_FRAME_TIME': '1', 'd2_loop_frame': '1', 'keep': 'yes'}), {'keep': 'yes'})
 
 
 if __name__ == '__main__': unittest.main()

@@ -1,9 +1,9 @@
 name: Native graphics and FSR 1
 on:
   push:
-    paths: ['port/graphics/**', 'tools/check_graphics.py', '.github/workflows/graphics.yml', '.gitattributes']
+    paths: ['port/graphics/**', 'port/d2_loop_frame.h', 'tools/check_graphics.py', '.github/workflows/graphics.yml', '.gitattributes']
   pull_request:
-    paths: ['port/graphics/**', 'tools/check_graphics.py', '.github/workflows/graphics.yml', '.gitattributes']
+    paths: ['port/graphics/**', 'port/d2_loop_frame.h', 'tools/check_graphics.py', '.github/workflows/graphics.yml', '.gitattributes']
   workflow_dispatch:
 permissions:
   contents: read

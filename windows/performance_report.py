@@ -24,7 +24,11 @@ DETAIL_COLUMNS = BASE_COLUMNS + DETAIL_TIMES + DETAIL_COUNTS
 FIFO_TIMES = ('fifo_lock_wait_ms',)
 FIFO_COUNTS = ('fifo_lock_calls', 'fifo_flip_held_calls')
 COLUMNS = DETAIL_COLUMNS + FIFO_TIMES + FIFO_COUNTS
-ENVIRONMENT = {'D2_FRAME_LIGHT', 'D2_PERF_CSV', 'D2_FIFO_FRAME_TIME'}
+ENVIRONMENT = {'D2_FRAME_LIGHT', 'D2_PERF_CSV', 'D2_FIFO_FRAME_TIME', 'D2_LOOP_FRAME'}
+LOOP_SECTIONS = ('wait_ms', 'tick_ms', 'present_ms', 'fifo_ms', 'pump_ms', 'other_ms')
+LOOP_TIMES = ('interval_ms', *LOOP_SECTIONS, 'max_wait_ms', 'max_wait_target_ms')
+LOOP_COUNTS = ('wait_calls', 'late_waits', 'vblank')
+LOOP_COLUMNS = ('frame', 'stage', *LOOP_TIMES, *LOOP_COUNTS)
 
 
 def clean_environment(original):
@@ -34,6 +38,50 @@ def clean_environment(original):
 def percentile(values, fraction):
     values = sorted(values)
     return values[max(0, math.ceil(len(values) * fraction) - 1)]
+
+
+def analyze_render_loop(path):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_CSV_BYTES:
+        raise ValueError('Invalid render loop report')
+    groups = {}
+    with path.open(encoding='utf-8', newline='') as source:
+        reader = csv.DictReader(source)
+        if tuple(reader.fieldnames or ()) != LOOP_COLUMNS:
+            raise ValueError('Invalid render loop columns')
+        for index, raw in enumerate(reader):
+            if (index >= LIMIT or None in raw or any(v is None for v in raw.values())
+                    or int(raw['frame']) != index or raw['stage'] not in STAGES):
+                raise ValueError('Invalid render loop row')
+            row = {k: float(raw[k]) for k in LOOP_TIMES}
+            if any(not math.isfinite(v) or not 0 <= v <= 1e12 for v in row.values()) or row['interval_ms'] <= 0:
+                raise ValueError('Invalid render loop timing')
+            row.update({k: int(raw[k]) for k in LOOP_COUNTS})
+            if (not 0 <= row['wait_calls'] <= 0xffffffff or
+                    not 0 <= row['late_waits'] <= row['wait_calls'] or not 0 <= row['vblank'] <= 0xffffffffffffffff):
+                raise ValueError('Invalid render loop counters')
+            row['frame'] = index
+            groups.setdefault(raw['stage'], []).append(row)
+    stages = {}
+    for stage, rows in groups.items():
+        stages[stage] = {
+            'samples': len(rows),
+            'host_timings_ms': {k: {'mean': sum(r[k] for r in rows) / len(rows),
+                                    'p95': percentile([r[k] for r in rows], .95),
+                                    'maximum': max(r[k] for r in rows)} for k in LOOP_TIMES},
+            'wait_calls': sum(r['wait_calls'] for r in rows),
+            'waits_exceeding_requested_plus_1ms': sum(r['late_waits'] for r in rows),
+            'maximum_section_sum_error_ms': max(abs(sum(r[k] for k in LOOP_SECTIONS) - r['interval_ms']) for r in rows),
+            'slowest_intervals': sorted(rows, key=lambda r: r['interval_ms'], reverse=True)[:10]}
+    return {'schema': 1, 'status': 'measured' if stages else 'no-samples', 'stages': stages,
+            'samples': sum(len(rows) for rows in groups.values()),
+            'limitations': ['Render-loop intervals end after guest submission; they are not visible-render callback intervals.',
+                           'Frame indices and keyboard marker polling are independent of frames.csv; never join them by row number.',
+                           'Wait time includes intentional idle and host scheduling, not CPU utilization or proven wasted time.',
+                           'Present time includes the whole guest submission, not only DXGI Present.',
+                           'Late waits exceed the requested milliseconds by more than 1ms; they do not prove missed display refreshes.',
+                           'These sequential loop sections are separate from and may overlap backend or sampled-callback categories.',
+                           'Host-loop instrumentation overhead has not been measured on the target PC.']}
 
 
 def analyze_fifo_samples(path):
@@ -172,6 +220,7 @@ class PerformanceSession:
             'keys': {'F6': 'castle', 'F7': 'batalha', 'F9': 'mothman', 'F10': 'finish'},
             'images_captured': False, 'per_draw_profiling': True,
             'draw_profiling_mode': 'sampled-approximately-1-in-256',
+            'render_loop_profiling': True,
             'graphics_api': 'd3d12'}, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def environment(self, original):
@@ -180,7 +229,7 @@ class PerformanceSession:
         for key in list(env):
             if key.upper() in {'PERF', 'D2_FIFO_DETAIL', 'D2_FIFO_SAMPLE', 'D2_RUNTIME_TIMING'}:
                 env.pop(key)
-        env.update(D2_FRAME_LIGHT='1', D2_PERF_CSV=str(self.csv), D2_FIFO_FRAME_TIME='1')
+        env.update(D2_FRAME_LIGHT='1', D2_PERF_CSV=str(self.csv), D2_FIFO_FRAME_TIME='1', D2_LOOP_FRAME='1')
         return env
 
     def finish(self, destination=None):
@@ -191,6 +240,15 @@ class PerformanceSession:
             'samples': 0, 'stages': {}, 'gpu_timestamps_available': False,
             'message': 'Nenhum cenário marcado. Com a janela do jogo em foco, use F6/F7/F9 e depois F10.'}
         sampled_path = self.directory / 'frames.csv.fifo.json'
+        loop_path = self.directory / 'frames.csv.loop.csv'
+        loop_valid = False
+        report['render_loop'] = {'status': 'missing-loop-report'}
+        if loop_path.is_file() and not loop_path.is_symlink():
+            try:
+                report['render_loop'] = analyze_render_loop(loop_path)
+                loop_valid = True
+            except (ValueError, OSError, TypeError, KeyError):
+                report['render_loop'] = {'status': 'invalid-loop-report'}
         sampled_valid = False
         if sampled_path.is_file() and not sampled_path.is_symlink():
             try:
@@ -206,8 +264,10 @@ class PerformanceSession:
         target = destination / ('DisgaeaD2-Desempenho-' + self.directory.name + '.zip')
         # Exclusive creation: never replace a user's existing report.
         with zipfile.ZipFile(target, 'x', zipfile.ZIP_DEFLATED) as archive:
-            for name in ('session.json', 'summary.json', 'frames.csv', 'frames.csv.fifo.json'):
+            for name in ('session.json', 'summary.json', 'frames.csv', 'frames.csv.fifo.json', 'frames.csv.loop.csv'):
                 if name == 'frames.csv.fifo.json' and not sampled_valid:
+                    continue
+                if name == 'frames.csv.loop.csv' and not loop_valid:
                     continue
                 path = self.directory / name
                 if path.is_file() and not path.is_symlink():
