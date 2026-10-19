@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, PerformanceSession, analyze, clean_environment
+from performance_report import BASE_COLUMNS, COLUMNS, DETAIL_COLUMNS, PerformanceSession, analyze, analyze_fifo_samples, clean_environment
 
 
 def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
@@ -24,6 +24,32 @@ def write_csv(path, intervals=(10, 20, 30, 40), **overrides):
 
 
 class PerformanceTests(unittest.TestCase):
+    def test_sampled_callbacks_are_validated_and_packaged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session = PerformanceSession(Path(tmp), 'test', {})
+            write_csv(session.csv)
+            path = session.directory / 'frames.csv.fifo.json'
+            data = {'schema': 1, 'scope': 'all-marked-stages-combined',
+                    'sampling': 'lcg-high-byte-zero', 'nominal_sample_rate': 256,
+                    'inclusive_categories': True, 'categories': [
+                        {'name': name, 'calls': 1000, 'samples': 4, 'sampled_ms': 2}
+                        for name in ('vertex_shader', 'constants', 'bind_texture', 'draw_arrays', 'draw_indexed', 'vertex_fetch')]}
+            path.write_text(json.dumps(data))
+            report = analyze_fifo_samples(path)
+            self.assertEqual(report['categories'][0]['estimated_total_ms'], 500)
+            self.assertFalse(report['categories'][0]['sample_count_at_least_30'])
+            with zipfile.ZipFile(session.finish(Path(tmp))) as z:
+                self.assertIn('frames.csv.fifo.json', z.namelist())
+                self.assertEqual(json.loads(z.read('summary.json'))['sampled_fifo_callbacks']['status'], 'sampled')
+            data['categories'][0]['samples'] = 1001
+            path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError): analyze_fifo_samples(path)
+            data['categories'][0].update(samples=0, sampled_ms=0)
+            path.write_text(json.dumps(data))
+            self.assertIsNone(analyze_fifo_samples(path)['categories'][0]['estimated_total_ms'])
+            path.write_text('x' * 65537)
+            with self.assertRaises(ValueError): analyze_fifo_samples(path)
+
     def test_weighted_frame_rate_percentiles_and_compilation(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'frames.csv'; write_csv(path)

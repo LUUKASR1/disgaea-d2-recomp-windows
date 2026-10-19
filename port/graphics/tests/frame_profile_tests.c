@@ -9,6 +9,7 @@ typedef uint32_t u32;
 static struct { HWND hwnd; } s_d3d;
 double d2_fifo_frame_take_ms(void) { return 0.25; }
 void d2_fifo_lock_take(double* ms,unsigned* calls,unsigned* held) { *ms=0;*calls=0;*held=0; }
+#include "fifo_draw_profile.h"
 #include "d2_frame_profile.h"
 
 int main(void)
@@ -16,6 +17,8 @@ int main(void)
     const char* name="performance-\xc3\xa1rea-test.csv";
     SetEnvironmentVariableW(L"D2_PERF_CSV",L"performance-\x00e1rea-test.csv");
     d2_lite_n=1;
+    d2_sample_active=1;
+    d2_sample_calls[0]=256;d2_sample_n[0]=1;d2_sample_time[0]=.001;
     D2LiteSample* p=&d2_lite_samples[0];
     p->stage=3; p->interval_ms=20; p->render_ms=9; p->compile_ms=2;
     p->misses=1; p->cache=4; p->draws=17; p->fifo_ms=3;
@@ -26,6 +29,11 @@ int main(void)
     p->shader_compile_calls=10; p->pso_create_calls=11; p->pso_create_failures=12;
     d2_lite_save();
     if(d2_lite_saved!=1) return 1;
+    if(d2_sample_active) return 9;
+    FILE* sampled=d2_capture_fopen("performance-\xc3\xa1rea-test.csv.fifo.json","r");
+    if(!sampled) return 10;
+    char sampled_json[4096]={0};fread(sampled_json,1,sizeof sampled_json-1,sampled);fclose(sampled);
+    if(!strstr(sampled_json,"\"calls\":256,\"samples\":1,\"sampled_ms\":1.000000000")) return 11;
     FILE* f=d2_capture_fopen(name,"r");
     if(!f) return 2;
     char text[4096]={0}; size_t n=fread(text,1,sizeof(text)-1,f); fclose(f);

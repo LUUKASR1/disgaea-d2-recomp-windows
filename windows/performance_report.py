@@ -36,6 +36,36 @@ def percentile(values, fraction):
     return values[max(0, math.ceil(len(values) * fraction) - 1)]
 
 
+def analyze_fifo_samples(path):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+        raise ValueError('Invalid callback sample report')
+    data = json.loads(path.read_text(encoding='utf-8'))
+    names = ('vertex_shader', 'constants', 'bind_texture', 'draw_arrays', 'draw_indexed', 'vertex_fetch')
+    if (data.get('schema') != 1 or data.get('scope') != 'all-marked-stages-combined'
+            or data.get('sampling') != 'lcg-high-byte-zero'
+            or data.get('nominal_sample_rate') != 256 or data.get('inclusive_categories') is not True
+            or not isinstance(data.get('categories'), list) or len(data['categories']) != 6):
+        raise ValueError('Invalid callback sample schema')
+    categories = []
+    for name, row in zip(names, data['categories']):
+        calls, samples, ms = row['calls'], row['samples'], row['sampled_ms']
+        if (row['name'] != name or type(calls) is not int or type(samples) is not int
+                or not 0 <= samples <= calls <= 10**12 or type(ms) not in (int, float)
+                or not math.isfinite(ms) or not 0 <= ms <= 1e12 or (samples == 0 and ms != 0)):
+            raise ValueError('Invalid callback sample counters')
+        categories.append({**row, 'sampled_mean_us': ms * 1000 / samples if samples else None,
+                           'estimated_total_ms': ms * calls / samples if samples else None,
+                           'sample_count_at_least_30': samples >= 30})
+    return {**data, 'status': 'sampled', 'categories': categories,
+            'limitations': ['Inclusive nested categories must not be added together.',
+                            'Estimates are extrapolated host wall times, not CPU utilization or GPU time.',
+                            'All marked stages are combined; this is not per-frame attribution.',
+                            'Deterministic sampling may miss rare costs; counts below 30 are especially weak evidence.',
+                            'The callback still in progress when saving is not a completed sample in that snapshot.',
+                            'Sampling overhead has not been measured on the target PC.']}
+
+
 def analyze(path):
     path = Path(path)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_CSV_BYTES:
@@ -140,7 +170,8 @@ class PerformanceSession:
             'schema': 1, 'launcher': version, 'settings': settings,
             'created': datetime.now().isoformat(), 'sample_limit': LIMIT,
             'keys': {'F6': 'castle', 'F7': 'batalha', 'F9': 'mothman', 'F10': 'finish'},
-            'images_captured': False, 'per_draw_profiling': False,
+            'images_captured': False, 'per_draw_profiling': True,
+            'draw_profiling_mode': 'sampled-approximately-1-in-256',
             'graphics_api': 'd3d12'}, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def environment(self, original):
@@ -159,6 +190,14 @@ class PerformanceSession:
             'schema': 1, 'purpose': 'dx12-host-frame-baseline', 'status': 'no-samples',
             'samples': 0, 'stages': {}, 'gpu_timestamps_available': False,
             'message': 'Nenhum cenário marcado. Com a janela do jogo em foco, use F6/F7/F9 e depois F10.'}
+        sampled_path = self.directory / 'frames.csv.fifo.json'
+        sampled_valid = False
+        if sampled_path.is_file() and not sampled_path.is_symlink():
+            try:
+                report['sampled_fifo_callbacks'] = analyze_fifo_samples(sampled_path)
+                sampled_valid = True
+            except (ValueError, OSError, TypeError, KeyError, AttributeError):
+                report['sampled_fifo_callbacks'] = {'status': 'invalid-sample-report'}
         (self.directory / 'summary.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         destination = Path(destination) if destination else Path.home() / 'Downloads'
         if not destination.is_dir():
@@ -167,7 +206,9 @@ class PerformanceSession:
         target = destination / ('DisgaeaD2-Desempenho-' + self.directory.name + '.zip')
         # Exclusive creation: never replace a user's existing report.
         with zipfile.ZipFile(target, 'x', zipfile.ZIP_DEFLATED) as archive:
-            for name in ('session.json', 'summary.json', 'frames.csv'):
+            for name in ('session.json', 'summary.json', 'frames.csv', 'frames.csv.fifo.json'):
+                if name == 'frames.csv.fifo.json' and not sampled_valid:
+                    continue
                 path = self.directory / name
                 if path.is_file() and not path.is_symlink():
                     archive.write(path, name)

@@ -21,6 +21,7 @@ def generate(source, output):
     profile_header = output.parent / 'd2_frame_profile.h'
     generate_frame_profile(source.parent / 'd2_frame_light.h', profile_header)
     text = data.decode()
+    text = replace(text, '#include "d2_fifo_sample.h"', '#include "fifo_draw_profile.h"')
     # The original scratch SRVs at 1+slot can overlap draw windows from slot 32.
     # Relocating them is necessary before changing which texture slot is reused.
     # Keep original addresses when the experiment is off; reserve tail space.
