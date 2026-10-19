@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.60-wait-reason-preview'
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.61-ready-wake-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -660,11 +660,13 @@ class Backend:
         env = clean_capture_environment(env)
         from performance_report import PerformanceSession, clean_environment
         env = clean_environment(env)
-        from texture_reuse_settings import texture_reuse_environment, vertex_context_environment
+        from texture_reuse_settings import texture_reuse_environment, vertex_context_environment, ready_wake_environment
         reuse_enabled = bool(self.texture_reuse_enabled and not OFFICIAL_RELEASE)
         env = texture_reuse_environment(env, reuse_enabled, OFFICIAL_RELEASE)
         vertex_enabled = bool(self.vertex_context_enabled and not OFFICIAL_RELEASE)
         env = vertex_context_environment(env, vertex_enabled, OFFICIAL_RELEASE)
+        ready_wake_enabled = not OFFICIAL_RELEASE
+        env = ready_wake_environment(env, ready_wake_enabled, OFFICIAL_RELEASE)
         self.last_performance_report = None
         performance = None
         if self.performance_enabled and not OFFICIAL_RELEASE:
@@ -672,7 +674,8 @@ class Backend:
                 raise RuntimeError('Desative as capturas de imagens antes de medir desempenho.')
             performance = PerformanceSession(self.home, VERSION,
                 dict(settings, texture_reuse_experiment=reuse_enabled,
-                     vertex_context_experiment=vertex_enabled))
+                     vertex_context_experiment=vertex_enabled,
+                     ready_wake_experiment=ready_wake_enabled))
             env = performance.environment(env)
             self.notify('Medição leve: F6 Castle, F7 batalha, F9 Mothman, F10 concluir. Feche o jogo para receber o ZIP.')
         session = None

@@ -135,6 +135,15 @@ if(D2_GRAPHICS_SDK_DIR)
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/adapt_pacing.py"
         "${D2_GRAPHICS_SDK_DIR}/libs/video/cellGcmSys.c" "${gcm_adapted}" COMMAND_ERROR_IS_FATAL ANY)
     if(BUILD_TESTING)
+        execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_ready_wait.py"
+            "${gcm_adapted}" "${CMAKE_CURRENT_BINARY_DIR}/ready_wait_function.inc" COMMAND_ERROR_IS_FATAL ANY)
+        add_executable(d2_ready_wait_tests tests/ready_wait_tests.c)
+        target_include_directories(d2_ready_wait_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${CMAKE_CURRENT_BINARY_DIR}" "${D2_GRAPHICS_SDK_DIR}/libs/video")
+        add_test(NAME ready_wait_enabled COMMAND d2_ready_wait_tests)
+        set_tests_properties(ready_wait_enabled PROPERTIES ENVIRONMENT "D2_GCM_READY_WAKE=1")
+        add_test(NAME ready_wait_disabled COMMAND d2_ready_wait_tests)
+        set_tests_properties(ready_wait_disabled PROPERTIES ENVIRONMENT "D2_GCM_READY_WAKE=0")
         add_executable(d2_vertex_context_tests tests/vertex_context_tests.c
             "${D2_GRAPHICS_SDK_DIR}/libs/video/rsx_vertex_fetch.c")
         target_include_directories(d2_vertex_context_tests PRIVATE

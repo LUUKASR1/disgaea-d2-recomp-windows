@@ -1,8 +1,21 @@
 import unittest
-from texture_reuse_settings import texture_reuse_environment, vertex_context_environment
+from texture_reuse_settings import texture_reuse_environment, vertex_context_environment, ready_wake_environment
 
 
 class TextureReuseSettingsTests(unittest.TestCase):
+    def test_ready_wake_channel_and_inherited_flags(self):
+        inherited = {'d2_gcm_ready_wake': '1', 'D2_GCM_READY_WAKE': '1',
+                     'D2_GCM_UNLIMITED': '0', 'D2_VERTEX_CONTEXT': '0'}
+        before = dict(inherited)
+        for enabled, official, expected in ((False, False, '0'), (True, False, '1'),
+                                            (True, True, '0'), (False, True, '0')):
+            result = ready_wake_environment(inherited, enabled, official)
+            self.assertNotIn('d2_gcm_ready_wake', result)
+            self.assertEqual(result['D2_GCM_READY_WAKE'], expected)
+            self.assertEqual(result['D2_GCM_UNLIMITED'], '0')
+            self.assertEqual(result['D2_VERTEX_CONTEXT'], '0')
+        self.assertEqual(inherited, before)
+
     def test_vertex_preparation_is_independent_opt_in(self):
         inherited = {'d2_vertex_context': '1', 'D2_VERTEX_CONTEXT': '1', 'D2_TEXTURE_REUSE': '1'}
         for enabled, official, expected in ((False, False, '0'), (True, False, '1'),
