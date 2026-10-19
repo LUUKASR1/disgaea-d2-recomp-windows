@@ -88,7 +88,6 @@ static void d2_loop_complete(unsigned long long vblank)
     unsigned no_flip_calls[D2_NO_FLIP_STATES];
     double reason_ms[D2_WAIT_REASONS];unsigned reason_calls[D2_WAIT_REASONS],outcomes[3];
     d2_fifo_wait_take(reason_ms,reason_calls,outcomes);
-    double no_flip_ms[D2_NO_FLIP_STATES];unsigned no_flip_calls[D2_NO_FLIP_STATES];
     d2_fifo_no_flip_take(no_flip_ms,no_flip_calls);
     unsigned keys=0;const int vk[]={0x75,0x76,0x78,0x79};
     DWORD owner=0;HWND focused=GetForegroundWindow();
