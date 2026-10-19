@@ -29,6 +29,11 @@ LOOP_SECTIONS = ('wait_ms', 'tick_ms', 'present_ms', 'fifo_ms', 'pump_ms', 'othe
 LOOP_TIMES = ('interval_ms', *LOOP_SECTIONS, 'max_wait_ms', 'max_wait_target_ms')
 LOOP_COUNTS = ('wait_calls', 'late_waits', 'vblank')
 LOOP_COLUMNS = ('frame', 'stage', *LOOP_TIMES, *LOOP_COUNTS)
+WAIT_REASONS = ('no_pending_flip', 'fifo_pending', 'ticket_order', 'clock_gate', 'eligible_at_entry')
+WAIT_TIMES = tuple('wait_' + name + '_ms' for name in WAIT_REASONS)
+WAIT_COUNTS = tuple('wait_' + name + '_calls' for name in WAIT_REASONS)
+WAIT_OUTCOMES = ('wait_event_wakes', 'wait_timeouts', 'wait_other_results')
+REASON_LOOP_COLUMNS = LOOP_COLUMNS + WAIT_TIMES + WAIT_COUNTS + WAIT_OUTCOMES
 
 
 def clean_environment(original):
@@ -47,16 +52,22 @@ def analyze_render_loop(path):
     groups = {}
     with path.open(encoding='utf-8', newline='') as source:
         reader = csv.DictReader(source)
-        if tuple(reader.fieldnames or ()) != LOOP_COLUMNS:
+        columns = tuple(reader.fieldnames or ())
+        if columns not in (LOOP_COLUMNS, REASON_LOOP_COLUMNS):
             raise ValueError('Invalid render loop columns')
+        reasons = columns == REASON_LOOP_COLUMNS
+        times = LOOP_TIMES + (WAIT_TIMES if reasons else ())
+        counts = LOOP_COUNTS + (WAIT_COUNTS + WAIT_OUTCOMES if reasons else ())
         for index, raw in enumerate(reader):
             if (index >= LIMIT or None in raw or any(v is None for v in raw.values())
                     or int(raw['frame']) != index or raw['stage'] not in STAGES):
                 raise ValueError('Invalid render loop row')
-            row = {k: float(raw[k]) for k in LOOP_TIMES}
+            row = {k: float(raw[k]) for k in times}
             if any(not math.isfinite(v) or not 0 <= v <= 1e12 for v in row.values()) or row['interval_ms'] <= 0:
                 raise ValueError('Invalid render loop timing')
-            row.update({k: int(raw[k]) for k in LOOP_COUNTS})
+            row.update({k: int(raw[k]) for k in counts})
+            if reasons and any(not 0 <= row[k] <= 0xffffffff for k in WAIT_COUNTS + WAIT_OUTCOMES):
+                raise ValueError('Invalid wait reason counters')
             if (not 0 <= row['wait_calls'] <= 0xffffffff or
                     not 0 <= row['late_waits'] <= row['wait_calls'] or not 0 <= row['vblank'] <= 0xffffffffffffffff):
                 raise ValueError('Invalid render loop counters')
@@ -68,18 +79,26 @@ def analyze_render_loop(path):
             'samples': len(rows),
             'host_timings_ms': {k: {'mean': sum(r[k] for r in rows) / len(rows),
                                     'p95': percentile([r[k] for r in rows], .95),
-                                    'maximum': max(r[k] for r in rows)} for k in LOOP_TIMES},
+                                    'maximum': max(r[k] for r in rows)} for k in times},
             'wait_calls': sum(r['wait_calls'] for r in rows),
             'waits_exceeding_requested_plus_1ms': sum(r['late_waits'] for r in rows),
             'maximum_section_sum_error_ms': max(abs(sum(r[k] for k in LOOP_SECTIONS) - r['interval_ms']) for r in rows),
             'slowest_intervals': sorted(rows, key=lambda r: r['interval_ms'], reverse=True)[:10]}
+        if reasons:
+            stages[stage]['classified_event_waits'] = {
+                name: {'calls': sum(r[count] for r in rows), 'total_ms': sum(r[time] for r in rows)}
+                for name, time, count in zip(WAIT_REASONS, WAIT_TIMES, WAIT_COUNTS)}
+            stages[stage]['event_wait_outcomes'] = {k: sum(r[k] for r in rows) for k in WAIT_OUTCOMES}
     return {'schema': 1, 'status': 'measured' if stages else 'no-samples', 'stages': stages,
+            'wait_reason_detail_available': reasons,
             'samples': sum(len(rows) for rows in groups.values()),
             'limitations': ['Render-loop intervals end after guest submission; they are not visible-render callback intervals.',
                            'Frame indices and keyboard marker polling are independent of frames.csv; never join them by row number.',
                            'Wait time includes intentional idle and host scheduling, not CPU utilization or proven wasted time.',
                            'Present time includes the whole guest submission, not only DXGI Present.',
                            'Late waits exceed the requested milliseconds by more than 1ms; they do not prove missed display refreshes.',
+                           'Wait reasons are snapshots under the flip lock before the original event wait; state can change immediately afterward.',
+                           'Reason durations cover completed event waits, not how long a condition remained true; atomic counters have approximate cross-thread attribution.',
                            'These sequential loop sections are separate from and may overlap backend or sampled-callback categories.',
                            'Host-loop instrumentation overhead has not been measured on the target PC.']}
 

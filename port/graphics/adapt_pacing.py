@@ -17,6 +17,10 @@ def generate(source, output):
     if hashlib.sha256(data).hexdigest()!=EXPECTED:
         raise RuntimeError('Pinned GCM differs; original SDK preserved')
     text=data.decode()
+    text=replace(text, 'void cellGcm_fifo_kick_wait(unsigned ms)',
+        '#include "fifo_wait_profile.inc"\n\nvoid cellGcm_fifo_kick_wait(unsigned ms)')
+    text=replace(text, '    WaitForSingleObject(kick, ms);',
+        '    d2_profiled_fifo_wait(kick, ms);')
     text=replace(text, 'void cellGcm_rsx_process_fifo(void)\n{\n    AcquireSRWLockExclusive(&s_gcm_fifo_lock);',
         '#include "fifo_lock_profile.h"\n\nvoid cellGcm_rsx_process_fifo(void)\n{\n'
         '    LONG64 d2_lock_start=d2_fifo_lock_begin();\n'
