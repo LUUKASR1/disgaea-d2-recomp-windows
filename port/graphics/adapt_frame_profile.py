@@ -107,8 +107,8 @@ def generate(source, destination):
     # Append a floating time and two integer counts to the final format fields.
     old_format = ','.join(['%.6f'] * len(DETAIL_TIMES) + ['%u'] * len(DETAIL_COUNTS)) + '\\n",i,'
     text = replace(text, old_format, old_format.replace('\\n",i,', ',%.6f,%u,%u\\n",i,'))
-    text = replace(text, '    if(!d2_lite_n || d2_lite_saved==d2_lite_n) return;',
-                   '    if(!d2_lite_n || d2_lite_saved==d2_lite_n) return;\n'
+    text = replace(text, 'static void d2_lite_save(void)\n{',
+                   'static void d2_lite_save(void)\n{\n'
                    '#ifdef D2_DRAW_PROFILE_STOP\n    D2_DRAW_PROFILE_STOP();\n#endif')
     text = replace(text, '    if(fclose(f)==0){d2_lite_saved=d2_lite_n;',
                    '    if(fclose(f)==0){\n#ifdef D2_DRAW_PROFILE_SAVE\n'

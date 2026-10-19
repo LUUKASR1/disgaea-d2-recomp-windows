@@ -14,6 +14,10 @@ void d2_fifo_lock_take(double* ms,unsigned* calls,unsigned* held) { *ms=0;*calls
 
 int main(void)
 {
+    /* Finish before any frame: sampling must still stop, with no CSV needed. */
+    d2_sample_active=1;
+    d2_lite_save();
+    if(d2_sample_active) return 12;
     const char* name="performance-\xc3\xa1rea-test.csv";
     SetEnvironmentVariableW(L"D2_PERF_CSV",L"performance-\x00e1rea-test.csv");
     d2_lite_n=1;
