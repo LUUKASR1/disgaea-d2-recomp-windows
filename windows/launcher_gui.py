@@ -88,6 +88,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     capture_enabled = tk.BooleanVar(value=False)
     performance_enabled = tk.BooleanVar(value=False)
     texture_reuse_enabled = tk.BooleanVar(value=False)
+    vertex_context_enabled = tk.BooleanVar(value=False)
     capture_goal = TextVariable(choice=True, value="Cenário — girar câmera")
     capture_status = TextVariable(value='Captura desativada.')
     status = TextVariable(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
@@ -192,6 +193,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         busy = True
         backend.performance_enabled = performance_enabled.get()
         backend.texture_reuse_enabled = texture_reuse_enabled.get()
+        backend.vertex_context_enabled = vertex_context_enabled.get()
         backend.capture_enabled = capture_enabled.get()
         backend.capture_goal = "draw" if capture_goal.get().startswith("Desenho") else "shaders" if capture_goal.get().startswith("Shaders") else "sprites" if capture_goal.get().startswith("Sprites") else "scenery"
         for widget in buttons + entries:
@@ -394,6 +396,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
         reuse_toggle.pack(anchor='w', pady=4); entries.append(reuse_toggle)
         label(measurement, 'Compare com a opção desligada usando as mesmas configurações. Requer fechar e abrir o jogo; não amplia o cache de texturas.', 10, MUTED)
+        vertex_toggle = tk.Checkbutton(measurement, text='Preparar atributos por desenho — experimental',
+            variable=vertex_context_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
+            activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))
+        vertex_toggle.pack(anchor='w', pady=4); entries.append(vertex_toggle)
         toggle = tk.Checkbutton(measurement, text='Medir na próxima abertura do jogo — sem imagens',
             variable=performance_enabled, bg=CARD, fg=TEXT, selectcolor=PANEL,
             activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 11))

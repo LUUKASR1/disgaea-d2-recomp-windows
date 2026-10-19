@@ -247,5 +247,6 @@
   "Compilar runtime com ferramentas portáteis": "Compile runtime with portable tools",
   "Verificar runtimes oficiais do Windows": "Check official Windows runtimes",
   "Reaproveitar texturas compatíveis — experimental": "Reuse compatible textures — experimental",
-  "Compare com a opção desligada usando as mesmas configurações. Requer fechar e abrir o jogo; não amplia o cache de texturas.": "Compare with the option off using the same settings. Close and relaunch the game to apply; the texture cache capacity stays the same."
+  "Compare com a opção desligada usando as mesmas configurações. Requer fechar e abrir o jogo; não amplia o cache de texturas.": "Compare with the option off using the same settings. Close and relaunch the game to apply; the texture cache capacity stays the same.",
+  "Preparar atributos por desenho — experimental": "Prepare vertex attributes per draw — experimental"
 }

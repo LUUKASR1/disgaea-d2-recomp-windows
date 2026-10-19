@@ -124,6 +124,12 @@ if(D2_GRAPHICS_SDK_DIR)
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/adapt_pacing.py"
         "${D2_GRAPHICS_SDK_DIR}/libs/video/cellGcmSys.c" "${gcm_adapted}" COMMAND_ERROR_IS_FATAL ANY)
     if(BUILD_TESTING)
+        add_executable(d2_vertex_context_tests tests/vertex_context_tests.c
+            "${D2_GRAPHICS_SDK_DIR}/libs/video/rsx_vertex_fetch.c")
+        target_include_directories(d2_vertex_context_tests PRIVATE
+            "${D2_GRAPHICS_SDK_DIR}/include" "${D2_GRAPHICS_SDK_DIR}/libs/video")
+        add_test(NAME prepared_vertex_attributes COMMAND d2_vertex_context_tests)
+        set_tests_properties(prepared_vertex_attributes PROPERTIES ENVIRONMENT "D2_VERTEX_CONTEXT=1;D2_VERTEX_STAGING=1")
         add_executable(d2_frame_profile_tests tests/frame_profile_tests.c)
         target_include_directories(d2_frame_profile_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
         target_link_libraries(d2_frame_profile_tests PRIVATE d2_graphics user32)

@@ -1,8 +1,17 @@
 import unittest
-from texture_reuse_settings import texture_reuse_environment
+from texture_reuse_settings import texture_reuse_environment, vertex_context_environment
 
 
 class TextureReuseSettingsTests(unittest.TestCase):
+    def test_vertex_preparation_is_independent_opt_in(self):
+        inherited = {'d2_vertex_context': '1', 'D2_VERTEX_CONTEXT': '1', 'D2_TEXTURE_REUSE': '1'}
+        for enabled, official, expected in ((False, False, '0'), (True, False, '1'),
+                                            (True, True, '0'), (False, True, '0')):
+            result = vertex_context_environment(inherited, enabled, official)
+            self.assertNotIn('d2_vertex_context', result)
+            self.assertEqual(result['D2_VERTEX_CONTEXT'], expected)
+            self.assertEqual(result['D2_TEXTURE_REUSE'], '1')
+        self.assertIn('d2_vertex_context', inherited)
     def test_development_requires_explicit_opt_in_and_cleans_inherited_flags(self):
         inherited = {'d2_texture_reuse': '1', 'D2_TEXTURE_REUSE': '1', 'Path': 'keep'}
         self.assertEqual(texture_reuse_environment(inherited), {'D2_TEXTURE_REUSE': '0', 'Path': 'keep'})
