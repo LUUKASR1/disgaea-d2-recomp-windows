@@ -24,9 +24,15 @@ def hierarchy():
 def button():
     for _ in range(12):
         root = hierarchy()
-        found = [n for n in root.iter('node') if n.get('text') == 'Share diagnostic report']
+        # Material buttons expose their all-caps display text. --windows may
+        # list a child popup both independently and under its parent window.
+        found = {tuple(map(int, re.findall(r'\d+', n.get('bounds', ''))))
+                 for n in root.iter('node')
+                 if n.get('text', '').casefold() == 'share diagnostic report'
+                 and n.get('class') == 'android.widget.Button'
+                 and n.get('enabled') == 'true' and n.get('clickable') == 'true'}
         if len(found) == 1:
-            bounds = list(map(int, re.findall(r'\d+', found[0].get('bounds', ''))))
+            bounds = next(iter(found))
             if len(bounds) == 4 and bounds[2] > bounds[0] and bounds[3] > bounds[1]:
                 return bounds
         time.sleep(1)
