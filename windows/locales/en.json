@@ -245,5 +245,9 @@
   "Ferramenta portátil ausente: {name}": "Portable tool missing: {name}",
   "Testar SDK com Git portátil": "Test SDK with portable Git",
   "Compilar runtime com ferramentas portáteis": "Compile runtime with portable tools",
-  "Verificar runtimes oficiais do Windows": "Check official Windows runtimes"
+  "Verificar runtimes oficiais do Windows": "Check official Windows runtimes",
+  "Meus saves": "My saves",
+  "Meus saves — abrir pasta": "My saves — open folder",
+  "Como usar meu save": "How to use my save",
+  "1. Feche o jogo antes de copiar qualquer save.\n2. Faça uma cópia de segurança da pasta atual.\n3. Copie a pasta completa do seu save compatível para a pasta abaixo, preservando seu nome e os arquivos internos. Não coloque uma pasta savedata dentro de outra.\n4. Abra o jogo e use Carregar.\n\nDestino:\n{path}\n\nSaves do PS3 precisam estar em formato compatível e descriptografado; copiar um backup cifrado do console não é suficiente. A compatibilidade entre regiões/versões não é garantida. O launcher não converte, descriptografa nem sobrescreve saves automaticamente.": "1. Close the game before copying any save.\n2. Back up the current folder.\n3. Copy the complete compatible save folder into the folder below, preserving its name and all files inside. Do not nest one savedata folder inside another.\n4. Open the game and choose Load.\n\nDestination:\n{path}\n\nPS3 saves must be in a compatible, decrypted format; copying an encrypted console backup is not sufficient. Compatibility across regions/versions is not guaranteed. The launcher does not automatically convert, decrypt or overwrite saves."
 }

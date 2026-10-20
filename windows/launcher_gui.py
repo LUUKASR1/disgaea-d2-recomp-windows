@@ -245,6 +245,17 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         else:
             task(lambda: backend.play_iso(selected))
 
+    def open_saves():
+        try:
+            from save_access import open_save_directory
+            open_save_directory(home)
+        except OSError as error:
+            messagebox.showerror('Meus saves', str(error))
+
+    def save_help():
+        from save_access import save_directory, SAVE_HELP
+        messagebox.showinfo('Como usar meu save', translate(SAVE_HELP).format(path=save_directory(home)))
+
     page = bodies['Início']
     label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
     hero = tk.Canvas(page, height=278, bg=BG, highlightthickness=0)
@@ -253,6 +264,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     hero.bind('<Configure>', lambda event: hero.coords(logo_item, event.width // 2, 0))
     button(page, '▶  JOGAR DISGAEA D2', play, True)
     button(page, 'Selecionar ISO e jogar' if clean else 'Jogar pela ISO (experimental)', play_iso)
+    button(page, 'Meus saves — abrir pasta', open_saves)
+    button(page, 'Como usar meu save', save_help)
     info = card(page)
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
@@ -376,7 +389,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     def open_path(path):
         path.mkdir(parents=True, exist_ok=True)
         os.startfile(path)
-    button(page, 'Abrir pasta de saves', lambda: open_path(home / ('hdd0/home' if standalone else 'auxiliar-rpcs3/dev_hdd0/home')))
+    button(page, 'Abrir pasta de saves', open_saves)
+    button(page, 'Como usar meu save', save_help)
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
     capture_button = None

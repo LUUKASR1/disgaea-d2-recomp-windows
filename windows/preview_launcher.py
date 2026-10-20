@@ -27,7 +27,7 @@ def main():
     out = Path('launcher-previews'); out.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as root:
         official = '--official' in sys.argv
-        app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', '0.2.1' if official else VERSION, lambda directory: False, preview=True, official=official)
+        app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', '0.2.2' if official else VERSION, lambda directory: False, preview=True, official=official)
         try:
             translate, choose_language = app._launcher_i18n
             original_settings = app._launcher_get_settings()

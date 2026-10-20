@@ -1,24 +1,24 @@
 name: Validate official DirectX 12 stable package
-run-name: Verify official 0.2.1 Stable launcher and installer
+run-name: Verify official 0.2.2 Stable launcher and installer
 on:
   push:
-    branches: [release/windows-0.2.1]
+    branches: [release/windows-0.2.2]
     paths: [.github/workflows/official-release.yml]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: official-dx12-021
+  group: official-dx12-022
   cancel-in-progress: false
 jobs:
   validate-package:
-    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/release/windows-0.2.1'
+    if: github.repository == 'LUUKASR1/disgaea-d2-recomp-windows' && github.ref == 'refs/heads/release/windows-0.2.2'
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -35,7 +35,7 @@ jobs:
         run: python windows/preview_launcher.py --official
       - uses: actions/upload-artifact@v4
         with:
-          name: Official-0.2.1-Launcher-UI
+          name: Official-0.2.2-Launcher-UI
           path: launcher-previews/
       - name: Package official single-file launcher
         run: python tools/package_launcher.py --onefile --official
@@ -79,14 +79,14 @@ jobs:
               data = Path(source).read_bytes()
               assert data[:2] == b'MZ' and len(data) > 1_000_000
               shutil.copy2(source, out / Path(source).name)
-          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-0.2.1-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-0.2.1.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
+          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-0.2.2-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-0.2.2.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
                   z.write(source, name)
-          (out / 'release-build.json').write_text(json.dumps({'version': '0.2.1', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
+          (out / 'release-build.json').write_text(json.dumps({'version': '0.2.2', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
           sums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(out.iterdir()))
           (out / 'SHA256SUMS.txt').write_text(sums)
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-0.2.1-Official-Verified-Assets
+          name: DisgaeaD2-0.2.2-Official-Verified-Assets
           path: official-assets/
           if-no-files-found: error
