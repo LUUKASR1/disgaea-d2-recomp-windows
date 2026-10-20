@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '0.2.3' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
+VERSION = '0.2.4' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -752,7 +752,7 @@ def main():
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         if OFFICIAL_RELEASE:
-            if VERSION != '0.2.3' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+            if VERSION != '0.2.4' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
                 raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')

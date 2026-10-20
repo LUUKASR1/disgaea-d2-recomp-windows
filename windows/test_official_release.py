@@ -17,7 +17,7 @@ class OfficialReleaseTests(unittest.TestCase):
             (vendor / name).write_text('{}')
         marker = vendor / 'official-release.json'
         if official:
-            marker.write_text(json.dumps({'version': '0.2.3', 'graphics_api': 'd3d12'}))
+            marker.write_text(json.dumps({'version': '0.2.4', 'graphics_api': 'd3d12'}))
         else:
             marker.unlink(missing_ok=True)
         spec = importlib.util.spec_from_file_location('channel_under_test', Path(__file__).with_name('launcher.py'))
@@ -35,7 +35,7 @@ class OfficialReleaseTests(unittest.TestCase):
             save.write_bytes(b'user-owned test save')
             stable = self.load_channel(root, True)
             self.assertTrue(stable.OFFICIAL_RELEASE)
-            self.assertEqual(stable.VERSION, '0.2.3')
+            self.assertEqual(stable.VERSION, '0.2.4')
             self.assertTrue(stable._standalone)
             self.assertEqual(stable.HOME, preview.HOME)
             self.assertEqual(save.read_bytes(), b'user-owned test save')

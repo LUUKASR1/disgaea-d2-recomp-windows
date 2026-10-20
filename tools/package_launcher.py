@@ -39,7 +39,7 @@ if onefile:
     (vendor / 'standalone.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
     (vendor / 'graphics.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
 if official:
-    (vendor / 'official-release.json').write_text(json.dumps({'version': '0.2.3', 'graphics_api': 'd3d12'}), encoding='utf-8')
+    (vendor / 'official-release.json').write_text(json.dumps({'version': '0.2.4', 'graphics_api': 'd3d12'}), encoding='utf-8')
 for name in ('cmake', 'ninja'):
     tool = shutil.which(name)
     if not tool:
