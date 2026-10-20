@@ -260,5 +260,21 @@
   "A verificação não impede jogar. A instalação é manual: feche o jogo e o launcher antes de executar o novo instalador.": "Checking does not prevent playing. Installation is manual: close the game and launcher before running the new installer.",
   "Nova versão disponível: {version}": "New version available: {version}",
   "Seu launcher está atualizado.": "Your launcher is up to date.",
-  "Não foi possível verificar agora. Você pode jogar normalmente.": "Could not check right now. You can play normally."
+  "Não foi possível verificar agora. Você pode jogar normalmente.": "Could not check right now. You can play normally.",
+  "Controles": "Controls",
+  "Guia de comandos": "Command guide",
+  "COMANDOS DO JOGADOR": "PLAYER CONTROLS",
+  "Use o teclado com a janela do jogo em foco e sem controle conectado. Um controle conectado tem prioridade sobre o teclado.": "Use the keyboard while the game window has focus and no controller is connected. A connected controller takes priority over the keyboard.",
+  "TECLA": "KEY",
+  "BOTÃO / FUNÇÃO": "BUTTON / FUNCTION",
+  "Direcional / analógico esquerdo": "D-pad / left stick",
+  "Cruz (×) — confirmar": "Cross (×) — confirm",
+  "Círculo (○) — voltar / cancelar": "Circle (○) — back / cancel",
+  "Quadrado (□)": "Square (□)",
+  "Triângulo (△)": "Triangle (△)",
+  "As funções dos botões podem variar conforme o menu e a situação da batalha. Este guia mostra o mapeamento atual; não altera os comandos.": "Button functions may vary with the menu and battle state. This guide shows the current mapping; it does not change the controls.",
+  "No launcher: clique nos botões e nas opções normalmente.": "In the launcher: click buttons and options normally.",
+  "Dentro do jogo: seleção direta de menus, personagens e casas pelo ponteiro ainda não está disponível. Use o teclado ou um controle.": "In the game: direct pointer selection of menus, characters and tiles is not available yet. Use the keyboard or a controller.",
+  "DICA DO PRINNY": "PRINNY TIP",
+  "O teclado não respondeu? Desconecte o controle e clique na janela do jogo para devolver o foco a ela. Ao trocar de janela, o jogo deixa de receber as teclas.": "Keyboard not responding? Disconnect the controller and click the game window to restore focus. When you switch windows, the game stops receiving key input."
 }

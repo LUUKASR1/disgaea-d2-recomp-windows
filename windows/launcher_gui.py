@@ -11,6 +11,7 @@ import webbrowser
 
 from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_RATES, load_settings, save_settings
 from launcher_i18n import LANGUAGES, Localizer, Dialogs, load_language, save_language, text_variable_class, widget_bindings
+from controls_guide import build_controls_guide
 
 BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
 TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
@@ -174,7 +175,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         for key, widget in nav_buttons.items():
             widget.configure(bg=RED if key == name else PANEL)
 
-    for name in ('Início', 'Vídeo', 'Preparação', 'Arquivos e suporte'):
+    for name in ('Início', 'Vídeo', 'Controles', 'Preparação', 'Arquivos e suporte'):
         page = tk.Frame(content, bg=BG)
         pages[name] = page
         canvas = tk.Canvas(page, bg=BG, highlightthickness=0)
@@ -300,7 +301,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
     button(page, 'Configurar vídeo', lambda: show('Vídeo'))
+    button(page, 'Guia de comandos', lambda: show('Controles'), while_playing=True)
     button(page, 'Preparar ou importar meu jogo', lambda: show('Preparação'))
+
+    refresh_controls = build_controls_guide(bodies['Controles'], translate)
 
     page = bodies['Vídeo']
     label(page, 'EXIBIÇÃO', 10, GOLD, True)
@@ -529,6 +533,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     def apply_language():
         for binding in bindings:
             binding()
+        refresh_controls()
         for variable in localized_variables:
             variable.refresh()
         app.title(translate(title_source))

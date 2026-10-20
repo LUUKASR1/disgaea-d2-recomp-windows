@@ -50,10 +50,18 @@ def main():
                     return values
                 assert translate('▶  JOGAR DISGAEA D2') in all_text(app), 'Play button was not localized'
                 assert translate('Arquivos e suporte') in all_text(app), 'Navigation was not localized'
+                assert translate('Controles') in all_text(app), 'Controls navigation was not localized'
                 target = out if language == 'pt-BR' else out / 'en'
                 target.mkdir(exist_ok=True)
-                for page, name in [('Início', 'inicio'), ('Vídeo', 'video'), ('Preparação', 'preparacao'), ('Arquivos e suporte', 'capturas')]:
+                for page, name in [('Início', 'inicio'), ('Vídeo', 'video'), ('Controles', 'controles'), ('Preparação', 'preparacao'), ('Arquivos e suporte', 'capturas')]:
                     show(page); app.update(); app.update_idletasks()
+                    if page == 'Controles':
+                        assert translate('Direcional / analógico esquerdo') in all_text(app)
+                        assert translate('Cruz (×) — confirmar') in all_text(app)
+                        titles = [w.itemcget(i, 'text') for w in all_widgets(app)
+                                  if w.winfo_class() == 'Canvas' for i in w.find_all()
+                                  if w.type(i) == 'text']
+                        assert translate('Guia de comandos') in titles, 'Outlined title was not localized'
                     capture(app, target / (name + '.png'))
             choose_language('pt-BR')
             assert app._launcher_get_settings() == original_settings
