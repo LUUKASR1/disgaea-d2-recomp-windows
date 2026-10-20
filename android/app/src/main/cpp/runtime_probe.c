@@ -1,6 +1,7 @@
 /* SDK primitive probe, not a game loader or complete PPU/SPU scheduler. */
 #include "runtime_probe.h"
 #include "runtime/platform/win32_compat.h"
+#include "runtime/platform/guest_poll.h"
 #include "runtime/memory/vm.h"
 #include "runtime/ppu/ppu_ops.h"
 #include "runtime/spu/spu_helpers.h"
@@ -147,6 +148,43 @@ static void waits(void) {
     check("core_counting_semaphore", ok);
 }
 
+static HANDLE poll_ready;
+static void *poll_worker(void *unused) {
+    (void)unused;
+    ps3_guest_worker_register(1);
+    SetEvent(poll_ready);
+    for (;;) {
+        uint32_t value;
+        memcpy(&value, vm_base + VM_MAIN_MEM_BASE + 512, sizeof value);
+        ps3_poll_backoff(100, VM_MAIN_MEM_BASE + 512, &value, sizeof value);
+    }
+    return NULL;
+}
+static void guest_poll_shutdown(void) {
+    if (!vm_base) { check("core_guest_poll_stop", 0); return; }
+    poll_ready = CreateEventA(NULL, TRUE, FALSE, NULL);
+    pthread_t worker;
+    int started = poll_ready && pthread_create(&worker, NULL, poll_worker, NULL) == 0;
+    int ok = started && WaitForSingleObject(poll_ready, 5000) == WAIT_OBJECT_0;
+    int observed_waiter = 0;
+    if (started) {
+        ULONGLONG deadline = GetTickCount64() + 1000;
+        do {
+            observed_waiter = __atomic_load_n(&ps3_poll_waiters, __ATOMIC_SEQ_CST) != 0;
+            if (observed_waiter) break;
+            Sleep(1);
+        } while (GetTickCount64() < deadline);
+        ps3_guest_workers_request_stop();
+        deadline = GetTickCount64() + 5000;
+        while (!ps3_guest_workers_stopped() && GetTickCount64() < deadline) Sleep(1);
+        if (!ps3_guest_workers_stopped()) abort(); // Cannot release a live worker's VM.
+        ps3_guest_workers_join();
+    }
+    check("core_guest_poll_stop", ok && observed_waiter &&
+          __atomic_load_n(&ps3_poll_waiters, __ATOMIC_SEQ_CST) == 0);
+    if (poll_ready) CloseHandle(poll_ready);
+}
+
 int d2_runtime_probe_run(char *report, size_t capacity) {
     output = report; output_size = capacity; used = failures = 0;
     if (!report || capacity < 1024) return 1;
@@ -155,6 +193,11 @@ int d2_runtime_probe_run(char *report, size_t capacity) {
          "core_sdk_tree=a23f74ffccaa440b686dc06694379b6362431038\n"
          "core_ppu_loader_linked=false\ncore_spu_scheduler_linked=false\n"
          "core_optional_debug_hooks=disabled-fail-closed\n");
+#ifdef __ANDROID__
+    line("core_guest_stop_model=cooperative-poll-boundaries\n");
+#else
+    line("core_guest_stop_model=host-posix-cancellation\n");
+#endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
     line("core_spu_backend=arm64-neon\n");
 #else
@@ -163,6 +206,7 @@ int d2_runtime_probe_run(char *report, size_t capacity) {
     memory_and_ppu();
     threads();
     waits();
+    guest_poll_shutdown();
     check("core_spu_instruction_vectors", d2_sdk_spu_helpers_test() == 0);
     check("core_spu_numeric_vectors", d2_sdk_spu_numeric_test() == 0);
     vm_shutdown();

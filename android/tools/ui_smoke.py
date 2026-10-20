@@ -66,7 +66,7 @@ def main():
     for name in ('core_vm_reservation', 'core_ppu_big_endian', 'core_ppu_integer_ops',
                  'core_ppu_inline_reservation_cas', 'core_host_threads_guest_cas',
                  'core_auto_manual_events', 'core_counting_semaphore',
-                 'core_spu_instruction_vectors', 'core_spu_numeric_vectors', 'core_vm_release'):
+                 'core_spu_instruction_vectors', 'core_spu_numeric_vectors', 'core_guest_poll_stop', 'core_vm_release'):
         assert name + '=passed' in report, report
     assert 'core_full_runtime_linked=false' in report
     bounds = button()

@@ -29,6 +29,12 @@ em vez de simular uma implementação ausente.
 As fontes são extraídas do objeto Git fixado em `patches/SDK-WINDOWS.lock`, com
 hashes de proveniência. Nenhum checkout SDK do usuário é editado, e nenhuma
 fonte gerada a partir do jogo é lida. O APK inclui os avisos de licença do SDK.
+Somente as cópias de build recebem as adaptações Android: workers registrados
+param cooperativamente em pontos de polling, e afinidade usa o ID de thread
+do Android com `sched_setaffinity`. O teste espera um worker estar realmente
+bloqueado no poll, solicita a parada e verifica sua saída e a limpeza do waiter.
+Outros waits de HLE e parada do scheduler completo ainda não estão validados.
+Nenhuma afinidade é aplicada pelo probe; a política de CPU permanece com o SO.
 O probe é dono da VM neste aplicativo: antes de ligar um loader de jogo, ele
 precisa ser removido desse caminho ou isolado em outro processo. Não pode rodar
 simultaneamente sobre a VM de uma sessão de jogo.
@@ -124,6 +130,11 @@ Optional inactive debug/loader hooks fail closed if reached. This test owns its
 VM; it must be removed or process-isolated before a game loader shares that VM.
 Sources come from the locked SDK Git tree, without editing the SDK worktree or
 reading any generated game code. SDK license notices are included in the APK.
+Build-copy Android adaptations replace unavailable pthread cancellation with
+cooperative exits for registered workers at poll boundaries, and use Android
+thread IDs for affinity. The test observes a real poll waiter, requests stop,
+joins it and checks waiter cleanup. Other HLE blocking waits and full scheduler
+shutdown remain unvalidated. The probe does not request CPU affinity changes.
 
 **Diagnostic APK; it does not run the game yet.** Initial Android ARM64 platform
 test, targeting the AYN Odin 2 Portal first. Reuses the project's experimental

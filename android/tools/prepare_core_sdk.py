@@ -21,6 +21,59 @@ SEEDS = (
 )
 
 
+def adapt_android(name, data):
+    text = data.decode()
+    def replace(old, new, count=1):
+        nonlocal text
+        if text.count(old) != count:
+            raise RuntimeError('SDK Android adaptation anchor changed: ' + name)
+        text = text.replace(old, new)
+    if name == 'runtime/platform/guest_poll.c':
+        anchor = 'static void worker_key_init(void) { pthread_key_create(&s_worker_key, worker_finished); }'
+        replace(anchor, anchor + '''
+#ifdef __ANDROID__
+/* Bionic has no pthread cancellation. Only registered guest workers stop,
+ * at an explicit poll boundary with no bucket/registry mutex held. Existing
+ * poll waits are bounded; other HLE blocking paths are outside this probe. */
+static void d2_android_guest_stop_point(void)
+{
+    pthread_once(&s_worker_once, worker_key_init);
+    if (!pthread_getspecific(s_worker_key)) return;
+    pthread_mutex_lock(&s_workers_lock);
+    int stopping = s_workers_stopping;
+    pthread_mutex_unlock(&s_workers_lock);
+    if (stopping) pthread_exit(NULL);
+}
+#endif
+''')
+        replace('if (stopping) pthread_cancel(pthread_self());', '''if (stopping) {
+#ifdef __ANDROID__
+        pthread_exit(NULL);
+#else
+        pthread_cancel(pthread_self());
+#endif
+    }''')
+        replace('if (!w->done) { w->selected = 1; pthread_cancel(w->thread); }', '''if (!w->done) {
+            w->selected = 1;
+#ifndef __ANDROID__
+            pthread_cancel(w->thread);
+#endif
+        }''')
+        replace('    pthread_testcancel();', '''#ifdef __ANDROID__
+    d2_android_guest_stop_point();
+#else
+    pthread_testcancel();
+#endif''', count=3)
+    elif name == 'runtime/platform/win32_compat.c':
+        replace('    pthread_setaffinity_np(pt, sizeof set, &set);', '''#ifdef __ANDROID__
+    pid_t tid = pthread_gettid_np(pt);
+    if (tid > 0) sched_setaffinity(tid, sizeof set, &set);
+#else
+    pthread_setaffinity_np(pt, sizeof set, &set);
+#endif''')
+    return text.encode()
+
+
 def prepare(sdk, output):
     lock = json.loads((ROOT / 'patches/SDK-WINDOWS.lock').read_text())
     patch = ROOT / 'patches' / lock['patch']
@@ -59,13 +112,16 @@ def prepare(sdk, output):
             pending.append(found)
     if output.exists():
         raise RuntimeError('Output already exists; use a new directory. Nothing overwritten.')
+    adapted = {name: adapt_android(name, data) for name, data in files.items()}
     output.mkdir(parents=True)
-    for name, data in files.items():
+    for name, data in adapted.items():
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     receipt = {'schema': 1, 'sdk_tree': lock['tree'], 'game_sources_included': False,
-               'files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(files.items())}}
+               'android_adaptations': ['cooperative-guest-poll-stop', 'tid-based-affinity'],
+               'original_files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(files.items())},
+               'files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(adapted.items())}}
     (output / 'core-provenance.json').write_text(json.dumps(receipt, indent=2) + '\n')
     licenses = output / 'licenses'
     licenses.mkdir()
