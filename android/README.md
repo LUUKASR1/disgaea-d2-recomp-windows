@@ -1,8 +1,30 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.3
+# Disgaea D2 — Android ARM64 bootstrap 0.0.4
 
 ## Português
 
-### Teste do núcleo na 0.0.3
+### Teste do subconjunto ELF na 0.0.4
+
+Depois de o núcleo liberar a VM, um único worker cria uma VM nova e carrega
+somente um ELF sintético criado no diretório privado do aplicativo. O parser
+ELF64 big-endian PPC64 e a cópia de segmentos vêm literalmente do objeto Git
+fixado do SDK. A extração verifica o hash do trecho e termina antes dos hooks
+de depuração que iniciam threads. Não é o loader PPU completo.
+
+São verificados PT_LOAD, BSS zerado, leitura de entrada OPD/TOC, metadados de
+PT_TLS, recarga válida e limpeza de memória/arquivo temporário. Vinte e nove
+fixtures inválidas ou truncadas devem ser rejeitadas sem alterar a área guest
+monitorada de 5 MiB nem os metadados TLS. A faixa aceita por esse teste é
+inteiramente comprometida antes da cópia. Nenhum código PPC é executado.
+
+O relatório deve ter **`core_status=passed`**, **`elf_status=passed`**,
+**`elf_failures=0`** e **`elf_rejected_fixtures=29`**. A reserva virtual é usada
+sequencialmente, sem somar duas VMs. O teste não recebe ISO, ELF do usuário,
+atualizações ou DLCs. O dispatcher, a inicialização de TLS por thread, o HLE,
+áudio e execução do jogo continuam pendentes. Antes de aceitar arquivos do
+usuário, este subconjunto precisa de uma interface limitada de leitura e de
+planejamento/commit dos segmentos; não exponha `ppu_load_elf` diretamente.
+
+### Teste do núcleo mantido da 0.0.3
 
 Esta etapa liga **componentes reais do SDK**, não o runtime completo do jogo.
 O diagnóstico roda uma única vez em uma thread de fundo, sem bloquear a interface:
@@ -63,7 +85,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.3-Core-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.4-ELF-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos
@@ -116,7 +138,18 @@ Referências: [NativeActivity](https://developer.android.com/ndk/samples/sample_
 
 ## English
 
-Version 0.0.3 links selected real SDK primitives, not the full game runtime.
+Version 0.0.4 additionally tests a **pinned SDK ELF validation/segment-copy
+subset**, after the core probe releases its VM. It loads only an internally
+created synthetic ELF, checks PT_LOAD/BSS, entry OPD/TOC, PT_TLS metadata,
+29 rejected malformed/truncated fixtures, successful reload, and file/VM cleanup.
+The parser bytes come verbatim from the locked Git object, with a checked
+extraction hash; debugger hooks and guest dispatch are excluded. No PPC code
+executes. Expect `elf_status=passed`, `elf_failures=0`, and
+`elf_rejected_fixtures=29`. This is not the complete PPU loader or game boot.
+Do not pass user images to this private test entry. A bounded reader and segment
+commit plan are required before user-selected files can be accepted.
+
+The core test retained from 0.0.3 links selected real SDK primitives, not the full game runtime.
 A one-shot background probe checks a 4 GiB aligned virtual reservation (about
 256 MiB of main memory is touched and then released), endian access, top-page
 protection, PPU integer and inline CAS behavior, 20,000 contested guest-memory
@@ -141,7 +174,7 @@ test, targeting the AYN Odin 2 Portal first. Reuses the project's experimental
 Vulkan renderer with Android window/surface support, NativeActivity lifecycle
 handling and physical gamepad event counters. The Windows release is unchanged.
 
-Install the APK, open **D2 Android • Core test**, and check for a colored
+Install the APK, open **D2 Android • ELF test**, and check for a colored
 triangle and the diagnostic notice. Press physical buttons/D-pad and move the
 sticks. Background/restore the app twice, lock/unlock the screen, then use
 **Share diagnostic report** and describe any visual issue or crash. No ISO or

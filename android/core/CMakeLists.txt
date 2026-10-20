@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(D2CorePrimitives LANGUAGES C)
+project(D2CorePrimitives LANGUAGES C CXX)
 set(D2_CORE_SDK_DIR "${CMAKE_CURRENT_LIST_DIR}/../../android-runtime-core" CACHE PATH "Prepared immutable SDK core")
 file(READ "${D2_CORE_SDK_DIR}/core-provenance.json" receipt)
 string(JSON tree GET "${receipt}" sdk_tree)
@@ -22,11 +22,14 @@ set(platform "${D2_CORE_SDK_DIR}/runtime/platform")
 add_library(d2_android_core STATIC
     "${platform}/win32_compat.c" "${platform}/guest_poll.c" "${spu}/spu_coherency.c"
     "${spu}/tests/test_spu_helpers.c" "${spu}/tests/test_spu_numeric_semantics.c"
-    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_probe.c")
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_probe.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/elf_probe.cpp"
+    "${D2_CORE_SDK_DIR}/generated/ppu_elf_subset.cpp")
 set_source_files_properties("${spu}/tests/test_spu_helpers.c" PROPERTIES COMPILE_DEFINITIONS "main=d2_sdk_spu_helpers_test")
 set_source_files_properties("${spu}/tests/test_spu_numeric_semantics.c" PROPERTIES COMPILE_DEFINITIONS "main=d2_sdk_spu_numeric_test")
 set_target_properties(d2_android_core PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 target_compile_features(d2_android_core PRIVATE c_std_17)
+target_compile_features(d2_android_core PRIVATE cxx_std_17)
 target_compile_definitions(d2_android_core PRIVATE _GNU_SOURCE)
 target_compile_options(d2_android_core PRIVATE -UNDEBUG)
 target_include_directories(d2_android_core PRIVATE "${D2_CORE_SDK_DIR}" "${D2_CORE_SDK_DIR}/include"
@@ -39,6 +42,6 @@ if(NOT ANDROID)
     add_executable(d2_core_probe_cli core_cli.c)
     target_link_libraries(d2_core_probe_cli PRIVATE d2_android_core)
     enable_testing()
-    add_test(NAME sdk_core_primitives COMMAND d2_core_probe_cli)
-    set_tests_properties(sdk_core_primitives PROPERTIES TIMEOUT 45)
+    add_test(NAME sdk_core_and_elf_subset COMMAND d2_core_probe_cli)
+    set_tests_properties(sdk_core_and_elf_subset PROPERTIES TIMEOUT 45)
 endif()

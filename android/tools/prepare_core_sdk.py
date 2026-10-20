@@ -21,6 +21,41 @@ SEEDS = (
 )
 
 
+def elf_subset(source):
+    """Reuse the pinned ELF validation/copy path, excluding debugger threads.
+
+    This is not the full PPU loader/dispatcher. Keep the parser bytes verbatim;
+    the hash makes a changed extraction boundary fail before producing output.
+    The caller owns an already committed guest range and serializes VM use.
+    """
+    start = source.index(b'static uint16_t be16(')
+    end = source.index(b'    /* Arm PPU_GUARD_EA here', start)
+    parser = source[start:end]
+    expected = '69a0f21733c4ba6b9e973072ff1b37a8bccc2cc4d21233e0d2e275e91b8dd9db'
+    if hashlib.sha256(parser).hexdigest() != expected:
+        raise RuntimeError('Pinned ELF parser extraction changed')
+    prefix = b'''/* Generated from the MIT-licensed pinned SDK ppu_loader.cpp.
+ * ELF validation + segment copy only. No dispatch, HLE or debug workers.
+ * Internal synthetic-fixture entry: never pass arbitrary user files here.
+ */
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern "C" { extern uint8_t *vm_base; extern uint32_t ppu_vm_size; }
+static uint32_t g_tls_vaddr, g_tls_filesz, g_tls_memsz;
+#define PPU_TLS_IMG 0x10F00000u
+#define ppu_load_elf d2_fixture_load_elf
+'''
+    suffix = b'''    return entry;
+}
+extern "C" void d2_elf_tls_metadata(uint32_t *va, uint32_t *file, uint32_t *mem) {
+    *va = g_tls_vaddr; *file = g_tls_filesz; *mem = g_tls_memsz;
+}
+'''
+    return prefix + parser + suffix
+
+
 def adapt_android(name, data):
     text = data.decode()
     def replace(old, new, count=1):
@@ -113,6 +148,11 @@ def prepare(sdk, output):
     if output.exists():
         raise RuntimeError('Output already exists; use a new directory. Nothing overwritten.')
     adapted = {name: adapt_android(name, data) for name, data in files.items()}
+    loader_path = 'runtime/ppu/ppu_loader.cpp'
+    loader_original = git('show', lock['tree'] + ':' + loader_path)
+    # Not added to include traversal: the full loader pulls in HLE/RSX services
+    # that this subset intentionally neither links nor pretends to implement.
+    adapted['generated/ppu_elf_subset.cpp'] = elf_subset(loader_original)
     output.mkdir(parents=True)
     for name, data in adapted.items():
         target = output / name
@@ -120,6 +160,9 @@ def prepare(sdk, output):
         target.write_bytes(data)
     receipt = {'schema': 1, 'sdk_tree': lock['tree'], 'game_sources_included': False,
                'android_adaptations': ['cooperative-guest-poll-stop', 'tid-based-affinity'],
+               'elf_subset_source': {'path': loader_path,
+                   'sha256': hashlib.sha256(loader_original).hexdigest(),
+                   'scope': 'validation-and-segment-copy-before-debug-hooks'},
                'original_files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(files.items())},
                'files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(adapted.items())}}
     (output / 'core-provenance.json').write_text(json.dumps(receipt, indent=2) + '\n')

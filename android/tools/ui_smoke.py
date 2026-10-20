@@ -55,7 +55,7 @@ def main():
         button()
     for _ in range(12):
         report = adb('shell', 'run-as', PACKAGE, 'cat', 'files/android-vulkan-report.txt')
-        if 'status=presenting-test-triangle' in report and 'core_status=passed' in report:
+        if 'status=presenting-test-triangle' in report and 'elf_status=passed' in report:
             break
         time.sleep(1)
     (args.output / 'native-report.txt').write_text(report)
@@ -69,6 +69,18 @@ def main():
                  'core_spu_instruction_vectors', 'core_spu_numeric_vectors', 'core_guest_poll_stop', 'core_vm_release'):
         assert name + '=passed' in report, report
     assert 'core_full_runtime_linked=false' in report
+    assert 'elf_status=passed' in report and 'elf_failures=0' in report, report
+    assert 'elf_full_ppu_loader_linked=false' in report
+    assert 'elf_code_executed=false' in report
+    assert 'elf_game_loaded=false' in report
+    assert 'elf_rejected_fixtures=29' in report, report
+    for name in ('elf_segments_and_bss', 'elf_entry_opd_and_toc',
+                 'elf_tls_template_metadata', 'elf_invalid_images_no_monitored_writes',
+                 'elf_truncated_images_rejected', 'elf_tls_destination_overflow_rejected',
+                 'elf_unmapped_tls_rejected', 'elf_overflowing_sections_rejected',
+                 'elf_valid_reload_after_rejections', 'elf_absent_tls_resets_metadata',
+                 'elf_fixture_file_removed', 'elf_vm_release'):
+        assert name + '=passed' in report, report
     bounds = button()
     (args.output / 'controls.xml').write_text(ET.tostring(hierarchy(), encoding='unicode'))
     # Capture the compositor output, not merely the Java layout.
@@ -84,7 +96,8 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
-    print('PASS: SDK core primitive tests, Vulkan presents, diagnostic panel visible, Home/restore twice, share chooser opens')
+    assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-elf-fixture-')
+    print('PASS: SDK core + ELF subset (29 rejected fixtures), Vulkan presents, Home/restore twice, share chooser opens')
 
 
 if __name__ == '__main__':

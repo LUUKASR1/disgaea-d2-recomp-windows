@@ -28,6 +28,9 @@ jobs:
       - name: Compile Android app and reused Vulkan renderer
         run: |
           python3 android/tools/prepare_core_sdk.py
+          cmake -S android/core -B android-core-host -DCMAKE_BUILD_TYPE=Release
+          cmake --build android-core-host -j 2
+          ctest --test-dir android-core-host --output-on-failure
           gradle -p android assembleDebug lintDebug --no-daemon --stacktrace
       - name: Verify signed APK and actual AArch64 binary
         run: |
@@ -37,14 +40,14 @@ jobs:
             --readelf "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 android/app/build/outputs/apk/debug/app-debug.apk
           mkdir android-download
-          cp android/app/build/outputs/apk/debug/app-debug.apk android-download/DisgaeaD2-Android-0.0.3-Core-Test-arm64.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-download/DisgaeaD2-Android-0.0.4-ELF-Test-arm64.apk
           cp android/README.md android-download/README.md
           cp LICENSE THIRD_PARTY_NOTICES.md android-download/
           cd android-download
           sha256sum *.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-Android-0.0.3-Core-Test-arm64
+          name: DisgaeaD2-Android-0.0.4-ELF-Test-arm64
           path: android-download/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -91,5 +94,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Android-0.0.3-Actual-UI-Smoke
+          name: Android-0.0.4-Actual-UI-Smoke
           path: android-ui-smoke/

@@ -9,8 +9,8 @@ android {
         applicationId 'org.disgaead2.bootstrap'
         minSdk 28
         targetSdk 35
-        versionCode 3
-        versionName '0.0.3-vulkan-bootstrap'
+        versionCode 4
+        versionName '0.0.4-elf-subset-test'
         // x86_64 is only for CI's Android emulator. Distributed APK stays ARM64.
         ndk { abiFilters project.hasProperty('d2EmulatorSmoke') ? 'x86_64' : 'arm64-v8a' }
         externalNativeBuild {
