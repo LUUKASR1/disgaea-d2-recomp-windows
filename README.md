@@ -2,9 +2,11 @@
 
 # Disgaea D2 WINPORT — Windows / DirectX 12
 
-## Versão pública oficial do projeto — 0.2.2 Stable
+## Versão pública oficial do projeto — 0.2.3 Stable
 
 Baixe o **instalador** ou o **ZIP portátil** em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest).
+**Atualizações:** o launcher verifica novas versões estáveis ao abrir. Em **Arquivos e suporte**, você pode verificar manualmente ou desligar a consulta automática. O botão de download abre a release no GitHub; feche o jogo e o launcher antes de instalar.
+
 **Saves:** use **Meus saves — abrir pasta** na tela inicial ou **Arquivos e suporte → Abrir pasta de saves**. **Como usar meu save** mostra o destino e as instruções; feche o jogo e faça backup antes de copiar.
 
 Idioma do launcher: **Português (Brasil) / English**, com seleção abaixo de WIN PORT.
@@ -12,25 +14,27 @@ Selecione sua própria **ISO USA compatível** e o PKG da atualização **BLUS31
 
 **DirectX 12**, configurações de resolução interna/saída, janela/tela cheia sem bordas, VSync, Hz e FSR 1 espacial. Vulkan, DLSS, Frame Generation e Android ainda não estão disponíveis. HUD após upscaling permanece experimental e desligado por padrão.
 
-[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-0.2.2.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
+[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-0.2.3.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
 
 A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` por compatibilidade com a linha testada. Não apague essa pasta. Outros perfis são preservados, sem migração universal automática.
 
 **Save do PS3:** [guia de importação experimental — PT-BR / English](docs/SAVES-PS3.md). A compatibilidade com saves reais do console ainda não foi validada.
 
-## Official project release — 0.2.2 Stable
+## Official project release — 0.2.3 Stable
+
+**Updates:** the launcher checks for newer stable releases at startup. Under **Files and support**, check manually or disable automatic checks. The download button opens the GitHub release; close the game and launcher before installing.
 
 **Saves:** use **My saves — open folder** on Home or **Files and support → Open save folder**. **How to use my save** shows the destination and instructions; close the game and back up before copying.
 
 Launcher languages: **Português (Brasil) / English**, selected below WIN PORT.
 
-Download the **installer** or **portable ZIP** from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest). Provide your own supported US ISO, **BLUS31313 US 1.40** update PKG and optional DLCs. First-run downloads and local compilation are automatic and require internet. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android are unavailable. See the [release guide](docs/RELEASE-0.2.2.md) for requirements, save compatibility and known limitations.
+Download the **installer** or **portable ZIP** from [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest). Provide your own supported US ISO, **BLUS31313 US 1.40** update PKG and optional DLCs. First-run downloads and local compilation are automatic and require internet. DirectX 12 only; Vulkan, DLSS, Frame Generation and Android are unavailable. See the [release guide](docs/RELEASE-0.2.3.md) for requirements, save compatibility and known limitations.
 
 **PS3 saves:** [experimental import guide — English / PT-BR](docs/SAVES-PS3.md#english). Actual console-save compatibility has not been verified.
 
 **No game data, updates/DLC, firmware, keys, saves or game-derived compiled code is distributed.** Independent community project, not an official release from the game's rights holders.
 
-**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v0.2.2](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v0.2.2). Use this tag when building the released version from source.
+**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v0.2.3](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v0.2.3). Use this tag when building the released version from source.
 
 ## Sobre o projeto
 
@@ -64,7 +68,7 @@ This work builds on the original project by **Sean13128** and on **ps3recomp**, 
 
 Windows x64 adaptation of [Sean13128/disgaea-d2-recomp](https://github.com/Sean13128/disgaea-d2-recomp), based on [ps3recomp](https://github.com/sp00nznet/ps3recomp). The official 0.2.1 launcher uses DirectX 12 and generates the recognized US 1.40 runtime locally from user-provided files. The GPU command translation layer remains part of the runtime. A launcher release is not evidence that the entire campaign, every DLC or every PC configuration has been validated.
 
-Vulkan and temporal upscaling development remain experimental and separate from the public playable renderer. See [LICENSE](LICENSE), [third-party credits](THIRD_PARTY_NOTICES.md), [test history](docs/STATUS-WINDOWS.md) and the [0.2.1 guide](docs/RELEASE-0.2.2.md).
+Vulkan and temporal upscaling development remain experimental and separate from the public playable renderer. See [LICENSE](LICENSE), [third-party credits](THIRD_PARTY_NOTICES.md), [test history](docs/STATUS-WINDOWS.md) and the [0.2.1 guide](docs/RELEASE-0.2.3.md).
 
 ## Visão geral técnica
 
