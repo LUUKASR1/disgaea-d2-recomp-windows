@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">D2 Android • Teste Vulkan</string>
+    <string name="test_notice">ANDROID ARM64 • TESTE VULKAN\nAinda não executa Disgaea D2</string>
+    <string name="share_report">Compartilhar relatório</string>
+    <string name="report_pending">O relatório ainda não está pronto. Aguarde alguns segundos e tente novamente.</string>
+    <string name="report_title">Diagnóstico Disgaea D2 Android</string>
+</resources>

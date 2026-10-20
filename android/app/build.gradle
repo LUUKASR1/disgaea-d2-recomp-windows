@@ -1,0 +1,26 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.disgaead2.bootstrap'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    ndkVersion '28.2.13676358'
+    defaultConfig {
+        applicationId 'org.disgaead2.bootstrap'
+        minSdk 28
+        targetSdk 35
+        versionCode 1
+        versionName '0.0.1-vulkan-bootstrap'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild {
+            cmake { arguments '-DANDROID_STL=c++_static', '-DBUILD_TESTING=OFF' }
+        }
+    }
+    externalNativeBuild {
+        cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.22.1' }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

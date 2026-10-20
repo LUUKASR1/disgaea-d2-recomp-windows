@@ -106,6 +106,8 @@ class Renderer::Impl {
   DECLARE(vkDestroyDebugUtilsMessengerEXT)
 #ifdef _WIN32
   DECLARE(vkCreateWin32SurfaceKHR)
+#elif defined(__ANDROID__)
+  DECLARE(vkCreateAndroidSurfaceKHR)
 #endif
 #undef DECLARE
   VkInstance instance = VK_NULL_HANDLE;
@@ -656,6 +658,12 @@ public:
       throw Unavailable("Vulkan loader not found in Windows system directory");
     gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
         GetProcAddress(library, "vkGetInstanceProcAddr"));
+#elif defined(__ANDROID__)
+    library = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    if (!library)
+      throw Unavailable("Android Vulkan loader unavailable");
+    gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+        dlsym(library, "vkGetInstanceProcAddr"));
 #else
     library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
     if (!library)
@@ -677,6 +685,11 @@ public:
     if (window) {
       extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
       extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+    }
+#elif defined(__ANDROID__)
+    if (window) {
+      extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+      extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
     }
 #else
     if (window)
@@ -736,6 +749,12 @@ public:
       si.hinstance = GetModuleHandleW(nullptr);
       si.hwnd = (HWND)window;
       OK(vkCreateWin32SurfaceKHR(instance, &si, nullptr, &surface));
+#elif defined(__ANDROID__)
+      LOAD(vkCreateAndroidSurfaceKHR)
+      VkAndroidSurfaceCreateInfoKHR si{
+          VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+      si.window = static_cast<ANativeWindow *>(window);
+      OK(vkCreateAndroidSurfaceKHR(instance, &si, nullptr, &surface));
 #endif
     }
 #undef LOAD
