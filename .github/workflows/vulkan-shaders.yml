@@ -1,0 +1,150 @@
+name: Vulkan RSX shader compiler
+on:
+  push:
+    paths: ['port/vulkan/**', '.github/workflows/vulkan-shaders.yml']
+  pull_request:
+    paths: ['port/vulkan/**', '.github/workflows/vulkan-shaders.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/bootstrap_windows.py shader-sdk
+      - run: cmake -S port/vulkan -B build-shader -DD2_VULKAN_SHADER_COMPILER=ON -DD2_RSX_SDK_DIR=${{ github.workspace }}/shader-sdk -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-shader --config Release --parallel 2
+      - run: ctest --test-dir build-shader -C Release -R "rsx_hlsl|rsx_shader_corpus" --output-on-failure
+      - name: Independently validate emitted SPIR-V
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y spirv-tools mesa-vulkan-drivers vulkan-validationlayers
+          for file in build-shader/shader-check/*.spv; do spirv-val --target-env vulkan1.1 "$file"; done
+          export VK_ICD_FILENAMES=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)
+          test -n "$VK_ICD_FILENAMES"
+          build-shader/DisgaeaD2RsxGpuProbe --validation --output build-shader/rsx-gpu-check
+          build-shader/DisgaeaD2DrawReplay --self-test --validation --output build-shader/draw-self-test
+          python3 port/vulkan/tests/draw_packet_tests.py build-shader/DisgaeaD2DrawReplay --validation
+          ctest --test-dir build-shader --output-on-failure
+          for file in build-shader/corpus-self-test/*.spv; do spirv-val --target-env vulkan1.1 "$file"; done
+      - name: Package single-executable Windows shader checker and required licenses
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory shader-probe
+          Copy-Item build-shader/Release/DisgaeaD2ShaderProbe.exe shader-probe/
+          Copy-Item port/vulkan/shader/README.md shader-probe/
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt shader-probe/
+          Copy-Item shader-sdk/LICENSE shader-probe/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location shader-probe
+          & ./DisgaeaD2ShaderProbe.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone embedded DXC test failed' }
+          Pop-Location
+          Remove-Item -Recurse -Force shader-probe/shader-check
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Temporary embedded compiler cleanup failed' }
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-RSX-Shader-Probe-Windows-x64
+          path: shader-probe/
+      - name: Package experimental RSX GPU checker (no game files)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory rsx-gpu-probe
+          Copy-Item build-shader/Release/DisgaeaD2RsxGpuProbe.exe rsx-gpu-probe/
+          Copy-Item port/vulkan/shader/GPU-README.md rsx-gpu-probe/README.md
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt rsx-gpu-probe/
+          Copy-Item shader-sdk/LICENSE rsx-gpu-probe/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location rsx-gpu-probe
+          & ./DisgaeaD2RsxGpuProbe.exe
+          $result = $LASTEXITCODE
+          Pop-Location
+          if ($result -eq 77) { Write-Host 'No Vulkan ICD: Windows GPU execution is unavailable, not passed.' }
+          elseif ($result -ne 0) { throw 'RSX GPU probe failed' }
+          if (Test-Path rsx-gpu-probe/rsx-gpu-check) {
+            Copy-Item -Recurse rsx-gpu-probe/rsx-gpu-check build-shader/windows-rsx-gpu-check
+            Remove-Item -Recurse -Force rsx-gpu-probe/rsx-gpu-check
+          }
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Temporary embedded compiler cleanup failed' }
+          exit 0 # Driver-unavailable code 77 was handled above; do not propagate it.
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-RSX-GPU-Probe-Windows-x64
+          path: rsx-gpu-probe/
+          if-no-files-found: error
+      - name: Package corpus checker and test embedded compiler without game input
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory corpus-checker
+          Copy-Item build-shader/Release/DisgaeaD2ShaderCorpus.exe corpus-checker/
+          Copy-Item port/vulkan/shader/CORPUS-README.md corpus-checker/README.md
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt corpus-checker/
+          Copy-Item shader-sdk/LICENSE corpus-checker/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location corpus-checker
+          & ./DisgaeaD2ShaderCorpus.exe --self-test --output fixture-check
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone corpus checker self-test failed' }
+          Remove-Item -Recurse -Force fixture-check
+          Pop-Location
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Embedded compiler cleanup failed' }
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-Shader-Corpus-Checker-Windows-x64
+          path: corpus-checker/
+          if-no-files-found: error
+      - name: Package isolated draw replay without game data
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory draw-replay
+          Copy-Item build-shader/Release/DisgaeaD2DrawReplay.exe draw-replay/
+          Copy-Item port/vulkan/shader/DRAW-README.md draw-replay/README.md
+          Copy-Item build-shader/dxc-cache/windows/LICENSE*.txt draw-replay/
+          Copy-Item shader-sdk/LICENSE draw-replay/SDK-LICENSE.txt
+          $before = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*').FullName
+          Push-Location draw-replay
+          & ./DisgaeaD2DrawReplay.exe --self-test --output fixture-check
+          $result = $LASTEXITCODE
+          Pop-Location
+          if ($result -eq 77) { Write-Host 'No Vulkan ICD: draw GPU replay unavailable.' }
+          elseif ($result -ne 0) { throw 'Standalone draw replay self-test failed' }
+          Remove-Item -Recurse -Force draw-replay/fixture-check
+          $leftovers = @(Get-ChildItem $env:TEMP -Directory -Filter 'D2-DXC-*' | Where-Object { $_.FullName -notin $before })
+          if ($leftovers.Count -ne 0) { throw 'Embedded compiler cleanup failed' }
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows' && success()
+        with:
+          name: DisgaeaD2-Isolated-Draw-Replay-Windows-x64
+          path: draw-replay/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shader-compilation-report-${{ matrix.os }}
+          path: |
+            build-shader/shader-check/
+            build-shader/rsx-gpu-check/
+            build-shader/windows-rsx-gpu-check/
+            build-shader/corpus-self-test/
+            build-shader/draw-self-test/draw-vulkan-report.json
+            build-shader/Testing/Temporary/LastTest.log

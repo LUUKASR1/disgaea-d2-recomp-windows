@@ -30,6 +30,7 @@
 !/work/RECON.md
 !/port/
 /port/*
+!/port/vulkan/
 !/port/CMakeLists.txt
 !/port/main.cpp
 !/port/stubs.cpp
@@ -153,6 +154,9 @@
 !/windows/*.bat
 !/windows/perfil.json
 !/windows/config.exemplo.json
+!/windows/locales/
+/windows/locales/*
+!/windows/locales/en.json
 !/port/d2_*.h
 /windows/config.local.json
 /windows/*.log
@@ -170,3 +174,11 @@
 !/.github/workflows/iso-launcher.yml
 /build-iso-vfs/
 /ci-tools/
+
+# Native graphics sources and audited upstream FSR headers.
+!/.gitattributes
+!/port/graphics/
+!/port/graphics/**
+/port/graphics/build*/
+!/.github/workflows/graphics.yml
+/build-graphics/

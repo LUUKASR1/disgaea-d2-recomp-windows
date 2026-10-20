@@ -1,0 +1,69 @@
+name: Native Vulkan foundation
+on:
+  push:
+    paths: ['port/vulkan/**', 'port/graphics/backend_choice.h', '.github/workflows/vulkan.yml', 'docs/VULKAN.md']
+  pull_request:
+    paths: ['port/vulkan/**', 'port/graphics/backend_choice.h', '.github/workflows/vulkan.yml', 'docs/VULKAN.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install developer test dependencies
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools spirv-tools mesa-vulkan-drivers vulkan-validationlayers
+      - name: Compile and validate project-owned SPIR-V
+        run: python3 port/vulkan/generate_shaders.py
+      - run: cmake -S port/vulkan -B build-vulkan -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build-vulkan --parallel 2
+      - name: Actual GPU rendering and readback with Vulkan validation
+        run: |
+          export VK_ICD_FILENAMES=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)
+          test -n "$VK_ICD_FILENAMES"
+          build-vulkan/DisgaeaD2VulkanProbe --self-test --validation --report build-vulkan/validation.json
+          build-vulkan/d2_vulkan_geometry_tests --validation
+          build-vulkan/d2_vulkan_texture_tests --validation
+          build-vulkan/d2_vulkan_depth_tests --validation
+          ctest --test-dir build-vulkan --output-on-failure
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Vulkan-render-validation
+          path: |
+            build-vulkan/*.json
+            build-vulkan/Testing/Temporary/LastTest.log
+  windows-probe:
+    needs: render-test
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S port/vulkan -B build-vulkan -A x64
+      - run: cmake --build build-vulkan --config Release --parallel 2
+      - run: ctest --test-dir build-vulkan -C Release --output-on-failure
+      - name: Probe available driver (77 explicitly means unavailable)
+        shell: pwsh
+        run: |
+          & build-vulkan/Release/DisgaeaD2VulkanProbe.exe --self-test --report build-vulkan/windows-driver.json
+          $result = $LASTEXITCODE
+          if ($result -eq 77) { Write-Host 'No Vulkan ICD on hosted runner; GPU test unavailable.'; exit 0 }
+          exit $result
+      - name: Package standalone experimental probe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path vulkan-probe
+          Copy-Item build-vulkan/Release/DisgaeaD2VulkanProbe.exe vulkan-probe/
+          Copy-Item port/vulkan/README.md vulkan-probe/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2-Vulkan-Probe-Windows-x64
+          path: vulkan-probe/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Vulkan-Windows-driver-report
+          path: build-vulkan/windows-driver.json

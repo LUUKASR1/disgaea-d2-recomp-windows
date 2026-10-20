@@ -14,6 +14,46 @@ import launcher
 
 
 class DisplayTests(unittest.TestCase):
+    def test_graphics_api_migration_persistence_and_launch_gate(self):
+        self.assertEqual(display.validate_settings({})['graphics_api'], 'd3d12')
+        inherited = {'D2_GRAPHICS_API': 'vulkan'}
+        self.assertEqual(display.display_environment(inherited, {})['D2_GRAPHICS_API'], 'd3d12')
+        self.assertEqual(inherited['D2_GRAPHICS_API'], 'vulkan')
+        with tempfile.TemporaryDirectory() as home:
+            display.save_settings(home, {'graphics_api': 'vulkan'})
+            selected = display.load_settings(home)
+            self.assertEqual(selected['graphics_api'], 'vulkan')
+            with self.assertRaisesRegex(ValueError, 'em implementação'):
+                display.display_environment({}, selected)
+        for invalid in ('', 'opengl', None, True, 12):
+            with self.assertRaises(ValueError):
+                display.validate_settings({'graphics_api': invalid})
+
+    def test_refresh_choices_and_unlimited_environment(self):
+        migrated=display.validate_settings({'maximum_refresh':True})
+        self.assertEqual(migrated['refresh_rate'],'native')
+        self.assertFalse(migrated['fps_unlimited'])
+        for rate in display.REFRESH_RATES:
+            value=dict(migrated,refresh_rate=rate)
+            env=display.display_environment({'D2_MAX_REFRESH':'1','D2_REFRESH_RATE':'999','D2_GCM_UNLIMITED':'0'},value)
+            self.assertEqual(env['D2_REFRESH_RATE'],rate)
+            self.assertEqual(env['D2_MAX_REFRESH'],'0')
+            self.assertEqual(env['D2_GCM_UNLIMITED'],'0')
+        self.assertEqual(display.display_environment({},dict(migrated,fps_unlimited=False))['D2_GCM_UNLIMITED'],'0')
+        self.assertFalse(display.validate_settings(dict(migrated,fps_unlimited=True))['fps_unlimited'])
+        for invalid in ('240',60,True,None):
+            with self.assertRaises(ValueError):display.validate_settings(dict(migrated,refresh_rate=invalid))
+        for name in ('fps_unlimited','vrr'):
+            for invalid in (1,'true',None):
+                with self.assertRaises(ValueError):display.validate_settings(dict(migrated,**{name:invalid}))
+
+    def test_hud_output_migrates_off_and_overrides_inherited_flag(self):
+        self.assertFalse(display.validate_settings({'resolution':'1920x1080'})['hud_after_upscale'])
+        self.assertEqual(display.display_environment({'D2_HUD_AFTER_UPSCALE':'1'},display.DEFAULTS)['D2_HUD_AFTER_UPSCALE'],'0')
+        enabled=dict(display.DEFAULTS,hud_after_upscale=True)
+        self.assertEqual(display.display_environment({},enabled)['D2_HUD_AFTER_UPSCALE'],'1')
+        for value in (1,'true',None):
+            with self.assertRaises(ValueError):display.validate_settings(dict(enabled,hud_after_upscale=value))
     def test_defaults_keep_existing_profile(self):
         with tempfile.TemporaryDirectory() as home:
             self.assertEqual(display.load_settings(home), display.DEFAULTS)
@@ -31,7 +71,7 @@ class DisplayTests(unittest.TestCase):
             (home / 'save.dat').write_bytes(b'owned save')
             value = {'resolution': '2560x1440', 'mode': 'borderless', 'vsync': True}
             display.save_settings(home, value)
-            self.assertEqual(display.load_settings(home), value)
+            self.assertEqual(display.load_settings(home), dict(display.DEFAULTS, **value))
             self.assertEqual((home / 'build-atual.json').read_bytes(), b'working build')
             self.assertEqual((home / 'save.dat').read_bytes(), b'owned save')
             self.assertFalse((home / 'launcher-settings.tmp').exists())
@@ -55,6 +95,15 @@ class DisplayTests(unittest.TestCase):
             self.assertEqual(path.read_text(), '{broken')
             display.save_settings(root, display.DEFAULTS)
             self.assertEqual(display.load_settings(root), display.DEFAULTS)
+
+    def test_render_size_and_output_size_are_independent(self):
+        value = dict(display.DEFAULTS, resolution='2560x1440', render_resolution='1280x720', upscaler='fsr1')
+        env = display.display_environment({'D2_UPSCALER': 'dlss'}, value)
+        self.assertEqual((env['D2_RENDER_WIDTH'], env['D2_OUTPUT_WIDTH']), ('1280', '2560'))
+        self.assertEqual(env['D2_UPSCALER'], 'fsr1')
+        for bad in ({'upscaler': 'dlss'}, {'frame_generation': True}, {'fsr_sharpness': float('nan')},
+                    {'fsr_sharpness': True}, {'resolution': '1280x720', 'render_resolution': '3840x2160', 'upscaler': 'fsr1'}):
+            with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, **bad))
 
     def test_window_fits_monitor_and_retains_aspect(self):
         value = dict(display.DEFAULTS, resolution='3840x2160')
