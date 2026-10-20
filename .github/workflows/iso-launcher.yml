@@ -5,6 +5,8 @@ on:
       - 'windows/performance_report.py'
       - 'windows/test_performance_report.py'
       - 'windows/launcher.py'
+      - 'windows/direct_launch.py'
+      - 'windows/test_direct_launch.py'
       - 'windows/launcher_gui.py'
       - 'windows/launcher_i18n.py'
       - 'windows/locales/**'
@@ -32,6 +34,8 @@ on:
       - 'windows/performance_report.py'
       - 'windows/test_performance_report.py'
       - 'windows/launcher.py'
+      - 'windows/direct_launch.py'
+      - 'windows/test_direct_launch.py'
       - 'windows/launcher_gui.py'
       - 'windows/launcher_i18n.py'
       - 'windows/locales/**'
@@ -97,8 +101,11 @@ jobs:
             if (Test-Path $log) { Get-Content $log -Tail 100 }
           }
           if ($process.ExitCode -ne 0) { throw 'Embedded PKG/SELF tests failed' }
+      - name: Name direct game entry point
+        shell: pwsh
+        run: Move-Item dist/DisgaeaD2Launcher-HUD-Output-Preview.exe dist/DisgaeaD2.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2Launcher-HUD-Output-Preview-Windows-x64
-          path: dist/DisgaeaD2Launcher-HUD-Output-Preview.exe
+          name: DisgaeaD2-Direct-Start-Windows-x64
+          path: dist/DisgaeaD2.exe
           if-no-files-found: error

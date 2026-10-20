@@ -248,5 +248,11 @@
   "Verificar runtimes oficiais do Windows": "Check official Windows runtimes",
   "Reaproveitar texturas compatíveis — experimental": "Reuse compatible textures — experimental",
   "Compare com a opção desligada usando as mesmas configurações. Requer fechar e abrir o jogo; não amplia o cache de texturas.": "Compare with the option off using the same settings. Close and relaunch the game to apply; the texture cache capacity stays the same.",
-  "Preparar atributos por desenho — experimental": "Prepare vertex attributes per draw — experimental"
+  "Preparar atributos por desenho — experimental": "Prepare vertex attributes per draw — experimental",
+  "Iniciando o jogo…": "Starting the game…",
+  "Aguarde a preparação ou feche a janela do jogo.": "Wait for preparation or close the game window.",
+  "Não foi possível iniciar o jogo. Abrir configurações?": "Could not start the game. Open settings?",
+  "Criar atalhos de Jogar e Configurações": "Create Play and Settings shortcuts",
+  "Extraia o executável para uma pasta permanente antes de criar os atalhos.": "Extract the executable to a permanent folder before creating shortcuts.",
+  "Atalhos de Jogar e Configurações criados na área de trabalho.": "Play and Settings shortcuts created on the desktop."
 }

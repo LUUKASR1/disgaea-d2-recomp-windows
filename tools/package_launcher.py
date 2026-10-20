@@ -38,6 +38,8 @@ vendor = staging / 'vendor'
 if onefile:
     (vendor / 'standalone.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
     (vendor / 'graphics.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
+if onefile and not official:
+    (vendor / 'direct-start.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
 if official:
     (vendor / 'official-release.json').write_text(json.dumps({'version': '0.2.0', 'graphics_api': 'd3d12'}), encoding='utf-8')
 for name in ('cmake', 'ninja'):

@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.62-no-flip-state-preview'
+VERSION = '0.2.0' if OFFICIAL_RELEASE else '0.1.63-direct-start-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -638,7 +638,7 @@ class Backend:
                   '--json-include', ROOT / 'vendor/include'], env, label='Preparar runtime gráfico separado')
         return output / 'build/DisgaeaD2Recomp.exe'
 
-    def play(self, iso_path=None, iso_executable=None, iso_root=None):
+    def play(self, iso_path=None, iso_executable=None, iso_root=None, on_game_started=None):
         config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
         repo = Path(config['workspace'])
         if iso_path is None and config.get('iso_path'):
@@ -703,6 +703,8 @@ class Backend:
             thread = threading.Thread(target=configure, daemon=True)
             workers.append(thread)
             thread.start()
+            if on_game_started:
+                on_game_started()
         log = self.home / 'logs' / (('jogo-ISO-' if iso_path else 'jogo-') + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
         try:
             command = [iso_executable or repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf']
@@ -752,6 +754,17 @@ def gui():
     run_gui(Backend, HOME, VERSION, firmware_present, official=OFFICIAL_RELEASE)
 
 
+def direct_play():
+    from direct_launch import run_direct
+    if os.name == 'nt':
+        import ctypes
+        if ctypes.windll.user32.GetAsyncKeyState(0x10) & 0x8000:
+            gui(); return
+    Backend(lambda text: None).adopt_standalone_for_graphics()
+    if not run_direct(Backend, HOME, VERSION):
+        gui()
+
+
 def main():
     if os.name == 'nt':
         import ctypes
@@ -771,6 +784,7 @@ def main():
         import capstone, construct, Crypto, tabulate, tqdm, py7zr
         import argparse, dataclasses, glob, struct, tempfile
         from launcher_i18n import Localizer
+        from direct_launch import prepared_profile, create_shortcuts, run_direct
         if Localizer('en')('Salvar configurações') != 'Save settings':
             raise RuntimeError('Bundled English catalog is unavailable')
         if not (ROOT / 'payload/patches/SDK-WINDOWS.lock').is_file():
@@ -923,10 +937,14 @@ int main(int argc, char** argv) {
             raise RuntimeError('Automatic firmware installation incomplete')
         backend.ensure_firmware(helper, None)
         (HOME / 'firmware-test-ok.txt').write_text('OK')
+    elif sys.argv[1:] == ['--play']:
+        direct_play()
+    elif sys.argv[1:] == ['--settings']:
+        gui()
     elif len(sys.argv) > 1:
         raise ValueError('Argumentos internos nao reconhecidos: ' + repr(sys.argv[1:]))
     else:
-        gui()
+        direct_play() if (ROOT / 'vendor/direct-start.json').is_file() else gui()
 
 
 if __name__ == '__main__':

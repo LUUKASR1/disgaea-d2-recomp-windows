@@ -388,6 +388,17 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(page, 'Abrir pasta de saves', lambda: open_path(home / ('hdd0/home' if standalone else 'auxiliar-rpcs3/dev_hdd0/home')))
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
+    def shortcuts():
+        if not getattr(sys, 'frozen', False):
+            messagebox.showinfo('Disgaea D2', 'Extraia o executável para uma pasta permanente antes de criar os atalhos.'); return
+        try:
+            from direct_launch import create_shortcuts
+            create_shortcuts(sys.executable)
+        except Exception as error:
+            messagebox.showerror('Disgaea D2', str(error)); return
+        status.set('Atalhos de Jogar e Configurações criados na área de trabalho.')
+    button(page, 'Criar atalhos de Jogar e Configurações', shortcuts)
+
     if not official:
         measurement = card(page)
         label(measurement, 'MEDIÇÃO LEVE DE DESEMPENHO', 12, GOLD, True)
