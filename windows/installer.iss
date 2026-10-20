@@ -1,6 +1,6 @@
 ; The installer owns only the launcher directory, never user game/build/save data.
 #ifdef OfficialRelease
-#define AppVersion "0.2.2"
+#define AppVersion "0.2.3"
 #define AppChannel "Stable - DirectX 12"
 #else
 #define AppVersion "0.1.10"

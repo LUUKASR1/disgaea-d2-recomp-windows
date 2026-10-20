@@ -91,6 +91,35 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     status = TextVariable(value=initial_error or ('Sua build está pronta. Clique em Jogar.' if ready else 'Clique em Jogar e selecione os arquivos da sua cópia.'))
     build_status = TextVariable(value='BUILD LOCAL DISPONÍVEL' if ready else 'PRIMEIRA PREPARAÇÃO')
     summary = TextVariable()
+    from update_checker import auto_check_enabled
+    update_status = TextVariable(value='Atualizações: ainda não verificadas.')
+    auto_updates = tk.BooleanVar(value=auto_check_enabled(home))
+    update_state = {'busy': False, 'url': None}
+
+    def check_updates():
+        if update_state['busy']:
+            return
+        update_state['busy'] = True
+        update_status.set('Verificando atualizações…')
+        def execute():
+            try:
+                from update_checker import check_latest
+                events.put(('update_result', check_latest(version)))
+            except Exception:
+                events.put(('update_error', ''))
+        threading.Thread(target=execute, daemon=True).start()
+
+    def download_update():
+        if update_state['url']:
+            webbrowser.open(update_state['url'])
+
+    def update_preference():
+        try:
+            from update_checker import save_auto_check
+            save_auto_check(home, auto_updates.get())
+        except OSError as error:
+            messagebox.showerror('Atualizações', str(error))
+
 
     def label(parent, text='', size=11, color=TEXT, bold=False, variable=None, wrap=640):
         widget = tk.Label(parent, text=text, textvariable=variable, bg=parent['bg'], fg=color,
@@ -258,6 +287,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
 
     page = bodies['Início']
     label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
+    label(page, variable=update_status, size=10, color=GOLD)
     hero = tk.Canvas(page, height=278, bg=BG, highlightthickness=0)
     hero.pack(fill='x', pady=(0, 6))
     logo_item = hero.create_image(0, 0, image=logo_image, anchor='n')
@@ -386,6 +416,19 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     label(page, 'TUDO EM UM LUGAR', 10, GOLD, True)
     label(page, 'Arquivos e suporte', 28, bold=True)
     label(page, 'Sua build, configuração e saves ficam na pasta local do aplicativo.', color=MUTED)
+    updates = card(page)
+    label(updates, 'Atualizações do launcher', 12, GOLD, True)
+    label(updates, variable=update_status, size=10)
+    button(updates, 'Verificar atualizações', check_updates)
+    download_button = button(updates, 'Baixar atualização no GitHub', download_update)
+    download_button.configure(state='disabled')
+    auto_toggle = tk.Checkbutton(updates, text='Verificar ao abrir o launcher', variable=auto_updates,
+        command=update_preference, bg=CARD, fg=TEXT, selectcolor=PANEL,
+        activebackground=CARD, activeforeground=TEXT, font=('Segoe UI', 10))
+    auto_toggle.pack(anchor='w', pady=4)
+    entries.append(auto_toggle)
+    label(updates, 'A verificação não impede jogar. A instalação é manual: feche o jogo e o launcher antes de executar o novo instalador.', 10, MUTED)
+
     def open_path(path):
         path.mkdir(parents=True, exist_ok=True)
         os.startfile(path)
@@ -440,11 +483,21 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         nonlocal busy, ready, config
         while not events.empty():
             kind, message = events.get()
-            if kind == 'done':
+            if kind == 'update_result':
+                update_state['busy'] = False
+                update_state['url'] = message['url'] if message['available'] else None
+                update_status.set('Nova versão disponível: {version}'.format(version=message['version'])
+                    if message['available'] else 'Seu launcher está atualizado.')
+                download_button.configure(state='normal' if update_state['url'] and not busy else 'disabled')
+            elif kind == 'update_error':
+                update_state['busy'] = False
+                update_status.set('Não foi possível verificar agora. Você pode jogar normalmente.')
+            elif kind == 'done':
                 busy = False
                 progress.stop()
                 for widget in buttons + entries:
                     widget.configure(state='readonly' if isinstance(widget, ttk.Combobox) else 'normal')
+                download_button.configure(state='normal' if update_state['url'] else 'disabled')
                 update_summary()
             elif kind == 'prepared':
                 config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
@@ -472,7 +525,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     app.protocol('WM_DELETE_WINDOW', close)
     bindings = widget_bindings(app, translate, excluded=(language_combo,))
     localized_variables = (firmware_text, package_text, mode, refresh_rate, upscaler,
-                           capture_goal, capture_status, status, build_status, summary)
+                           capture_goal, capture_status, status, build_status, summary, update_status)
     def apply_language():
         for binding in bindings:
             binding()
@@ -499,6 +552,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     apply_language()
     show('Início')
     poll()
+    if official and not preview and auto_updates.get():
+        app.after(1200, check_updates)
     if preview:
         return app, show
     app.mainloop()

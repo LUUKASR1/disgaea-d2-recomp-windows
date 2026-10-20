@@ -249,5 +249,16 @@
   "Meus saves": "My saves",
   "Meus saves — abrir pasta": "My saves — open folder",
   "Como usar meu save": "How to use my save",
-  "1. Feche o jogo antes de copiar qualquer save.\n2. Faça uma cópia de segurança da pasta atual.\n3. Copie a pasta completa do seu save compatível para a pasta abaixo, preservando seu nome e os arquivos internos. Não coloque uma pasta savedata dentro de outra.\n4. Abra o jogo e use Carregar.\n\nDestino:\n{path}\n\nSaves do PS3 precisam estar em formato compatível e descriptografado; copiar um backup cifrado do console não é suficiente. A compatibilidade entre regiões/versões não é garantida. O launcher não converte, descriptografa nem sobrescreve saves automaticamente.": "1. Close the game before copying any save.\n2. Back up the current folder.\n3. Copy the complete compatible save folder into the folder below, preserving its name and all files inside. Do not nest one savedata folder inside another.\n4. Open the game and choose Load.\n\nDestination:\n{path}\n\nPS3 saves must be in a compatible, decrypted format; copying an encrypted console backup is not sufficient. Compatibility across regions/versions is not guaranteed. The launcher does not automatically convert, decrypt or overwrite saves."
+  "1. Feche o jogo antes de copiar qualquer save.\n2. Faça uma cópia de segurança da pasta atual.\n3. Copie a pasta completa do seu save compatível para a pasta abaixo, preservando seu nome e os arquivos internos. Não coloque uma pasta savedata dentro de outra.\n4. Abra o jogo e use Carregar.\n\nDestino:\n{path}\n\nSaves do PS3 precisam estar em formato compatível e descriptografado; copiar um backup cifrado do console não é suficiente. A compatibilidade entre regiões/versões não é garantida. O launcher não converte, descriptografa nem sobrescreve saves automaticamente.": "1. Close the game before copying any save.\n2. Back up the current folder.\n3. Copy the complete compatible save folder into the folder below, preserving its name and all files inside. Do not nest one savedata folder inside another.\n4. Open the game and choose Load.\n\nDestination:\n{path}\n\nPS3 saves must be in a compatible, decrypted format; copying an encrypted console backup is not sufficient. Compatibility across regions/versions is not guaranteed. The launcher does not automatically convert, decrypt or overwrite saves.",
+  "Atualizações": "Updates",
+  "Atualizações: ainda não verificadas.": "Updates: not checked yet.",
+  "Verificando atualizações…": "Checking for updates…",
+  "Atualizações do launcher": "Launcher updates",
+  "Verificar atualizações": "Check for updates",
+  "Baixar atualização no GitHub": "Download update on GitHub",
+  "Verificar ao abrir o launcher": "Check when the launcher opens",
+  "A verificação não impede jogar. A instalação é manual: feche o jogo e o launcher antes de executar o novo instalador.": "Checking does not prevent playing. Installation is manual: close the game and launcher before running the new installer.",
+  "Nova versão disponível: {version}": "New version available: {version}",
+  "Seu launcher está atualizado.": "Your launcher is up to date.",
+  "Não foi possível verificar agora. Você pode jogar normalmente.": "Could not check right now. You can play normally."
 }
