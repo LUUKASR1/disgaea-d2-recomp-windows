@@ -15,7 +15,9 @@ def adb(*args):
 
 
 def hierarchy():
-    adb('shell', 'uiautomator', 'dump', '/sdcard/d2-ui.xml')
+    # PopupWindow is deliberately non-focusable to preserve gamepad focus.
+    # Query all interactive windows, not just the focused native game window.
+    adb('shell', 'uiautomator', 'dump', '--windows', '/sdcard/d2-ui.xml')
     return ET.fromstring(adb('shell', 'cat', '/sdcard/d2-ui.xml'))
 
 
@@ -73,4 +75,26 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        # Keep compositor/window evidence even when the first visibility check
+        # fails, so a missing control can be distinguished from a test-query bug.
+        out = Path('android-ui-smoke')
+        out.mkdir(exist_ok=True)
+        for name, command in (
+            ('failure-windows.txt', ('shell', 'dumpsys', 'window', 'windows')),
+            ('failure-logcat.txt', ('logcat', '-d', '-t', '300')),
+            ('failure-native-report.txt', ('shell', 'run-as', PACKAGE, 'cat', 'files/android-vulkan-report.txt')),
+        ):
+            try:
+                (out / name).write_text(adb(*command))
+            except subprocess.SubprocessError:
+                pass
+        try:
+            (out / 'failure-hierarchy.xml').write_text(ET.tostring(hierarchy(), encoding='unicode'))
+            adb('shell', 'screencap', '-p', '/sdcard/d2-failure.png')
+            adb('pull', '/sdcard/d2-failure.png', out / 'failure.png')
+        except Exception:
+            pass
+        raise
