@@ -1,4 +1,4 @@
-// Android platform smoke test. No PPU/SPU runtime or game assets are linked.
+// Android platform and SDK primitive tests. No full runtime or game assets.
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
@@ -7,6 +7,9 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <mutex>
+#include <thread>
+#include "runtime_probe.h"
 #include "vulkan_renderer.h"
 
 namespace {
@@ -21,13 +24,31 @@ struct State {
     int last_key = 0, width = 0, height = 0;
     uint32_t api = 0;
     float stick_x = 0, stick_y = 0;
+    mutable std::mutex core_lock;
+    std::string core_report = "core_status=running\n";
+    std::thread core_worker;
+
+    void startCoreProbe() {
+        try {
+        core_worker = std::thread([this] {
+            char result[8192] = {};
+            d2_runtime_probe_run(result, sizeof result);
+            std::lock_guard<std::mutex> lock(core_lock);
+            core_report = result;
+        });
+        } catch (const std::exception &e) {
+            std::lock_guard<std::mutex> lock(core_lock);
+            core_report = std::string("core_status=failed\ncore_error=") + e.what() + '\n';
+        }
+    }
+    ~State() { if (core_worker.joinable()) core_worker.join(); }
 
     void report() const {
         // Atomic replacement prevents Java's share button reading half a report.
         const std::string path = std::string(app->activity->internalDataPath) + "/android-vulkan-report.txt";
         const std::string temporary = path + ".tmp";
         std::ofstream out(temporary, std::ios::trunc);
-        out << "Disgaea D2 Android bootstrap 0.0.2\n"
+        out << "Disgaea D2 Android bootstrap 0.0.3\n"
             << "game_runtime_linked=false\ngameplay_available=false\n"
 #if defined(__aarch64__)
             << "abi=arm64-v8a\n"
@@ -41,6 +62,10 @@ struct State {
             << "\ngamepad_key_downs=" << gamepad_keys << "\nlast_gamepad_keycode=" << last_key
             << "\njoystick_events=" << joystick_events << "\nlast_stick=" << stick_x << ',' << stick_y
             << "\ntouch_downs=" << touch_downs << '\n';
+        {
+            std::lock_guard<std::mutex> lock(core_lock);
+            out << core_report;
+        }
         out.flush();
         const bool ok = out.good();
         out.close();
@@ -161,6 +186,7 @@ extern "C" void android_main(android_app *app) {
     app->onAppCmd = command;
     app->onInputEvent = input;
     state.report();
+    state.startCoreProbe();
     while (!app->destroyRequested) {
         int events = 0;
         android_poll_source *source = nullptr;
@@ -172,6 +198,7 @@ extern "C" void android_main(android_app *app) {
         state.frame();
     }
     state.stop();
+    if (state.core_worker.joinable()) state.core_worker.join();
     state.status = "closed";
     state.report();
     app->userData = nullptr;

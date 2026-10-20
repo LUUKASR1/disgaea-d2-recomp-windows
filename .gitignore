@@ -192,11 +192,15 @@
 !/android/app/*.gradle
 !/android/app/src/main/AndroidManifest.xml
 !/android/app/src/main/cpp/*.cpp
+!/android/app/src/main/cpp/*.c
+!/android/app/src/main/cpp/*.h
 !/android/app/src/main/cpp/CMakeLists.txt
 !/android/app/src/main/java/org/disgaead2/bootstrap/*.java
 !/android/app/src/main/res/values/*.xml
 !/android/app/src/main/res/values-pt-rBR/*.xml
 !/android/tools/*.py
+!/android/core/CMakeLists.txt
+!/android/core/*.c
 /android/.gradle/
 /android/.cxx/
 /android/build/

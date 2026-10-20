@@ -9,8 +9,8 @@ android {
         applicationId 'org.disgaead2.bootstrap'
         minSdk 28
         targetSdk 35
-        versionCode 2
-        versionName '0.0.2-vulkan-bootstrap'
+        versionCode 3
+        versionName '0.0.3-vulkan-bootstrap'
         // x86_64 is only for CI's Android emulator. Distributed APK stays ARM64.
         ndk { abiFilters project.hasProperty('d2EmulatorSmoke') ? 'x86_64' : 'arm64-v8a' }
         externalNativeBuild {
@@ -22,6 +22,9 @@ android {
     }
     externalNativeBuild {
         cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.22.1' }
+    }
+    sourceSets {
+        main { assets.srcDirs += [rootProject.file('../android-runtime-core/licenses')] }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

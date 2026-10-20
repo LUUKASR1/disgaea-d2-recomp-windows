@@ -1,6 +1,37 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.2
+# Disgaea D2 — Android ARM64 bootstrap 0.0.3
 
 ## Português
+
+### Teste do núcleo na 0.0.3
+
+Esta etapa liga **componentes reais do SDK**, não o runtime completo do jogo.
+O diagnóstico roda uma única vez em uma thread de fundo, sem bloquear a interface:
+
+- `vm_init` reserva 4 GiB de **espaço virtual**, com alinhamento de 4 GiB.
+  Isso não significa consumir 4 GiB de RAM. A inicialização existente toca cerca
+  de 256 MiB de memória principal; o teste libera a reserva ao terminar.
+- Acessos big-endian, página no topo do espaço de endereços e alteração de proteção.
+- Operações inteiras PPU e o caminho inline de reserva/CAS, incluindo falha após
+  alteração do valor. O registro completo de reservas do loader e casos ABA não
+  estão validados por esse teste.
+- Quatro threads do shim do SDK fazem 20.000 incrementos no total usando o CAS
+  real em memória guest; também são verificados eventos e semáforo.
+- As próprias fixtures de instruções e operações numéricas SPU do SDK são
+  compiladas no APK. ARM64 usa os caminhos NEON que o SDK já fornece.
+
+O relatório deve incluir `core_status=passed`, `core_failures=0` e os resultados
+individuais `core_...`. Aguarde cerca de 10 segundos antes de compartilhar.
+Um resultado positivo não valida o scheduler PPU/SPU completo, syscalls/HLE,
+reservas entre PPU e contextos SPU, ELF loader, saves, áudio ou execução do jogo.
+Os hooks opcionais de debug/loader ficam desativados e abortam se acionados,
+em vez de simular uma implementação ausente.
+
+As fontes são extraídas do objeto Git fixado em `patches/SDK-WINDOWS.lock`, com
+hashes de proveniência. Nenhum checkout SDK do usuário é editado, e nenhuma
+fonte gerada a partir do jogo é lida. O APK inclui os avisos de licença do SDK.
+O probe é dono da VM neste aplicativo: antes de ligar um loader de jogo, ele
+precisa ser removido desse caminho ou isolado em outro processo. Não pode rodar
+simultaneamente sobre a VM de uma sessão de jogo.
 
 ### Correção da 0.0.2
 
@@ -12,7 +43,7 @@ some ao minimizar e reaparece ao retornar. O CI também testa a interface real e
 um emulador Android, incluindo o clique para abrir o compartilhamento.
 
 Se o Android recusar a atualização por diferença de assinatura, desinstale
-**somente o aplicativo de diagnóstico 0.0.1** e instale este APK. As chaves de
+**somente o aplicativo de diagnóstico anterior** e instale este APK. As chaves de
 debug do CI não são persistentes. Este app ainda não contém saves nem arquivos
 do jogo.
 
@@ -26,8 +57,8 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.2-Vulkan-Test-arm64.apk` e instale no Odin.
-2. Abra **D2 Android • Teste Vulkan**. Deve aparecer um triângulo colorido e um
+1. Baixe o APK `DisgaeaD2-Android-0.0.3-Core-Test-arm64.apk` e instale no Odin.
+2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos
    de botões, do direcional e do eixo esquerdo para diagnóstico, sem ações de jogo.
@@ -65,6 +96,7 @@ Requer JDK 17, Gradle 8.11.1, Android SDK 35 / Build Tools 35.0.0, NDK
 Não há Gradle wrapper binário neste repositório.
 
 ```sh
+python3 android/tools/prepare_core_sdk.py
 gradle -p android assembleDebug lintDebug
 ```
 
@@ -78,12 +110,27 @@ Referências: [NativeActivity](https://developer.android.com/ndk/samples/sample_
 
 ## English
 
+Version 0.0.3 links selected real SDK primitives, not the full game runtime.
+A one-shot background probe checks a 4 GiB aligned virtual reservation (about
+256 MiB of main memory is touched and then released), endian access, top-page
+protection, PPU integer and inline CAS behavior, 20,000 contested guest-memory
+increments using four SDK host threads, events/semaphore, and the SDK's own SPU
+instruction/numeric fixtures. ARM64 uses the SDK's existing NEON paths.
+
+Wait about 10 seconds before sharing. Expect `core_status=passed` and
+`core_failures=0`. Full PPU/SPU scheduling, loader reservation registry/ABA,
+SPU-context coherence, syscalls/HLE, game loading and gameplay remain unvalidated.
+Optional inactive debug/loader hooks fail closed if reached. This test owns its
+VM; it must be removed or process-isolated before a game loader shares that VM.
+Sources come from the locked SDK Git tree, without editing the SDK worktree or
+reading any generated game code. SDK license notices are included in the APK.
+
 **Diagnostic APK; it does not run the game yet.** Initial Android ARM64 platform
 test, targeting the AYN Odin 2 Portal first. Reuses the project's experimental
 Vulkan renderer with Android window/surface support, NativeActivity lifecycle
 handling and physical gamepad event counters. The Windows release is unchanged.
 
-Install the APK, open **D2 Android • Vulkan test**, and check for a colored
+Install the APK, open **D2 Android • Core test**, and check for a colored
 triangle and the diagnostic notice. Press physical buttons/D-pad and move the
 sticks. Background/restore the app twice, lock/unlock the screen, then use
 **Share diagnostic report** and describe any visual issue or crash. No ISO or
@@ -100,6 +147,7 @@ save storage, a user-owned game preparation strategy and thermal/performance
 testing. No game-derived code or assets are bundled.
 
 Build with JDK 17, Gradle 8.11.1, SDK/Build Tools 35, NDK 28.2.13676358 and CMake
-3.22.1: `gradle -p android assembleDebug lintDebug`. CI checks actual AArch64 ELF,
+3.22.1: `python3 android/tools/prepare_core_sdk.py
+gradle -p android assembleDebug lintDebug`. CI checks actual AArch64 ELF,
 16 KiB alignment, APK signing and package contents; it does not prove device
 compatibility or playable performance.

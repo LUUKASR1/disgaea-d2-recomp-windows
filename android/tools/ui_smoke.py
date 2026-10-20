@@ -55,13 +55,20 @@ def main():
         button()
     for _ in range(12):
         report = adb('shell', 'run-as', PACKAGE, 'cat', 'files/android-vulkan-report.txt')
-        if 'status=presenting-test-triangle' in report:
+        if 'status=presenting-test-triangle' in report and 'core_status=passed' in report:
             break
         time.sleep(1)
     (args.output / 'native-report.txt').write_text(report)
     assert 'status=presenting-test-triangle' in report, report
     assert re.search(r'presented_test_frames=[1-9]\d*', report), report
     assert 'gameplay_available=false' in report
+    assert 'core_status=passed' in report and 'core_failures=0' in report, report
+    for name in ('core_vm_reservation', 'core_ppu_big_endian', 'core_ppu_integer_ops',
+                 'core_ppu_inline_reservation_cas', 'core_host_threads_guest_cas',
+                 'core_auto_manual_events', 'core_counting_semaphore',
+                 'core_spu_instruction_vectors', 'core_spu_numeric_vectors', 'core_vm_release'):
+        assert name + '=passed' in report, report
+    assert 'core_full_runtime_linked=false' in report
     bounds = button()
     (args.output / 'controls.xml').write_text(ET.tostring(hierarchy(), encoding='unicode'))
     # Capture the compositor output, not merely the Java layout.
@@ -77,7 +84,7 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
-    print('PASS: Vulkan presents, diagnostic panel visible, Home/restore twice, share chooser opens')
+    print('PASS: SDK core primitive tests, Vulkan presents, diagnostic panel visible, Home/restore twice, share chooser opens')
 
 
 if __name__ == '__main__':

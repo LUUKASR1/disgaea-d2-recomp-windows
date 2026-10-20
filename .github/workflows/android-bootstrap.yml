@@ -26,7 +26,9 @@ jobs:
       - name: Install pinned SDK and ARM64 toolchain
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - name: Compile Android app and reused Vulkan renderer
-        run: gradle -p android assembleDebug lintDebug --no-daemon --stacktrace
+        run: |
+          python3 android/tools/prepare_core_sdk.py
+          gradle -p android assembleDebug lintDebug --no-daemon --stacktrace
       - name: Verify signed APK and actual AArch64 binary
         run: |
           python3 android/tools/verify_apk.py android/app/build/outputs/apk/debug/app-debug.apk \
@@ -35,14 +37,14 @@ jobs:
             --readelf "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 android/app/build/outputs/apk/debug/app-debug.apk
           mkdir android-download
-          cp android/app/build/outputs/apk/debug/app-debug.apk android-download/DisgaeaD2-Android-0.0.2-Vulkan-Test-arm64.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-download/DisgaeaD2-Android-0.0.3-Core-Test-arm64.apk
           cp android/README.md android-download/README.md
           cp LICENSE THIRD_PARTY_NOTICES.md android-download/
           cd android-download
           sha256sum *.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-Android-0.0.2-Vulkan-Test-arm64
+          name: DisgaeaD2-Android-0.0.3-Core-Test-arm64
           path: android-download/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -69,7 +71,9 @@ jobs:
       - name: Install pinned Android native tools
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - name: Build CI-only emulator ABI
-        run: gradle -p android assembleDebug -Pd2EmulatorSmoke --no-daemon --stacktrace
+        run: |
+          python3 android/tools/prepare_core_sdk.py
+          gradle -p android assembleDebug -Pd2EmulatorSmoke --no-daemon --stacktrace
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -87,5 +91,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Android-0.0.2-Actual-UI-Smoke
+          name: Android-0.0.3-Actual-UI-Smoke
           path: android-ui-smoke/
