@@ -27,8 +27,13 @@ struct State {
         const std::string path = std::string(app->activity->internalDataPath) + "/android-vulkan-report.txt";
         const std::string temporary = path + ".tmp";
         std::ofstream out(temporary, std::ios::trunc);
-        out << "Disgaea D2 Android bootstrap 0.0.1\n"
-            << "game_runtime_linked=false\ngameplay_available=false\nabi=arm64-v8a\n"
+        out << "Disgaea D2 Android bootstrap 0.0.2\n"
+            << "game_runtime_linked=false\ngameplay_available=false\n"
+#if defined(__aarch64__)
+            << "abi=arm64-v8a\n"
+#else
+            << "abi=x86_64-ci-smoke-only\n"
+#endif
             << "status=" << status << "\nerror=" << error << "\nadapter=" << adapter
             << "\nvulkan_api=" << api << "\nwindow=" << width << 'x' << height
             << "\npresented_test_frames=" << frames << "\nsurface_starts=" << starts
@@ -95,9 +100,10 @@ struct State {
                 resize_pending = false;
             }
             if (renderer->draw()) {
+                const bool first_present = status != "presenting-test-triangle";
                 ++frames;
                 status = "presenting-test-triangle";
-                if (frames == 1 || frames % 120 == 0) report();
+                if (first_present || frames % 120 == 0) report();
             } else resize_pending = true;
         } catch (const std::exception &e) { fail(e); }
     }

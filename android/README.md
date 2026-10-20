@@ -1,6 +1,20 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.1
+# Disgaea D2 — Android ARM64 bootstrap 0.0.2
 
 ## Português
+
+### Correção da 0.0.2
+
+O print do teste no Odin confirmou o triângulo, mas o painel de diagnóstico não
+apareceu na 0.0.1. NativeActivity entrega a superfície principal à renderização
+nativa; widgets comuns adicionados a essa janela foram encobertos pelos presents.
+A 0.0.2 usa uma janela de painel separada, sem roubar foco dos controles. Ela
+some ao minimizar e reaparece ao retornar. O CI também testa a interface real em
+um emulador Android, incluindo o clique para abrir o compartilhamento.
+
+Se o Android recusar a atualização por diferença de assinatura, desinstale
+**somente o aplicativo de diagnóstico 0.0.1** e instale este APK. As chaves de
+debug do CI não são persistentes. Este app ainda não contém saves nem arquivos
+do jogo.
 
 **APK de diagnóstico; ainda não executa o jogo.** Primeiro passo do port para
 Android, com foco inicial no AYN Odin 2 Portal. Não altera a versão Windows.
@@ -12,7 +26,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.1-Vulkan-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.2-Vulkan-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste Vulkan**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos

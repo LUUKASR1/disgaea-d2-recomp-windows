@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(D2AndroidBootstrap LANGUAGES C CXX)
-if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
+option(D2_ANDROID_EMULATOR_SMOKE "CI-only x86_64 Android UI smoke build" OFF)
+if(NOT ANDROID OR (NOT ANDROID_ABI STREQUAL "arm64-v8a" AND
+        NOT (D2_ANDROID_EMULATOR_SMOKE AND ANDROID_ABI STREQUAL "x86_64")))
     message(FATAL_ERROR "This bootstrap targets Android arm64-v8a only")
 endif()
 set(CMAKE_CXX_STANDARD 20)

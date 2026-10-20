@@ -1,0 +1,76 @@
+"""Exercise the actual Android window, share button and background/restore via adb."""
+import argparse
+from pathlib import Path
+import re
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+
+PACKAGE = 'org.disgaead2.bootstrap'
+ACTIVITY = PACKAGE + '/.BootstrapActivity'
+
+
+def adb(*args):
+    return subprocess.check_output(['adb', *map(str, args)], text=True, timeout=60)
+
+
+def hierarchy():
+    adb('shell', 'uiautomator', 'dump', '/sdcard/d2-ui.xml')
+    return ET.fromstring(adb('shell', 'cat', '/sdcard/d2-ui.xml'))
+
+
+def button():
+    for _ in range(12):
+        root = hierarchy()
+        found = [n for n in root.iter('node') if n.get('text') == 'Share diagnostic report']
+        if len(found) == 1:
+            bounds = list(map(int, re.findall(r'\d+', found[0].get('bounds', ''))))
+            if len(bounds) == 4 and bounds[2] > bounds[0] and bounds[3] > bounds[1]:
+                return bounds
+        time.sleep(1)
+    raise AssertionError('Share button is missing from the visible Android UI')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('apk', type=Path)
+    parser.add_argument('--output', type=Path, default=Path('android-ui-smoke'))
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    adb('install', '-r', args.apk)
+    adb('shell', 'am', 'start', '-W', '-n', ACTIVITY)
+    button()
+    for _ in range(2):
+        adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+        time.sleep(1)
+        adb('shell', 'am', 'start', '-W', '-n', ACTIVITY)
+        button()
+    for _ in range(12):
+        report = adb('shell', 'run-as', PACKAGE, 'cat', 'files/android-vulkan-report.txt')
+        if 'status=presenting-test-triangle' in report:
+            break
+        time.sleep(1)
+    (args.output / 'native-report.txt').write_text(report)
+    assert 'status=presenting-test-triangle' in report, report
+    assert re.search(r'presented_test_frames=[1-9]\d*', report), report
+    assert 'gameplay_available=false' in report
+    bounds = button()
+    (args.output / 'controls.xml').write_text(ET.tostring(hierarchy(), encoding='unicode'))
+    # Capture the compositor output, not merely the Java layout.
+    subprocess.run(['adb', 'shell', 'screencap', '-p', '/sdcard/d2-overlay.png'], check=True, timeout=30)
+    adb('pull', '/sdcard/d2-overlay.png', args.output / 'overlay.png')
+    adb('shell', 'input', 'tap', (bounds[0] + bounds[2]) // 2, (bounds[1] + bounds[3]) // 2)
+    for _ in range(10):
+        foreground = adb('shell', 'dumpsys', 'activity', 'activities')
+        resumed = '\n'.join(line for line in foreground.splitlines() if 'ResumedActivity' in line)
+        if 'ChooserActivity' in resumed or 'ResolverActivity' in resumed:
+            (args.output / 'share-foreground.txt').write_text(resumed)
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError('Tapping the visible share button did not open the Android chooser')
+    print('PASS: Vulkan presents, diagnostic panel visible, Home/restore twice, share chooser opens')
+
+
+if __name__ == '__main__':
+    main()
