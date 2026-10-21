@@ -74,11 +74,19 @@ def main():
     assert 'elf_code_executed=false' in report
     assert 'elf_game_loaded=false' in report
     assert 'dispatch_status=passed' in report and 'dispatch_failures=0' in report, report
-    assert 'dispatch_generated_functions=10' in report
+    assert 'dispatch_generated_functions=11' in report
     assert 'dispatch_lifted_code_executed=true' in report
     assert 'dispatch_game_executed=false' in report
     assert 'dispatch_full_runtime_available=false' in report
     assert 'services_status=passed' in report and 'services_failures=0' in report, report
+    assert 'bundle_status=passed' in report and 'bundle_failures=0' in report, report
+    assert 'bundle_rounds=3' in report and 'bundle_workers_created_and_joined=12' in report
+    assert 'bundle_game_boot=false' in report
+    for name in ('bundle_memory_allocate_free', 'bundle_mapping_protection_release',
+                 'bundle_mutex_and_shared_counter', 'bundle_semaphore_wait_post_timeout',
+                 'bundle_mutex_cross_thread_timeout', 'bundle_thread_create_exit_join',
+                 'bundle_no_post_exit_execution', 'bundle_error_paths_and_recovery', 'bundle_resource_audit'):
+        assert name + '=passed' in report, report
     for name in ('services_tables_initialized', 'services_nid_matches_lifted_import',
                  'services_syscall_timebase_frequency', 'services_syscall_current_time',
                  'services_hle_rtc_tick', 'services_hle_big_endian_output',
@@ -120,7 +128,7 @@ def main():
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-elf-fixture-')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-dispatch-fixture-')
-    print('PASS: ten lifted PPC functions + real SDK time syscalls/RTC HLE + core/ELF; Vulkan, Home/restore twice, share UI')
+    print('PASS: integrated bundle: 3 rounds, 12 SDK PPU workers, memory/protection/free, mutex/semaphore/exit/join; prior tests + Vulkan/UI')
 
 
 if __name__ == '__main__':

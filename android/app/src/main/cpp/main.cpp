@@ -61,7 +61,7 @@ struct State {
         const std::string path = std::string(app->activity->internalDataPath) + "/android-vulkan-report.txt";
         const std::string temporary = path + ".tmp";
         std::ofstream out(temporary, std::ios::trunc);
-        out << "Disgaea D2 Android bootstrap 0.0.6\n"
+        out << "Disgaea D2 Android bootstrap 0.0.7\n"
             << "game_runtime_linked=false\ngameplay_available=false\n"
 #if defined(__aarch64__)
             << "abi=arm64-v8a\n"

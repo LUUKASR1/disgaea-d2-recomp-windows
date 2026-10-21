@@ -27,6 +27,13 @@ add_library(d2_android_core STATIC
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/dispatch_probe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/dispatch_memory.c"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/services_bridge.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_bundle.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_bundle_test.cpp"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_memory.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_mutex.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_semaphore.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_ppu_thread.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/job_complete_weak.c"
     "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_timer.c"
     "${D2_CORE_SDK_DIR}/libs/system/cellRtc.c"
     "${D2_CORE_SDK_DIR}/generated/ppu_recomp.c"
@@ -34,6 +41,10 @@ add_library(d2_android_core STATIC
 # Compile the full, unmodified SDK modules; retain only the selected clock
 # handlers at link time. Timer/event workers and calendar helpers stay unlinked.
 set_source_files_properties("${D2_CORE_SDK_DIR}/runtime/syscalls/sys_timer.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_memory.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_mutex.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_semaphore.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_ppu_thread.c"
     "${D2_CORE_SDK_DIR}/libs/system/cellRtc.c"
     PROPERTIES COMPILE_OPTIONS "-ffunction-sections;-fdata-sections")
 target_link_options(d2_android_core INTERFACE "-Wl,--gc-sections")

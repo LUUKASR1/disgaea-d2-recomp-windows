@@ -34,8 +34,8 @@ static int checked(uint64_t address,uint32_t bytes,int write) {
     if (d2_lift_faulted()) return 0;
     /* Restrict lifted fixture reads/writes to its committed RAM. Check the
      * 64-bit address before conversion: never truncate an overflow to guest EA. */
-    if (!owns_vm || !vm_base || address<0x10000 || address>=ppu_vm_size ||
-        bytes>(uint64_t)ppu_vm_size-address) {
+    int main_range=address>=0x10000 && address<ppu_vm_size && bytes<=(uint64_t)ppu_vm_size-address;
+    if (!owns_vm || !vm_base || (!main_range && !d2_bundle_range(address,bytes,write))) {
         d2_lift_fault(write ? D2_DISPATCH_WRITE : D2_DISPATCH_READ); return 0;
     }
     return 1;

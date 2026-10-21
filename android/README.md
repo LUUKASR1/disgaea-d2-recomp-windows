@@ -1,8 +1,46 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.6
+# Disgaea D2 — Android ARM64 bootstrap 0.0.7
 
 ## Português
 
-### Primeiros serviços reais na 0.0.6
+### Pacote integrado da 0.0.7
+
+Uma instalação e um relatório agora cobrem núcleo, ELF, código recompilado,
+relógios e um teste integrado de memória/threads/sincronização. O worker PPC
+adicional passa pelo lifter e executa em quatro threads criadas pelo verdadeiro
+`sys_ppu_thread_create` do SDK. O ciclo é repetido três vezes: **12 workers**.
+
+O teste aloca e verifica memória zerada, usa mutex e semáforos do SDK, incrementa
+um contador compartilhado, recebe sinais de conclusão e chama o verdadeiro
+`sys_ppu_thread_exit` seguido de `sys_ppu_thread_join`. Uma escrita após a saída
+precisa permanecer sem executar. Também são verificados timeout de mutex em
+outra thread, deadlock recursivo rejeitado, limite/timeout de semáforo, erros de
+handles, liberação/contabilidade, rejeição de acesso após free e auditoria final
+de recursos. A admissão dos workers é serializada por um semáforo; isto não é
+um stress test geral de todas as corridas possíveis do SDK.
+
+Mapeamento/proteção são testados pelas primitivas reais `vm_commit`/`vm_protect`,
+com rastreamento de permissões e descarte de páginas no host. O free do SDK
+sozinho é contábil; a ponte adicional revoga acesso e descarta as páginas. Os
+caminhos incompletos de `sys_mmapper` que apenas confirmam sucesso não ficam
+acessíveis. A ponte admite apenas as formas de chamada usadas pela fixture,
+limita tamanhos e timeouts, valida ponteiros completos antes de estreitá-los
+e não aceita imagens ou workloads arbitrários.
+
+A cópia preparada de `sys_ppu_thread.c` exclui dois hooks fora deste teste:
+reservas cruzadas PPU e handlers de interrupção raw-SPU. O worker fixo não contém
+lwarx/stwcx; essas duas capacidades continuam marcadas como indisponíveis, sem
+handlers fictícios. O hook padrão de conclusão SPU do SDK permanece sem jobs
+registrados. A sessão só reabre o registro de workers quando os anteriores já
+terminaram e foram aguardados. Um watchdog encerra o processo se não puder
+comprovar a conclusão de um worker; nunca libera a VM sob uma thread viva.
+O caminho que atravessa o longjmp do SDK não contém objetos C++ com destrutores.
+
+Esperado: **`bundle_status=passed`**, **`bundle_failures=0`**,
+`bundle_rounds=3`, `bundle_workers_created_and_joined=12`, além dos testes
+anteriores aprovados. Ainda não há boot de Disgaea, scheduler SPU completo,
+áudio ou renderer do jogo. Não é necessário fornecer ISO nesta etapa.
+
+### Serviços de relógio introduzidos na 0.0.6
 
 O teste agora tem dez funções PPC sintéticas traduzidas pelo lifter. As novas
 funções chamam duas syscalls reais de horário do SDK (145 e 147) e uma importação
@@ -136,7 +174,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.6-Services-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.7-Integrated-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos
@@ -189,7 +227,31 @@ Referências: [NativeActivity](https://developer.android.com/ndk/samples/sample_
 
 ## English
 
-Version 0.0.6 extends the fixture to ten lifted PPC functions and connects
+Version 0.0.7 is a **single integrated diagnostic package**. In addition to
+all earlier checks, it runs three memory/thread/synchronization rounds with
+four actual SDK-created PPU workers each (12 workers). The extra worker is
+translated from synthetic PPC by the pinned lifter. It uses SDK mutex/semaphore
+handlers, updates a shared counter, signals completion, and exits through the
+real SDK thread-exit/join path. A post-exit store must never execute. Admission
+is semaphore-serialized; this is not a general SDK race stress test.
+
+Checks include allocation/zero fill/accounting/free, VM commit/protection/page
+discard, revoked access after release, mutex cross-thread timeout/deadlock,
+semaphore limits/timeouts, invalid handles, and final resource auditing. The
+adapter restricts sizes, timeouts and call forms to this private fixture. Incomplete
+sys_mmapper acknowledgment-only paths are unavailable. The prepared SDK thread
+copy excludes cross-PPU reservation registration and raw-SPU interrupt re-entry;
+this fixed worker has no reservation instructions. Both capabilities remain
+explicitly unvalidated/unavailable, with no fake handlers. No SPU jobs are
+registered. A worker epoch restarts only after all prior tracked workers were
+reaped, and a completion watchdog aborts rather than releasing a live worker's VM.
+The SDK longjmp path crosses no C++ objects requiring destruction.
+
+Expect `bundle_status=passed`, `bundle_failures=0`, `bundle_rounds=3` and
+`bundle_workers_created_and_joined=12`. Full game boot, SPU scheduling, audio
+and game rendering remain unavailable; no ISO is needed.
+
+The services test introduced in 0.0.6 extends the fixture to ten lifted PPC functions and connects
 **two actual SDK time syscall handlers (145/147) and cellRtcGetCurrentTick**.
 The bridge uses the SDK LV2/NID tables; build-time and runtime NIDs must match.
 The complete unmodified sys_timer.c/cellRtc.c modules are compiled with individual

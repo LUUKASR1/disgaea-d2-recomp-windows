@@ -20,6 +20,9 @@ SEEDS = (
     'runtime/spu/tests/test_spu_helpers.c',
     'runtime/spu/tests/test_spu_numeric_semantics.c',
     'runtime/syscalls/sys_timer.c', 'libs/system/cellRtc.c', 'include/ps3emu/nid.h',
+    'runtime/syscalls/sys_memory.c', 'runtime/syscalls/sys_mutex.c',
+    'runtime/syscalls/sys_semaphore.c', 'runtime/syscalls/sys_ppu_thread.c',
+    'runtime/syscalls/job_complete_weak.c',
 )
 
 
@@ -101,6 +104,27 @@ static void d2_android_guest_stop_point(void)
 #else
     pthread_testcancel();
 #endif''', count=3)
+        text += '''
+/* A new diagnostic session may start only after every old worker was reaped.
+ * This never resets a live game session or cancels a blocked HLE worker. */
+int d2_guest_workers_begin_epoch(void) {
+    pthread_mutex_lock(&s_workers_lock);
+    int ready = 1;
+    for (lifecycle_worker* w = s_workers; w; w = w->next)
+        if (!w->done || w->joinable) ready = 0;
+    if (ready) s_workers_stopping = 0;
+    pthread_mutex_unlock(&s_workers_lock);
+    return ready;
+}
+'''
+    elif name == 'runtime/syscalls/sys_ppu_thread.c':
+        # Fixed diagnostic workers contain no lwarx/stwcx and cannot establish
+        # raw-SPU interrupts. Do not link fake implementations for either hook.
+        replace('    { extern void ppu_resv_register(ppu_context*); ppu_resv_register(&info->ctx); }',
+                '    /* Fixture-only: no reservation instructions are admitted. */')
+        start = text.index('        { extern int ps3_intr_is_handler(')
+        end = text.index('    } else {', start)
+        text = text[:start] + '        /* Raw-SPU interrupt handlers are unavailable in this fixture. */\n' + text[end:]
     elif name == 'runtime/platform/win32_compat.c':
         replace('    pthread_setaffinity_np(pt, sizeof set, &set);', '''#ifdef __ANDROID__
     pid_t tid = pthread_gettid_np(pt);
@@ -166,7 +190,8 @@ def prepare(sdk, output):
     for name in generate(output):
         adapted[name] = (output / name).read_bytes()
     receipt = {'schema': 1, 'sdk_tree': lock['tree'], 'game_sources_included': False,
-               'android_adaptations': ['cooperative-guest-poll-stop', 'tid-based-affinity'],
+               'android_adaptations': ['cooperative-guest-poll-stop', 'tid-based-affinity',
+                   'reaped-worker-epoch', 'fixed-thread-fixture-without-reservations-or-spu-interrupts'],
                'elf_subset_source': {'path': loader_path,
                    'sha256': hashlib.sha256(loader_original).hexdigest(),
                    'scope': 'validation-and-segment-copy-before-debug-hooks'},

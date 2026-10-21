@@ -43,28 +43,53 @@ def generate(output):
         0x10100: [0x4e800020], # lifted import: cellRtcGetCurrentTick
         0x10120: [0x4e800020], # lifted import: deliberately unavailable NID
     }
+    # Four real SDK PPU threads run this lifted worker. A semaphore serializes
+    # admission, then the SDK mutex protects the shared increment. A completion
+    # semaphore wakes the creator. The store after sys_ppu_thread_exit MUST NOT run.
+    worker=[]; failures=[]
+    def emit(*ops): worker.extend(ops)
+    def syscall(num,check=True):
+        emit(0x39600000|num,0x44000002)
+        if check:
+            emit(0x2c230000,0) # cmpdi r3,0; bne fail (patched below)
+            failures.append(len(worker)-1)
+    emit(0x7c7f1b78) # mr r31,r3 (argument struct)
+    emit(0x807f000c,0x3c800001,0x608486a0) # gate id, timeout 100000 us
+    syscall(92)
+    emit(0x807f0000,0x3c800001,0x608486a0) # mutex id, timeout
+    syscall(102)
+    emit(0x807f0004,0x80a30000,0x38a50001,0x90a30000) # ++counter
+    emit(0x807f0000); syscall(104)
+    emit(0x807f000c,0x38800001); syscall(94) # release admission gate
+    emit(0x807f0008,0x38800001); syscall(94) # completion post
+    emit(0x38600007); syscall(42,False) # exit status 7; never returns
+    emit(0x38a00063,0x90bf0010,0x4e800020) # forbidden post-exit store
+    fail=len(worker)
+    emit(0x386000ff); syscall(42,False); emit(0x4e800020)
+    for index in failures: worker[index]=0x40820000|((fail-index)*4)
+    words[0x10140]=worker
     import importlib.util
     spec=importlib.util.spec_from_file_location('d2_pinned_nids',output/'tools/nid_database.py')
     nids=importlib.util.module_from_spec(spec); spec.loader.exec_module(nids)
     rtc_nid=nids.compute_nid('cellRtcGetCurrentTick')
-    image = bytearray(0x720)
+    image = bytearray(0x920)
     image[:7] = b'\x7fELF\x02\x02\x01'
     def put(off, value, size):
         image[off:off+size] = value.to_bytes(size, 'big')
     put(16,2,2); put(18,21,2); put(20,1,4); put(24,0x20000,8)
     put(32,64,8); put(52,64,2); put(54,56,2); put(56,2,2)
-    for index, (off, va, size, flags) in enumerate(((0x200,0x10000,0x200,5),
-                                                 (0x600,0x20000,0x120,6))):
+    for index, (off, va, size, flags) in enumerate(((0x200,0x10000,0x300,5),
+                                                 (0x800,0x20000,0x120,6))):
         ph=64+index*56
         put(ph,1,4); put(ph+4,flags,4); put(ph+8,off,8); put(ph+16,va,8)
         put(ph+32,size,8); put(ph+40,size+16,8); put(ph+48,4,8)
-    image[0x200:0x400] = struct.pack('>I',0x60000000)*128
+    image[0x200:0x500] = struct.pack('>I',0x60000000)*192
     bounds=[]
     for index, (addr, code) in enumerate(words.items()):
         for n, word in enumerate(code): put(0x200+addr-0x10000+n*4,word,4)
-        put(0x600+index*8,addr,4); put(0x604+index*8,0x20100,4)
+        put(0x800+index*8,addr,4); put(0x804+index*8,0x20100,4)
         bounds.append({'start':hex(addr),'end':hex(addr+len(code)*4)})
-    put(0x700,7,4)
+    put(0x900,7,4)
     elf=generated/'dispatch-fixture.elf'
     elf.write_bytes(image)
     funcs=generated/'dispatch-functions.json'
@@ -74,7 +99,7 @@ def generate(output):
         {'library':'cellRtc','nid':hex(rtc_nid),'stub':'0x10100'},
         {'library':'d2-unavailable-test','nid':'0xffffffff','stub':'0x10120'}],indent=2)+'\n')
     subprocess.run([sys.executable,str(output/'tools/ppu_lifter.py'),str(elf),
-                    '--functions',str(funcs),'--code-end','0x10200','--hle-stubs',str(imports),
+                    '--functions',str(funcs),'--code-end','0x10300','--hle-stubs',str(imports),
                     '--single-file','--jobs','1','--symbol-prefix','d2_fixture_',
                     '--output',str(generated)],
                    check=True,timeout=60,env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'})

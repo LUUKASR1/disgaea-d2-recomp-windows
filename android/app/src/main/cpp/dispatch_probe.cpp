@@ -63,7 +63,7 @@ void invoke(ppu_context *ctx,uint32_t code) {
     ppu_context *prior=active; active=ctx; ++depth;
     fn(ctx);
     // Bounds the fixture's outer tail chain. This does not preempt arbitrary
-    // loops/direct calls in generated code: only our fixed ten functions run.
+    // loops/direct calls in generated code: only our fixed fixture functions run.
     while(!fault && g_trampoline_fn) {
         if(++trampoline_steps>64) { d2_lift_fault(D2_DISPATCH_TRAMPOLINE); break; }
         auto next=g_trampoline_fn; g_trampoline_fn=nullptr;
@@ -111,16 +111,16 @@ struct Cleanup {
 };
 void exercise(Report &r) {
     r.line("dispatch_generated_functions=%llu\n",(unsigned long long)function_table_count);
-    r.check("dispatch_generated_function_count",function_table_count==10);
+    r.check("dispatch_generated_function_count",function_table_count==11);
     for(uint64_t i=0;i<function_table_count;++i)
         d2_fixture_register_function(function_table[i].addr,function_table[i].func);
-    r.check("dispatch_sdk_registry",d2_fixture_function_count()==10);
+    r.check("dispatch_sdk_registry",d2_fixture_function_count()==11);
     // Same low hash bits: exercise the real SDK collision and replacement paths.
     auto first=ppu_lookup(0x10000);
     d2_fixture_register_function(0x50000,first);
     d2_fixture_register_function(0x50000,first);
     r.check("dispatch_registry_collision_and_replace",first && ppu_lookup(0x50000)==first &&
-        ppu_lookup(0x10000)==first && d2_fixture_function_count()==11 && !ppu_lookup(0x90000));
+        ppu_lookup(0x10000)==first && d2_fixture_function_count()==12 && !ppu_lookup(0x90000));
 
     uint64_t result=0,toc=0; bool arithmetic=true;
     for(uint64_t a : {uint64_t(0),uint64_t(5),UINT64_MAX}) {
@@ -199,6 +199,10 @@ void exercise(Report &r) {
         main_thread &= call_opd(0x20018,i,0x10000,result)==0 && result==i+7;
     worker.join();
     r.check("dispatch_thread_local_context",other_thread && main_thread);
+    char bundle[4096]={};
+    int bundle_result=d2_runtime_bundle_run(bundle,sizeof(bundle));
+    r.line("%s",bundle);
+    r.check("dispatch_integrated_bundle",bundle_result==0);
 }
 } // namespace
 
@@ -210,6 +214,28 @@ extern "C" void ps3_indirect_call(ppu_context *ctx) {
 }
 extern "C" void lv2_syscall(ppu_context *ctx) { d2_services_syscall(ctx,sizeof(*ctx)); }
 extern "C" void ps3_hle_call(unsigned int nid,ppu_context *ctx) { d2_services_hle(nid,ctx,sizeof(*ctx)); }
+
+int d2_fixture_syscall(uint64_t number,const uint64_t *args,uint64_t tid,uint64_t *result) {
+    if(depth || !args || !result) return D2_DISPATCH_DEPTH;
+    fault=0; trampoline_steps=0; g_trampoline_fn=nullptr;
+    ppu_context ctx{}; ctx.gpr[1]=0x40000; ctx.gpr[2]=0x20100; ctx.thread_id=tid;
+    for(unsigned i=0;i<8;++i) ctx.gpr[3+i]=args[i];
+    ctx.gpr[11]=number; ctx.ctr=0x100a0;
+    invoke(&ctx,0x100a0); *result=ctx.gpr[3]; return fault;
+}
+void d2_dispatch_worker_entry(void *sdk_context,size_t bytes) {
+    // Keep this path destructor-free: the actual SDK sys_ppu_thread_exit uses
+    // longjmp to its host-thread procedure, so C++ RAII must not be bypassed.
+    if(bytes!=sizeof(ppu_context)) abort();
+    fault=0; depth=0; active=nullptr; trampoline_steps=0; g_trampoline_fn=nullptr;
+    ppu_context ctx; memcpy(&ctx,sdk_context,sizeof(ctx));
+    if(ctx.cia!=0x20050) abort();
+    uint32_t code=d2_lift_read32(ctx.cia),toc=d2_lift_read32(ctx.cia+4);
+    if(code!=0x10140 || toc!=0x20100) abort();
+    ctx.gpr[2]=toc; ctx.ctr=code; invoke(&ctx,code);
+    if(fault) ctx.gpr[3]=255;
+    memcpy(sdk_context,&ctx,sizeof(ctx));
+}
 
 int d2_dispatch_probe_run(const char *directory,char *report,size_t capacity) {
     if(!report || capacity<2048) return 1;
