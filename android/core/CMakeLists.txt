@@ -52,8 +52,10 @@ add_library(d2_android_core STATIC
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/services_bridge.c"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/descriptor_file.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/document_probe.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/executable_probe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/file_services.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/file_bundle_test.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/disc_bundle_test.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_bundle.c"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_bundle_test.cpp"
     "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_memory.c"
@@ -109,6 +111,9 @@ if(NOT ANDROID)
     add_test(NAME descriptor_disc_integration COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_LIST_DIR}/../tools/test_disc_descriptor.py" "$<TARGET_FILE:d2_document_probe_cli>")
     set_tests_properties(descriptor_disc_integration PROPERTIES TIMEOUT 90)
+    add_test(NAME executable_load_plan COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_LIST_DIR}/../tools/test_executable_plan.py" "$<TARGET_FILE:d2_document_probe_cli>")
+    set_tests_properties(executable_load_plan PROPERTIES TIMEOUT 90)
     add_test(NAME sdk_core_elf_and_lifted_dispatch COMMAND d2_core_probe_cli)
     set_tests_properties(sdk_core_elf_and_lifted_dispatch PROPERTIES TIMEOUT 45)
 endif()

@@ -87,7 +87,9 @@ public final class BootstrapActivity extends NativeActivity {
                 if (isDestroyed()) return;
                 saveDocumentReport(completed);
                 select.setEnabled(true);
-                documentStatus.setText(completed.contains("disc_status=base-files-readable\n") ? R.string.disc_readable :
+                documentStatus.setText(completed.contains("disc_status=base-files-readable\n") ? (completed.contains("executable_status=self-loader-required\n") ? R.string.disc_self :
+                        completed.contains("executable_status=elf-plan-valid\n") ? R.string.disc_elf_plan :
+                        completed.contains("executable_status=rejected\n") ? R.string.disc_executable_rejected : R.string.disc_readable) :
                         completed.contains("disc_status=other-title\n") ? R.string.disc_other_title :
                         completed.contains("disc_status=missing-or-unreadable-base-files\n") ? R.string.disc_missing :
                         completed.contains("disc_status=rejected\n") ? R.string.disc_rejected :

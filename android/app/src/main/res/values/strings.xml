@@ -17,4 +17,7 @@
     <string name="disc_other_title">This image belongs to another title. See the report.</string>
     <string name="disc_missing">Some base files are missing or unreadable. Share the report.</string>
     <string name="disc_rejected">File readable, but image could not be mounted. Share the report.</string>
+    <string name="disc_self">Base image readable. SELF executable identified; its loader is not integrated yet.</string>
+    <string name="disc_elf_plan">Base image readable. ELF load plan checked; game execution is not integrated yet.</string>
+    <string name="disc_executable_rejected">Base image readable, but the executable structure check failed. Share the report.</string>
 </resources>

@@ -1,6 +1,50 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.10
+# Disgaea D2 — Android ARM64 bootstrap 0.0.11
 
 ## Português
+
+### Pacote integrado da 0.0.11 — serviços de disco e plano do executável
+
+Liga o leitor UDF/ISO9660 aos seis adaptadores LV2 de arquivos. Caminhos
+`/dev_bdvd/...` agora podem abrir arquivos internos da imagem e usar
+`read/lseek/fstat/close` com handles e cursores independentes. Escritas são
+recusadas. Esta sessão diagnóstica mantém os limites de 32 MiB/8192 operações
+físicas por montagem, oito handles e 64 KiB por transferência. Ainda não é
+uma montagem persistente para uma sessão de jogo.
+
+O teste automático cria uma pequena ISO9660 sintética privada e acessa arquivos
+por meio da função PPC de syscall traduzida pelo lifter, verificando bytes,
+metadados big-endian, EOF, arquivo vazio, caminhos inválidos, diretórios,
+remontagem com handles ativos, recuperação após erros e limpeza dos descritores.
+Espere `disc_guest_status=passed`, `disc_guest_failures=0` e
+`dispatch_integrated_disc=passed`. O teste usa somente dados criados pelo projeto.
+
+Ao selecionar sua ISO, o relatório também inspeciona o `EBOOT.BIN` sem executá-lo.
+`executable_status=self-loader-required` identifica a assinatura SELF, sem
+concluir se o conteúdo está criptografado ou se o container é válido.
+Para ELF64 PPC64 big-endian, um plano limitado verifica tabela de segmentos,
+limites do arquivo e endereços, alinhamento, sobreposição, orçamento de memória
+e entrada OPD/código/TOC. `executable_status=elf-plan-valid` aprova somente essas
+verificações estruturais: não valida todos os metadados ELF, TLS, importações,
+funções recompiladas ou dependências. Nenhuma memória guest é alocada/escrita
+por essa inspeção. O seletor usa uma montagem local isolada do teste guest,
+portanto não disputa sua VM nem seus handles.
+
+**O jogo ainda não inicia.** O runtime completo, carregador SELF, dados/código
+recompilado do jogo, SPU completo, renderização RSX e áudio continuam pendentes.
+Instale esta versão, aguarde o teste automático, selecione a mesma ISO e use
+**Compartilhar relatório**. Não é necessário repetir testes de ciclo de vida
+ou controles para esta etapa.
+
+**English:** 0.0.11 connects bounded descriptor-backed disc sessions to the six
+read-only LV2 file adapters. An internally generated ISO9660 is exercised via
+the genuinely lifted synthetic syscall entry; independent file handles/cursors,
+bytes/stat/seek/EOF, errors, mount transactions and teardown are checked. Expect
+`disc_guest_status=passed` and zero failures. The user-selected ISO separately
+gets bounded EBOOT signature inspection and an ELF64 BE PPC64 segment/OPD plan.
+SELF magic is reported as `self-loader-required`, not evidence of encryption.
+An accepted ELF plan is structural only: there is no guest mapping, decryption,
+game code execution or complete ELF/TLS/import validation. Game boot remains
+unavailable. Select the same ISO and share the diagnostic report.
 
 ### Pacote integrado da 0.0.10 — inspeção ISO/VFS
 

@@ -1,6 +1,7 @@
 #include "document_probe.h"
 #include "descriptor_file.h"
 #include "iso_vfs.h"
+#include "executable_probe.h"
 #include <array>
 #include <algorithm>
 #include <cstring>
@@ -66,6 +67,8 @@ std::string d2_inspect_document(int fd,int64_t base,int64_t declared_length) {
         report+="disc_required_files_checked="+std::to_string(checked)+"\ndisc_required_files_failed="+
             std::to_string(failed)+"\ndisc_asset_decryption_validated=false\ndisc_status="+
             (failed ? std::string("missing-or-unreadable-base-files") : std::string("base-files-readable"))+"\n";
+        try { report+=d2_inspect_executable(*disc.Open("/PS3_GAME/USRDIR/EBOOT.BIN")); }
+        catch(const d2::vfs::Error&) { report+="executable_status=unavailable\n"; }
     } catch(const d2::vfs::Error &e) {
         // Do not include provider URI, host paths or untrusted on-disc strings.
         report+="disc_status=rejected\ndisc_error_code="+std::to_string(static_cast<int>(e.code))+"\n";

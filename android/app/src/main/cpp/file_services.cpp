@@ -2,6 +2,7 @@
 // pinned SDK; these bounded adapters are new code, not SDK sys_fs handlers.
 #include "file_services.h"
 #include "descriptor_file.h"
+#include "iso_vfs.h"
 #include "dispatch_probe.h"
 #include "runtime/syscalls/lv2_syscall_table.h"
 #include <array>
@@ -11,6 +12,8 @@
 namespace {
 std::mutex lock;
 d2::DescriptorFile file;
+std::unique_ptr<d2::vfs::IsoVfs> disc;
+std::array<std::shared_ptr<d2::vfs::IsoVfs::File>,8> disc_files{};
 std::array<uint64_t,8> positions{};
 std::array<uint64_t,8> handles{};
 uint64_t next_handle=100;
@@ -47,11 +50,20 @@ int64_t dispatch(ppu_context &c) {
             if(!name[i]) { terminated=true; break; }
         }
         if(!terminated || !valid_path(name)) return error(CELL_EINVAL);
-        if(!file.valid() || std::strcmp(name,mounted_path)) return error(CELL_ENOENT);
+        std::shared_ptr<d2::vfs::IsoVfs::File> opened;
+        if(disc) {
+            try { opened=disc->Open(name+9); }
+            catch(const d2::vfs::Error &e) {
+                if(e.code==d2::vfs::ErrorCode::NotFound) return error(CELL_ENOENT);
+                if(e.code==d2::vfs::ErrorCode::IsDirectory) return error(CELL_EISDIR);
+                if(e.code==d2::vfs::ErrorCode::InvalidPath) return error(CELL_EINVAL);
+                return error(CELL_EIO);
+            }
+        } else if(!file.valid() || std::strcmp(name,mounted_path)) return error(CELL_ENOENT);
         for(size_t i=0;i<handles.size();++i) if(!handles[i]) {
             // Never recycle guest handle IDs across mount epochs in this process.
             if(next_handle>INT32_MAX) return error(CELL_EMFILE);
-            handles[i]=next_handle++; positions[i]=0;
+            handles[i]=next_handle++; positions[i]=0; disc_files[i]=std::move(opened);
             d2_lift_write32(a[2],static_cast<uint32_t>(handles[i])); return 0;
         }
         return error(CELL_EMFILE);
@@ -59,7 +71,8 @@ int64_t dispatch(ppu_context &c) {
     size_t index=handles.size();
     for(size_t i=0;i<handles.size();++i) if(handles[i] && handles[i]==a[0]) { index=i; break; }
     if(index==handles.size()) return error(CELL_EBADF);
-    if(c.gpr[11]==SYS_FS_CLOSE) { handles[index]=0; positions[index]=0; return 0; }
+    const uint64_t size=disc_files[index] ? disc_files[index]->Size() : file.size();
+    if(c.gpr[11]==SYS_FS_CLOSE) { handles[index]=0; positions[index]=0; disc_files[index].reset(); return 0; }
     if(c.gpr[11]==SYS_FS_WRITE) return error(CELL_EROFS);
     if(c.gpr[11]==SYS_FS_FSTAT) {
         // CellFsStat: 3 x u32, padding, then 5 x u64. This read-only
@@ -67,26 +80,31 @@ int64_t dispatch(ppu_context &c) {
         if(!range(a[1],56,true,8)) return error(CELL_EFAULT);
         for(unsigned i=0;i<56;++i) d2_lift_write8(a[1]+i,0);
         d2_lift_write32(a[1],0100444);
-        d2_lift_write64(a[1]+40,file.size());
+        d2_lift_write64(a[1]+40,size);
         d2_lift_write64(a[1]+48,4096); return 0;
     }
     if(c.gpr[11]==SYS_FS_READ) {
         if(a[2]>max_read) return error(CELL_EINVAL);
         if(!range(a[3],8,true,8) || (a[2] && !range(a[1],static_cast<uint32_t>(a[2]),true)))
             return error(CELL_EFAULT);
-        uint64_t remain=file.size()-positions[index];
+        uint64_t remain=size-positions[index];
         size_t count=static_cast<size_t>(a[2]<remain ? a[2] : remain);
         // Stage first: host short read/truncation cannot partially overwrite the
         // guest destination or advance its cursor. All pointers checked first.
         std::array<unsigned char,max_read> buffer{};
-        if(!file.read(positions[index],buffer.data(),count)) return error(CELL_EIO);
+        try {
+            if(disc_files[index]) {
+                auto destination=std::span<std::byte>(reinterpret_cast<std::byte*>(buffer.data()),count);
+                if(disc_files[index]->ReadAt(positions[index],destination)!=count) return error(CELL_EIO);
+            } else if(!file.read(positions[index],buffer.data(),count)) return error(CELL_EIO);
+        } catch(const d2::vfs::Error&) { return error(CELL_EIO); }
         for(size_t i=0;i<count;++i) d2_lift_write8(a[1]+i,buffer[i]);
         d2_lift_write64(a[3],count); positions[index]+=count; return 0;
     }
     if(c.gpr[11]==SYS_FS_LSEEK) {
         if(!range(a[3],8,true,8)) return error(CELL_EFAULT);
         if(a[2]>2) return error(CELL_EINVAL);
-        uint64_t base=a[2]==0 ? 0 : a[2]==1 ? positions[index] : file.size();
+        uint64_t base=a[2]==0 ? 0 : a[2]==1 ? positions[index] : size;
         int64_t delta; std::memcpy(&delta,&a[1],sizeof(delta));
         uint64_t target;
         if(delta<0) {
@@ -94,7 +112,7 @@ int64_t dispatch(ppu_context &c) {
             if(magnitude>base) return error(CELL_EINVAL);
             target=base-magnitude;
         } else {
-            if(static_cast<uint64_t>(delta)>file.size()-base) return error(CELL_EINVAL);
+            if(static_cast<uint64_t>(delta)>size-base) return error(CELL_EINVAL);
             target=base+static_cast<uint64_t>(delta);
         }
         positions[index]=target; d2_lift_write64(a[3],target); return 0;
@@ -106,11 +124,21 @@ int d2_files_mount(int fd,uint64_t base,uint64_t length,const char *path) {
     std::lock_guard<std::mutex> guard(lock);
     for(auto h:handles) if(h) return 0;
     if(!valid_path(path) || !file.attach(fd,base,length)) return 0;
-    std::strcpy(mounted_path,path); return 1;
+    disc.reset(); std::strcpy(mounted_path,path); return 1;
+}
+int d2_files_mount_disc(int fd,uint64_t base,uint64_t length) {
+    std::lock_guard<std::mutex> guard(lock);
+    for(auto h:handles) if(h) return 0;
+    try {
+        // Deliberately bounded diagnostic session, not a long-running game mount.
+        auto candidate=std::make_unique<d2::vfs::IsoVfs>(fd,base,length);
+        if(candidate->TitleId()!="BLUS31313") return 0;
+        disc=std::move(candidate); file.reset(); mounted_path[0]=0; return 1;
+    } catch(const d2::vfs::Error&) { return 0; }
 }
 void d2_files_unmount() {
     std::lock_guard<std::mutex> guard(lock);
-    handles.fill(0); positions.fill(0); mounted_path[0]=0; file.reset();
+    handles.fill(0); positions.fill(0); disc_files.fill(nullptr); disc.reset(); mounted_path[0]=0; file.reset();
 }
 int d2_files_open_count() {
     std::lock_guard<std::mutex> guard(lock); int n=0;

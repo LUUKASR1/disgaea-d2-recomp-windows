@@ -272,6 +272,9 @@ int d2_dispatch_probe_run(const char *directory,char *report,size_t capacity) {
                 int files_result=d2_file_bundle_run(directory,files,sizeof(files));
                 r.line("%s",files);
                 r.check("dispatch_integrated_files",files_result==0);
+                int disc_result=d2_disc_bundle_run(directory,files,sizeof(files));
+                r.line("%s",files);
+                r.check("dispatch_integrated_disc",disc_result==0);
             }
             if(!cleanup.path.empty()) {
                 bool removed=unlink(cleanup.path.c_str())==0;

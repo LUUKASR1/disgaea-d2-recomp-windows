@@ -133,7 +133,9 @@ def document_test(output):
     (output / 'disc-report.txt').write_text(disc)
     for field in ('document_status=readable', 'disc_backend=UDF', 'disc_title_id=BLUS31313',
                   'disc_required_files_checked=18', 'disc_required_files_failed=0',
-                  'disc_status=base-files-readable', 'disc_game_boot=false'):
+                  'disc_status=base-files-readable', 'disc_game_boot=false',
+                  'executable_format=unknown', 'executable_status=unrecognized',
+                  'executable_guest_memory_written=false', 'executable_code_executed=false'):
         assert field in disc, disc
     assert 'content://' not in disc and 'd2-disc-fixture.iso' not in disc
 
@@ -183,6 +185,12 @@ def main():
     assert 'bundle_status=passed' in report and 'bundle_failures=0' in report, report
     assert 'bundle_rounds=3' in report and 'bundle_workers_created_and_joined=12' in report
     assert 'bundle_game_boot=false' in report
+    assert 'disc_guest_status=passed' in report and 'disc_guest_failures=0' in report, report
+    assert 'disc_guest_game_executed=false' in report
+    for name in ('disc_guest_executable_plan', 'disc_guest_assets_stat_seek_and_eof',
+                 'disc_guest_errors_and_mount_transaction', 'disc_guest_descriptor_lifetime_and_cleanup',
+                 'dispatch_integrated_disc'):
+        assert name + '=passed' in report, report
     assert 'files_status=passed' in report and 'files_failures=0' in report, report
     assert 'files_game_loaded=false' in report
     assert 'files_document_picker_integrated=false' in report  # Synthetic fixture scope only
