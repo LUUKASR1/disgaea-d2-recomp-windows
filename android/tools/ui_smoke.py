@@ -21,14 +21,14 @@ def hierarchy():
     return ET.fromstring(adb('shell', 'cat', '/sdcard/d2-ui.xml'))
 
 
-def button():
+def button(label="share diagnostic report"):
     for _ in range(12):
         root = hierarchy()
         # Material buttons expose their all-caps display text. --windows may
         # list a child popup both independently and under its parent window.
         found = {tuple(map(int, re.findall(r'\d+', n.get('bounds', ''))))
                  for n in root.iter('node')
-                 if n.get('text', '').casefold() == 'share diagnostic report'
+                 if n.get('text', '').casefold() == label.casefold()
                  and n.get('class') == 'android.widget.Button'
                  and n.get('enabled') == 'true' and n.get('clickable') == 'true'}
         if len(found) == 1:
@@ -36,7 +36,76 @@ def button():
             if len(bounds) == 4 and bounds[2] > bounds[0] and bounds[3] > bounds[1]:
                 return bounds
         time.sleep(1)
-    raise AssertionError('Share button is missing from the visible Android UI')
+    raise AssertionError('Button missing: ' + label)
+
+
+def tap(bounds):
+    adb('shell', 'input', 'tap', (bounds[0]+bounds[2])//2, (bounds[1]+bounds[3])//2)
+
+
+def tap_node(text=None, description=None):
+    root = hierarchy()
+    for n in root.iter('node'):
+        if ((text is not None and n.get('text', '').casefold() == text.casefold()) or
+                (description is not None and n.get('content-desc', '').casefold() == description.casefold())):
+            b = tuple(map(int, re.findall(r'\d+', n.get('bounds', ''))))
+            if len(b) == 4 and b[2]>b[0] and b[3]>b[1]:
+                tap(b)
+                return True
+    return False
+
+
+def document_test(output):
+    tap(button('Select file to validate'))
+    time.sleep(2)
+    foreground = adb('shell', 'dumpsys', 'activity', 'activities')
+    assert 'documentsui' in foreground.lower(), foreground
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    button()
+    cancelled = adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
+    assert 'document_status=cancelled' in cancelled, cancelled
+    # Exercise the real system picker and Downloads provider, not a fake result.
+    fixture = output / 'd2-document-fixture.bin'
+    fixture.write_bytes(b'\x7fELF' + bytes(range(256))*300)
+    adb('push', fixture, '/sdcard/Download/d2-document-fixture.bin')
+    adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE',
+        '-d', 'file:///sdcard/Download/d2-document-fixture.bin')
+    tap(button('Select file to validate'))
+    time.sleep(2)
+    if not tap_node(text='d2-document-fixture.bin'):
+        assert tap_node(description='Show roots'), ET.tostring(hierarchy(), encoding='unicode')
+        time.sleep(1)
+        assert tap_node(text='Downloads'), ET.tostring(hierarchy(), encoding='unicode')
+        time.sleep(2)
+        assert tap_node(text='d2-document-fixture.bin'), ET.tostring(hierarchy(), encoding='unicode')
+    button()
+    for _ in range(15):
+        selected = adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
+        if 'document_status=readable' in selected:
+            break
+        time.sleep(1)
+    (output / 'document-report.txt').write_text(selected)
+    assert 'document_status=readable' in selected, selected
+    assert 'document_boundary_check=passed' in selected, selected
+    assert 'document_container_hint=elf-header-only' in selected, selected
+    assert 'document_bytes=76804' in selected, selected
+    assert 'document_head_sample_bytes=65536' in selected, selected
+    assert 'document_tail_sample_bytes=64' in selected, selected
+    assert 'document_game_boot=false' in selected
+    assert 'document_ps3_mount_available=false' in selected
+    assert 'd2-document-fixture.bin' not in selected and 'content://' not in selected
+    adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+    adb('shell', 'am', 'start', '-W', '-n', ACTIVITY)
+    button()
+    retained = adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
+    assert retained == selected, retained
+    # Repeated selection/cancellation returns control without replacing the
+    # validated file or retaining a descriptor in the application.
+    tap(button('Select file to validate'))
+    time.sleep(1)
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    button()
+    assert 'document_status=cancelled' in adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
 
 
 def main():
@@ -84,7 +153,8 @@ def main():
     assert 'bundle_game_boot=false' in report
     assert 'files_status=passed' in report and 'files_failures=0' in report, report
     assert 'files_game_loaded=false' in report
-    assert 'files_document_picker_integrated=false' in report
+    assert 'files_document_picker_integrated=false' in report  # Synthetic fixture scope only
+    assert 'files_document_inspection=passed' in report
     for name in ('files_descriptor_bounds_and_parallel_reads',
                  'files_lifted_open_read_seek_stat_close_and_eof',
                  'files_errors_recovery_and_handle_audit',
@@ -119,6 +189,7 @@ def main():
                  'elf_valid_reload_after_rejections', 'elf_absent_tls_resets_metadata',
                  'elf_fixture_file_removed', 'elf_vm_release'):
         assert name + '=passed' in report, report
+    document_test(args.output)
     bounds = button()
     (args.output / 'controls.xml').write_text(ET.tostring(hierarchy(), encoding='unicode'))
     # Capture the compositor output, not merely the Java layout.
@@ -136,7 +207,7 @@ def main():
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-elf-fixture-')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-dispatch-fixture-')
-    print('PASS: integrated bundle: 3 rounds, 12 SDK PPU workers, memory/protection/free, mutex/semaphore/exit/join; prior tests + Vulkan/UI')
+    print('PASS: real Android document picker, cancel/retry, Downloads descriptor/native sampling, lifecycle, privacy; all prior integrated tests + Vulkan/share UI')
 
 
 if __name__ == '__main__':

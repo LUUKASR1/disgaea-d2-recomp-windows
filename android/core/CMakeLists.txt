@@ -28,6 +28,7 @@ add_library(d2_android_core STATIC
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/dispatch_memory.c"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/services_bridge.c"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/descriptor_file.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/document_probe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/file_services.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/file_bundle_test.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/runtime_bundle.c"

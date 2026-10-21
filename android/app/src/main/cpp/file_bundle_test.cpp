@@ -1,4 +1,5 @@
 #include "file_services.h"
+#include "document_probe.h"
 #include "descriptor_file.h"
 #include "dispatch_probe.h"
 #include "runtime/syscalls/lv2_syscall_table.h"
@@ -80,6 +81,16 @@ int d2_file_bundle_run(const char *directory,char *report,size_t capacity) {
             require(view.read(length,nullptr,0) && !view.read(UINT64_MAX,nullptr,0),"empty read boundaries");
         }
         text+="files_descriptor_bounds_and_parallel_reads=passed\n";
+        auto inspection=d2_inspect_document(cleanup.fd,base,length);
+        require(inspection.find("document_status=readable\n")!=std::string::npos &&
+            inspection.find("document_bytes=4096\n")!=std::string::npos,"document slice inspection");
+        require(d2_inspect_document(cleanup.fd,0,-1).find("document_bytes=8192\n")!=std::string::npos,"unknown declared length");
+        require(d2_inspect_document(cleanup.fd,0,0).find("document_status=empty\n")!=std::string::npos,"empty document");
+        require(d2_inspect_document(cleanup.fd,-1,4).find("document_status=rejected\n")!=std::string::npos,"negative slice");
+        require(d2_inspect_document(cleanup.fd,0,-2).find("document_status=rejected\n")!=std::string::npos,"invalid length");
+        require(d2_inspect_document(cleanup.fd,8000,1000).find("document_status=rejected\n")!=std::string::npos,"oversized document");
+        require(d2_inspect_document(-1,0,-1).find("document_status=rejected\n")!=std::string::npos,"invalid descriptor");
+        text+="files_document_inspection=passed\n";
         require(d2_files_mount(cleanup.fd,base,length,virtual_path),"mount fixture slice");
         close(cleanup.fd); cleanup.fd=-1; // mount owns its duplicate
         uint32_t a=open_guest(), b=open_guest();

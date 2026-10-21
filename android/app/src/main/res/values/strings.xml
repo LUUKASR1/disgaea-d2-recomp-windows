@@ -4,4 +4,13 @@
     <string name="share_report">Share diagnostic report</string>
     <string name="report_pending">The report is not ready yet. Wait a few seconds and try again.</string>
     <string name="report_title">Disgaea D2 Android diagnostics</string>
+    <string name="select_document">Select file to validate</string>
+    <string name="document_notice">Read-only file test. Does not start the game.</string>
+    <string name="document_reading">Checking selected file…</string>
+    <string name="document_readable">File readable. Share the diagnostic report.</string>
+    <string name="document_empty">The selected file is empty.</string>
+    <string name="document_rejected">Could not read this file. See the diagnostic report.</string>
+    <string name="document_cancelled">Selection cancelled. You can try again.</string>
+    <string name="document_no_picker">No Android file picker is available.</string>
+    <string name="document_report_error">Could not save the file diagnostic.</string>
 </resources>

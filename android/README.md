@@ -1,6 +1,35 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.8
+# Disgaea D2 — Android ARM64 bootstrap 0.0.9
 
 ## Português
+
+### Pacote integrado da 0.0.9 — seletor de arquivos Android
+
+O botão **Select file to validate** abre o seletor de documentos do Android.
+A abertura é somente para leitura e ocorre fora da thread da interface; não
+solicita acesso geral ao armazenamento nem guarda a URI ou seu nome no relatório.
+O descritor é passado ao mesmo leitor C++ limitado da 0.0.8, respeitando a fatia
+`startOffset/declaredLength` do provedor. Descritores por pipe/stream são recusados.
+
+São lidos no máximo 64 KiB do início e 64 bytes do final. O relatório registra
+tamanho, teste de limites e uma indicação de cabeçalho ELF/SELF/SFO/ISO/UDF,
+quando encontrada. **A indicação não valida o jogo nem o formato completo**.
+Não há montagem PS3, parser ISO/UDF completo ou execução de código do arquivo.
+Cancelamento, arquivo vazio, falha de permissão/leitura e retorno do seletor
+produzem estados distintos; a seleção pode ser repetida. Os descritores são
+fechados após cada teste, sem cópia integral do arquivo.
+
+Instale o APK diagnóstico, aguarde os testes automáticos, selecione um arquivo
+local (pode ser sua ISO ou um arquivo de teste) e compartilhe o relatório.
+Espere `document_status=readable` e `document_boundary_check=passed` para um
+arquivo regular não vazio. Isso ainda **não inicia Disgaea D2**.
+
+**English:** 0.0.9 integrates Android's document picker with the bounded native
+reader. It uses read-only document descriptors, samples at most 64 KiB at the
+start and 64 bytes at the end, reports size/bounds and header hints, and handles
+cancellation, empty files and provider failures. Filenames, URIs and contents
+are excluded from the shared report. Header hints are not complete format or
+game validation. No PS3 mount, ISO/UDF parser or game execution is enabled.
+Select a local file, then share the diagnostic report.
 
 ### Pacote integrado da 0.0.8 — arquivos
 
@@ -203,7 +232,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.8-Integrated-Files-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.9-Document-Picker-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos

@@ -40,14 +40,14 @@ jobs:
             --readelf "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 android/app/build/outputs/apk/debug/app-debug.apk
           mkdir android-download
-          cp android/app/build/outputs/apk/debug/app-debug.apk android-download/DisgaeaD2-Android-0.0.8-Integrated-Files-Test-arm64.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-download/DisgaeaD2-Android-0.0.9-Document-Picker-Test-arm64.apk
           cp android/README.md android-download/README.md
           cp LICENSE THIRD_PARTY_NOTICES.md android-download/
           cd android-download
           sha256sum *.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-Android-0.0.8-Integrated-Files-Test-arm64
+          name: DisgaeaD2-Android-0.0.9-Document-Picker-Test-arm64
           path: android-download/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -94,5 +94,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Android-0.0.8-Actual-UI-Smoke
+          name: Android-0.0.9-Actual-UI-Smoke
           path: android-ui-smoke/

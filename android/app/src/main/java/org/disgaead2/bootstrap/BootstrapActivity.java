@@ -2,6 +2,12 @@ package org.disgaead2.bootstrap;
 
 import android.app.NativeActivity;
 import android.content.Intent;
+import android.content.res.AssetFileDescriptor;
+import android.net.Uri;
+import android.os.CancellationSignal;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.nio.file.StandardCopyOption;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -18,6 +24,71 @@ import java.nio.file.Files;
 /** NativeActivity owns the surface; the overlay only labels and shares diagnostics. */
 public final class BootstrapActivity extends NativeActivity {
     private PopupWindow diagnostics;
+    private static final int PICK_DOCUMENT = 41;
+    private final ExecutorService reader = Executors.newSingleThreadExecutor();
+    private CancellationSignal cancellation;
+    private Button select;
+    private TextView documentStatus;
+    private static native String inspectDescriptor(int fd, long base, long length);
+
+    private void saveDocumentReport(String text) {
+        // Small report without filename, URI, paths or file contents.
+        try {
+            File temporary = new File(getFilesDir(), "selected-document-report.tmp");
+            Files.write(temporary.toPath(), text.getBytes(StandardCharsets.UTF_8));
+            Files.move(temporary.toPath(), new File(getFilesDir(), "selected-document-report.txt").toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.io.IOException e) {
+            runOnUiThread(() -> { if (!isDestroyed()) documentStatus.setText(R.string.document_report_error); });
+        }
+    }
+
+    private void chooseDocument() {
+        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType("*/*");
+        pick.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+        pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try { startActivityForResult(pick, PICK_DOCUMENT); }
+        catch (android.content.ActivityNotFoundException e) {
+            saveDocumentReport("document_status=rejected\ndocument_reason=no-picker\ndocument_game_boot=false\n");
+            documentStatus.setText(R.string.document_no_picker);
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != PICK_DOCUMENT) return;
+        if (result != RESULT_OK || data == null || data.getData() == null) {
+            saveDocumentReport("document_status=cancelled\ndocument_game_boot=false\n");
+            documentStatus.setText(R.string.document_cancelled); return;
+        }
+        Uri uri = data.getData();
+        select.setEnabled(false);
+        documentStatus.setText(R.string.document_reading);
+        cancellation = new CancellationSignal();
+        final CancellationSignal signal = cancellation;
+        reader.execute(() -> {
+            String report;
+            try (AssetFileDescriptor asset = getContentResolver().openAssetFileDescriptor(uri, "r", signal)) {
+                if (asset == null) throw new java.io.IOException("No descriptor");
+                report = inspectDescriptor(asset.getParcelFileDescriptor().getFd(),
+                        asset.getStartOffset(), asset.getDeclaredLength());
+            } catch (SecurityException e) {
+                report = "document_status=rejected\ndocument_reason=permission-denied\ndocument_game_boot=false\n";
+            } catch (Exception e) {
+                report = "document_status=rejected\ndocument_reason=provider-or-read-error\ndocument_game_boot=false\n";
+            }
+            final String completed = report;
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                saveDocumentReport(completed);
+                select.setEnabled(true);
+                documentStatus.setText(completed.contains("document_status=readable\n") ? R.string.document_readable :
+                        completed.contains("document_status=empty\n") ? R.string.document_empty : R.string.document_rejected);
+            });
+        });
+    }
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
@@ -41,6 +112,16 @@ public final class BootstrapActivity extends NativeActivity {
         report.setFocusable(false); // Gamepad navigation stays with NativeActivity.
         report.setOnClickListener(v -> shareReport());
         panel.addView(report);
+        select = new Button(this);
+        select.setText(R.string.select_document);
+        select.setFocusable(false);
+        select.setOnClickListener(v -> chooseDocument());
+        panel.addView(select);
+        documentStatus = new TextView(this);
+        documentStatus.setText(R.string.document_notice);
+        documentStatus.setTextColor(0xffffffff);
+        documentStatus.setMaxWidth(dp(340));
+        panel.addView(documentStatus);
         // NativeActivity.takeSurface gives Vulkan the main window surface.
         // Ordinary addContentView widgets are overwritten by native presents.
         // A non-focusable PopupWindow gets its own compositor surface above it.
@@ -77,6 +158,8 @@ public final class BootstrapActivity extends NativeActivity {
 
     @Override public void onDestroy() {
         if (diagnostics != null) diagnostics.dismiss();
+        if (cancellation != null) cancellation.cancel();
+        reader.shutdownNow();
         super.onDestroy();
     }
 
@@ -84,6 +167,8 @@ public final class BootstrapActivity extends NativeActivity {
         try {
             String text = new String(Files.readAllBytes(new File(getFilesDir(),
                     "android-vulkan-report.txt").toPath()), StandardCharsets.UTF_8);
+            File selected = new File(getFilesDir(), "selected-document-report.txt");
+            if (selected.isFile()) text += "\n" + new String(Files.readAllBytes(selected.toPath()), StandardCharsets.UTF_8);
             // No storage/network permissions. Sharing happens only on this user click.
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");

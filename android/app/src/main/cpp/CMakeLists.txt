@@ -15,6 +15,6 @@ add_subdirectory("${D2_ROOT}/android/core" "${CMAKE_CURRENT_BINARY_DIR}/d2-core"
 add_library(native_app_glue STATIC "${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c")
 set_target_properties(native_app_glue PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(native_app_glue PUBLIC "${ANDROID_NDK}/sources/android/native_app_glue")
-add_library(d2_android_bootstrap SHARED main.cpp)
+add_library(d2_android_bootstrap SHARED main.cpp document_jni.cpp)
 target_link_options(d2_android_bootstrap PRIVATE "-uANativeActivity_onCreate" "-Wl,-z,max-page-size=16384")
 target_link_libraries(d2_android_bootstrap PRIVATE d2_vulkan d2_android_core native_app_glue android log)
