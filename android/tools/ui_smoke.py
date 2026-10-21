@@ -82,6 +82,14 @@ def main():
     assert 'bundle_status=passed' in report and 'bundle_failures=0' in report, report
     assert 'bundle_rounds=3' in report and 'bundle_workers_created_and_joined=12' in report
     assert 'bundle_game_boot=false' in report
+    assert 'files_status=passed' in report and 'files_failures=0' in report, report
+    assert 'files_game_loaded=false' in report
+    assert 'files_document_picker_integrated=false' in report
+    for name in ('files_descriptor_bounds_and_parallel_reads',
+                 'files_lifted_open_read_seek_stat_close_and_eof',
+                 'files_errors_recovery_and_handle_audit',
+                 'files_truncation_transaction_and_cleanup', 'dispatch_integrated_files'):
+        assert name + '=passed' in report, report
     for name in ('bundle_memory_allocate_free', 'bundle_mapping_protection_release',
                  'bundle_mutex_and_shared_counter', 'bundle_semaphore_wait_post_timeout',
                  'bundle_mutex_cross_thread_timeout', 'bundle_thread_create_exit_join',

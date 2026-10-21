@@ -33,7 +33,7 @@ struct State {
     void startCoreProbe() {
         try {
         core_worker = std::thread([this] {
-            char result[8192] = {};
+            char result[16384] = {};
             int core_result = d2_runtime_probe_run(result, sizeof result);
             std::string combined = result;
             // One worker, sequential ownership: core probe releases its guest VM
@@ -61,7 +61,7 @@ struct State {
         const std::string path = std::string(app->activity->internalDataPath) + "/android-vulkan-report.txt";
         const std::string temporary = path + ".tmp";
         std::ofstream out(temporary, std::ios::trunc);
-        out << "Disgaea D2 Android bootstrap 0.0.7\n"
+        out << "Disgaea D2 Android bootstrap 0.0.8\n"
             << "game_runtime_linked=false\ngameplay_available=false\n"
 #if defined(__aarch64__)
             << "abi=arm64-v8a\n"

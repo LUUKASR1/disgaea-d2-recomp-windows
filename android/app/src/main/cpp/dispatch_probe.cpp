@@ -3,6 +3,7 @@
 #include "ppu_recomp.h"
 #include "dispatch_image.h"
 #include "dispatch_probe.h"
+#include "file_services.h"
 #include "ps3emu/error_codes.h"
 #include <array>
 #include <cstdarg>
@@ -265,7 +266,13 @@ int d2_dispatch_probe_run(const char *directory,char *report,size_t capacity) {
             r.check("dispatch_private_fixture_file",written);
             bool loaded=written && d2_fixture_load_elf(cleanup.path.c_str())==0x20000;
             r.check("dispatch_fixture_loaded",loaded);
-            if(loaded) exercise(r);
+            if(loaded) {
+                exercise(r);
+                char files[4096]={};
+                int files_result=d2_file_bundle_run(directory,files,sizeof(files));
+                r.line("%s",files);
+                r.check("dispatch_integrated_files",files_result==0);
+            }
             if(!cleanup.path.empty()) {
                 bool removed=unlink(cleanup.path.c_str())==0;
                 r.check("dispatch_fixture_removed",removed); if(removed) cleanup.path.clear();

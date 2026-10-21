@@ -1,6 +1,35 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.7
+# Disgaea D2 — Android ARM64 bootstrap 0.0.8
 
 ## Português
+
+### Pacote integrado da 0.0.8 — arquivos
+
+Acrescenta um leitor C++ de fatias limitadas de um descritor de arquivo regular
+(e duplicado), sem exigir caminho de armazenamento externo. Seis adaptadores
+LV2 novos ligam `open/read/write/close/lseek/fstat` ao caminho `sc` do fixture
+recompilado pelo lifter real: escrita é recusada, os demais operam somente sobre
+um arquivo virtual explicitamente registrado e somente para leitura.
+Os handlers completos `sys_fs`/`cellFs` do SDK não estão ligados nesta etapa.
+
+O mesmo APK verifica limites e overflow, leituras paralelas com `pread`, cursor
+independente por handle, EOF, metadados big-endian, rejeição de caminhos inválidos,
+ponteiros completos antes de conversão, limite de handles, handles obsoletos,
+truncamento externo sem escrita parcial na memória guest e limpeza dos recursos.
+Transferências são limitadas a 64 KiB, seeks ficam dentro da fatia, metadados de
+proprietário e tempo são sintéticos; nenhum host path arbitrário é aceito.
+
+Espere `files_status=passed` e `files_failures=0`, junto aos testes anteriores.
+Ainda usa **arquivo sintético interno**: não há seletor de documentos Android,
+parser ISO/UDF, saves graváveis ou inicialização do jogo. O leitor é a base para
+um futuro descritor obtido via SAF; provedores por pipe/stream são rejeitados.
+
+**English:** 0.0.8 adds a bounded read-only descriptor slice and six new LV2
+adapters exercised through the real lifted synthetic syscall entry. The grouped
+tests cover parallel positional reads, independent cursors, endian stat output,
+EOF, bounds/overflow, invalid guest pointers, handles, truncation and cleanup,
+alongside all 0.0.7 tests. This is not the SDK's full filesystem, a document
+picker, ISO/UDF parsing, writable saves or game boot. Expect `files_status=passed`
+and `files_failures=0`. No game files or storage permissions are needed.
 
 ### Pacote integrado da 0.0.7
 
@@ -174,7 +203,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.7-Integrated-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.8-Integrated-Files-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos

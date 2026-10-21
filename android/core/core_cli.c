@@ -3,7 +3,7 @@
 #include "dispatch_probe.h"
 #include <stdio.h>
 int main(void) {
-    char report[8192];
+    char report[16384];
     int result = d2_runtime_probe_run(report, sizeof report);
     puts(report);
     if (result == 0) {

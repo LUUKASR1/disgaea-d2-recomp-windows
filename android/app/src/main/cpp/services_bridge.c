@@ -2,6 +2,7 @@
  * Full PPU HLE ABI, timer workers and unrelated services are not enabled.
  */
 #include "dispatch_probe.h"
+#include "file_services.h"
 #include "runtime/syscalls/sys_timer.h"
 #include "libs/system/cellRtc.h"
 #include "ps3emu/nid.h"
@@ -36,6 +37,7 @@ void d2_services_syscall(void *context,size_t bytes) {
     ppu_context ctx; memcpy(&ctx,context,sizeof(ctx));
     uint64_t num=ctx.gpr[11];
     if(num!=SYS_TIME_GET_TIMEBASE_FREQUENCY && num!=SYS_TIME_GET_CURRENT_TIME) {
+        if(d2_files_syscall(context,bytes)) return;
         if(d2_bundle_syscall(context,bytes)) return;
         result(context,(int64_t)(int32_t)CELL_ENOSYS);
         d2_lift_fault(D2_DISPATCH_SYSCALL_UNAVAILABLE); return;
