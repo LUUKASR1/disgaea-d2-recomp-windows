@@ -4,4 +4,13 @@
     <string name="share_report">Compartilhar relatório</string>
     <string name="report_pending">O relatório ainda não está pronto. Aguarde alguns segundos e tente novamente.</string>
     <string name="report_title">Diagnóstico Disgaea D2 Android</string>
+    <string name="select_document">Selecionar arquivo para validar</string>
+    <string name="document_notice">Teste de arquivo somente para leitura. Ainda não inicia o jogo.</string>
+    <string name="document_reading">Verificando arquivo selecionado…</string>
+    <string name="document_readable">Arquivo legível. Compartilhe o relatório de diagnóstico.</string>
+    <string name="document_empty">O arquivo selecionado está vazio.</string>
+    <string name="document_rejected">Não foi possível ler este arquivo. Consulte o relatório.</string>
+    <string name="document_cancelled">Seleção cancelada. Você pode tentar novamente.</string>
+    <string name="document_no_picker">O seletor de arquivos do Android não está disponível.</string>
+    <string name="document_report_error">Não foi possível salvar o diagnóstico do arquivo.</string>
 </resources>
