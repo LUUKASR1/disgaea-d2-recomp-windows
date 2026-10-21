@@ -13,4 +13,8 @@
     <string name="document_cancelled">Selection cancelled. You can try again.</string>
     <string name="document_no_picker">No Android file picker is available.</string>
     <string name="document_report_error">Could not save the file diagnostic.</string>
+    <string name="disc_readable">Base image readable: 18 files checked. Share the report.</string>
+    <string name="disc_other_title">This image belongs to another title. See the report.</string>
+    <string name="disc_missing">Some base files are missing or unreadable. Share the report.</string>
+    <string name="disc_rejected">File readable, but image could not be mounted. Share the report.</string>
 </resources>

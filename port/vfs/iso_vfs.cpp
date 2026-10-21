@@ -52,6 +52,28 @@ public:
         size_ = static_cast<std::uint64_t>(info.st_size);
 #endif
     }
+#ifndef _WIN32
+    NativeImage(int descriptor, std::uint64_t base, std::uint64_t length, std::uint64_t budget) {
+        handle_ = ::fcntl(descriptor, F_DUPFD_CLOEXEC, 0);
+        struct stat info{};
+        int flags = handle_ < 0 ? -1 : ::fcntl(handle_, F_GETFL);
+        const auto max = static_cast<std::uint64_t>(std::numeric_limits<off_t>::max());
+        bool valid = flags >= 0 && (flags & O_ACCMODE) != O_WRONLY &&
+            !::fstat(handle_, &info) && S_ISREG(info.st_mode) && info.st_size >= 0 &&
+            base <= max && length <= max - base &&
+            base <= static_cast<std::uint64_t>(info.st_size) &&
+            length <= static_cast<std::uint64_t>(info.st_size) - base;
+#ifdef O_PATH
+        valid = valid && !(flags & O_PATH);
+#endif
+        if (!valid) {
+            if (handle_ >= 0) ::close(handle_);
+            handle_ = -1;
+            throw Error(ErrorCode::Io, "Invalid descriptor slice.");
+        }
+        base_ = base; size_ = length; budget_ = budget; calls_ = 8192;
+    }
+#endif
     ~NativeImage() {
 #ifdef _WIN32
         if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);
@@ -65,6 +87,8 @@ public:
 
     bool ReadExact(std::uint64_t offset, void* buffer, std::size_t size) noexcept {
         if (offset > size_ || size > size_ - offset) return false;
+        if (size > budget_ || !calls_) return false;
+        budget_ -= size; --calls_;
         auto* output = static_cast<std::byte*>(buffer);
         while (size) {
             const auto count = std::min<std::size_t>(size, 1024u * 1024u);
@@ -82,7 +106,7 @@ public:
             if (!success || !got) return false;
 #else
             ssize_t got;
-            do { got = ::pread(handle_, output, count, static_cast<off_t>(offset)); }
+            do { got = ::pread(handle_, output, count, static_cast<off_t>(base_ + offset)); }
             while (got < 0 && errno == EINTR);
             if (got <= 0) return false;
 #endif
@@ -97,7 +121,8 @@ private:
 #else
     int handle_ = -1;
 #endif
-    std::uint64_t size_ = 0;
+    std::uint64_t size_ = 0, base_ = 0;
+    std::uint64_t budget_ = UINT64_MAX, calls_ = UINT64_MAX;
 };
 }
 
@@ -158,7 +183,12 @@ ImageLayout InspectImage(const std::filesystem::path& image) {
 }
 
 struct IsoVfs::State {
-    explicit State(const std::filesystem::path& path) : image(path) {
+    explicit State(const std::filesystem::path& path) : image(path) { Initialize(); }
+#ifndef _WIN32
+    State(int fd, std::uint64_t base, std::uint64_t length, std::uint64_t budget)
+        : image(fd, base, length, budget) { Initialize(); }
+#endif
+    void Initialize() {
         if (image.Size() % BlockSize || image.Size() / BlockSize > UINT32_MAX ||
             image.Size() < 17 * BlockSize)
             throw Error(ErrorCode::InvalidImage, "Tamanho de imagem ISO invalido.");
@@ -224,6 +254,10 @@ std::string IsoVfs::NormalizePath(std::string_view input) {
 }
 
 IsoVfs::IsoVfs(const std::filesystem::path& path) : state_(std::make_shared<State>(path)) {}
+#ifndef _WIN32
+IsoVfs::IsoVfs(int fd, std::uint64_t base, std::uint64_t length, std::uint64_t budget)
+    : state_(std::make_shared<State>(fd,base,length,budget)) {}
+#endif
 std::string IsoVfs::BackendName() const { return state_->iso9660 ? "ISO9660" : "UDF"; }
 IsoVfs::File::File(std::shared_ptr<Handle> h) : handle_(std::move(h)) {}
 std::uint64_t IsoVfs::File::Size() const noexcept { return handle_->size; }

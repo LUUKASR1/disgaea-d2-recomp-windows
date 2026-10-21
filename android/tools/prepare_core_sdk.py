@@ -205,6 +205,7 @@ def prepare(sdk, output):
     licenses.mkdir()
     for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         (licenses / (name + '.txt')).write_bytes((ROOT / name).read_bytes())
+    (licenses / 'libudfread-COPYING.txt').write_bytes((ROOT / 'port/vfs/vendor/libudfread/COPYING').read_bytes())
     print('Pinned SDK core prepared:', lock['tree'], len(files), 'source files')
 
 

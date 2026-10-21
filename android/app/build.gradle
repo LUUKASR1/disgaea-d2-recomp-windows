@@ -9,8 +9,8 @@ android {
         applicationId 'org.disgaead2.bootstrap'
         minSdk 28
         targetSdk 35
-        versionCode 9
-        versionName '0.0.9-document-picker-test'
+        versionCode 10
+        versionName '0.0.10-disc-vfs-test'
         // x86_64 is only for CI's Android emulator. Distributed APK stays ARM64.
         ndk { abiFilters project.hasProperty('d2EmulatorSmoke') ? 'x86_64' : 'arm64-v8a' }
         externalNativeBuild {

@@ -51,6 +51,12 @@ public:
     };
 
     explicit IsoVfs(const std::filesystem::path& image);
+#ifndef _WIN32
+    // Read-only duplicated POSIX descriptor slice (Android SAF). Per-mount I/O
+    // budget applies to this inspection entry only, not the desktop path API.
+    IsoVfs(int descriptor, std::uint64_t base, std::uint64_t length,
+           std::uint64_t readBudget = 32u * 1024u * 1024u);
+#endif
     std::string BackendName() const;
     std::shared_ptr<File> Open(std::string_view internalPath) const;
     FileInfo Stat(std::string_view internalPath) const;

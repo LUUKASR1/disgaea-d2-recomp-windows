@@ -87,7 +87,11 @@ public final class BootstrapActivity extends NativeActivity {
                 if (isDestroyed()) return;
                 saveDocumentReport(completed);
                 select.setEnabled(true);
-                documentStatus.setText(completed.contains("document_status=readable\n") ? R.string.document_readable :
+                documentStatus.setText(completed.contains("disc_status=base-files-readable\n") ? R.string.disc_readable :
+                        completed.contains("disc_status=other-title\n") ? R.string.disc_other_title :
+                        completed.contains("disc_status=missing-or-unreadable-base-files\n") ? R.string.disc_missing :
+                        completed.contains("disc_status=rejected\n") ? R.string.disc_rejected :
+                        completed.contains("document_status=readable\n") ? R.string.document_readable :
                         completed.contains("document_status=empty\n") ? R.string.document_empty : R.string.document_rejected);
             });
         });

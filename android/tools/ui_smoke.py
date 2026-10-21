@@ -106,6 +106,37 @@ def document_test(output):
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
     button()
     assert 'document_status=cancelled' in adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
+    # A generated UDF fixture has synthetic SFO and tiny placeholder assets.
+    # It is transferred only to the CI device, never bundled with the APK.
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'port/vfs/tests'))
+    from make_fixture import make
+    image = output / 'd2-disc-fixture.iso'
+    make(image, complete=True)
+    adb('push', image, '/sdcard/Download/d2-disc-fixture.iso')
+    adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE',
+        '-d', 'file:///sdcard/Download/d2-disc-fixture.iso')
+    tap(button('Select file to validate'))
+    time.sleep(2)
+    if not tap_node(text='d2-disc-fixture.iso'):
+        assert tap_node(description='Show roots'), ET.tostring(hierarchy(), encoding='unicode')
+        time.sleep(1)
+        assert tap_node(text='Downloads'), ET.tostring(hierarchy(), encoding='unicode')
+        time.sleep(2)
+        assert tap_node(text='d2-disc-fixture.iso'), ET.tostring(hierarchy(), encoding='unicode')
+    button()
+    for _ in range(15):
+        disc = adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
+        if 'disc_status=base-files-readable' in disc:
+            break
+        time.sleep(1)
+    (output / 'disc-report.txt').write_text(disc)
+    for field in ('document_status=readable', 'disc_backend=UDF', 'disc_title_id=BLUS31313',
+                  'disc_required_files_checked=18', 'disc_required_files_failed=0',
+                  'disc_status=base-files-readable', 'disc_game_boot=false'):
+        assert field in disc, disc
+    assert 'content://' not in disc and 'd2-disc-fixture.iso' not in disc
+
 
 
 def main():
@@ -208,7 +239,7 @@ def main():
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-elf-fixture-')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-dispatch-fixture-')
-    print('PASS: real Android document picker, cancel/retry, Downloads descriptor/native sampling, lifecycle, privacy; all prior integrated tests + Vulkan/share UI')
+    print('PASS: real picker, native UDF mount, synthetic SFO + 18 base assets, cancellation, lifecycle; all prior runtime tests + Vulkan/share UI')
 
 
 if __name__ == '__main__':

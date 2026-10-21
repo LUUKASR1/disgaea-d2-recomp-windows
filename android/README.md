@@ -1,6 +1,37 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.9
+# Disgaea D2 — Android ARM64 bootstrap 0.0.10
 
 ## Português
+
+### Pacote integrado da 0.0.10 — inspeção ISO/VFS
+
+Reutiliza o leitor UDF/ISO9660 do Windows com uma nova entrada por descritor POSIX
+(e fatia do provedor Android). O arquivo é aberto somente para leitura; não é
+extraído. Ao selecionar uma ISO reconhecida, tenta montar o volume temporariamente,
+valida a tabela de `PARAM.SFO`, identifica `TITLE_ID` e verifica por amostragem os
+18 arquivos-base esperados de BLUS31313. Limite de I/O da montagem por descritor:
+32 MiB e 8192 chamadas; não é uma auditoria completa do conteúdo da imagem.
+
+Espere `disc_status=base-files-readable`, `disc_required_files_checked=18` e
+`disc_required_files_failed=0` para uma imagem compatível com todos os arquivos.
+Outro título, arquivo-base ausente/ilegível ou imagem não montada têm estados
+separados. `document_status=readable` sozinho continua significando apenas que o
+arquivo selecionado pode ser lido. O relatório não contém nome/URI nem conteúdo
+dos assets. **Não valida descriptografia dos assets nem inicializa o jogo**.
+A montagem é exclusiva desta inspeção; ainda não está ligada ao runtime guest.
+Atualizações e DLCs não fazem parte dos 18 arquivos-base verificados.
+
+`libudfread` é distribuída como biblioteca compartilhada separada, com licença
+LGPL-2.1-or-later no APK. As fontes vendorizadas permanecem sem alterações; a
+entrada de descritor e integração CMake ficam no código deste projeto.
+
+**English:** 0.0.10 reuses the desktop UDF/ISO9660 reader with Android descriptor
+slices. It temporarily mounts recognized images read-only, parses bounded SFO
+metadata and samples the 18 expected BLUS31313 base files. Descriptor mounts have
+a 32 MiB / 8192-call read budget. Expect `disc_status=base-files-readable` and 18
+successful checks for a compatible complete base image. This is not asset
+decryption validation, a guest runtime mount or game boot. No extraction is
+performed; updates/DLCs are separate. LGPL libudfread is a separate shared library
+with its license bundled; the vendored upstream sources are unchanged.
 
 ### Pacote integrado da 0.0.9 — seletor de arquivos Android
 
@@ -232,7 +263,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.9-Document-Picker-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.10-Disc-VFS-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos

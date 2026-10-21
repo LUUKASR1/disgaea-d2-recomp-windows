@@ -6,6 +6,10 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 using namespace d2::vfs;
 namespace {
@@ -63,6 +67,26 @@ int main(int count, char** args) {
         check(disc.Stat("/PS3_GAME/USRDIR/Data").directory, "nested directory");
         check(disc.Stat("/PS3_GAME/PARAM.SFO").size == 58, "inline file size");
         check(disc.TitleId() == "BLUS31313", "bounded SFO TITLE_ID parser");
+#ifndef _WIN32
+        {
+            int fd=::open(image.c_str(),O_RDONLY|O_CLOEXEC);
+            check(fd>=0,"descriptor fixture open");
+            std::shared_ptr<IsoVfs::File> retained;
+            {
+                IsoVfs byDescriptor(fd,0,std::filesystem::file_size(image));
+                ::close(fd);
+                check(byDescriptor.TitleId()=="BLUS31313","duplicated descriptor ownership");
+                retained=byDescriptor.Open("/PS3_GAME/USRDIR/Data/fragment.bin");
+            }
+            std::array<std::byte,4> head{};
+            check(retained->ReadAt(0,head)==4,"descriptor handle retains volume after mount release");
+            check(std::equal(head.begin(),head.end(),expected.begin()),"retained descriptor bytes");
+            fd=::open(image.c_str(),O_RDONLY|O_CLOEXEC);
+            expect(ErrorCode::InvalidImage,[&]{ IsoVfs limited(fd,0,std::filesystem::file_size(image),0); },"descriptor read budget");
+            expect(ErrorCode::Io,[&]{ IsoVfs outside(fd,1,std::filesystem::file_size(image)); },"descriptor slice bounds");
+            ::close(fd);
+        }
+#endif
         check(disc.GetFileBytes("/PS3_GAME/PARAM.SFO")[1] == std::byte{'P'}, "inline file bytes");
         check(disc.GetFileBytes("/PS3_GAME/USRDIR/Data/fragment.bin") == expected, "short fragmented extents");
         check(disc.GetFileBytes("PS3_GAME\\USRDIR\\Data\\long.bin") == expected, "long fragmented extents and separators");

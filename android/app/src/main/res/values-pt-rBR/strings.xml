@@ -13,4 +13,8 @@
     <string name="document_cancelled">Seleção cancelada. Você pode tentar novamente.</string>
     <string name="document_no_picker">O seletor de arquivos do Android não está disponível.</string>
     <string name="document_report_error">Não foi possível salvar o diagnóstico do arquivo.</string>
+    <string name="disc_readable">Imagem-base legível: 18 arquivos verificados. Compartilhe o relatório.</string>
+    <string name="disc_other_title">A imagem pertence a outro título. Consulte o relatório.</string>
+    <string name="disc_missing">Alguns arquivos-base estão ausentes ou ilegíveis. Compartilhe o relatório.</string>
+    <string name="disc_rejected">Arquivo legível, mas a imagem não foi montada. Compartilhe o relatório.</string>
 </resources>

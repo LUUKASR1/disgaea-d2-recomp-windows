@@ -7,6 +7,7 @@ its own license; nothing here relicenses them.
 |---|---|---|
 | [ps3recomp](https://github.com/sp00nznet/ps3recomp) (sp00nznet / Ned Heller) | Recompiler SDK and runtime. `patches/ps3recomp-d2-macos.diff` contains our modifications to it; `tools/bootstrap_sdk.sh` fetches upstream and applies them. | MIT, Copyright (c) 2026 Ned Heller / sp00nznet |
 | at3_standalone (in ps3recomp `third_party/`, derived from PPSSPP / FFmpeg) | ATRAC3/ATRAC3plus audio decoding | LGPL-2.1 (see its `COPYING.LGPLv2.1`) |
+| libudfread 1.2.0 (VideoLAN/VLC authors) | Read-only UDF image inspection; unchanged vendored sources in `port/vfs/vendor/libudfread`. Android links a separate shared library. Source and build instructions are included in this repository. | LGPL-2.1-or-later; see `port/vfs/vendor/libudfread/COPYING` |
 | [SDL2](https://www.libsdl.org/) | Gamepad and audio output | zlib |
 | [nlohmann/json](https://github.com/nlohmann/json) | Cheat/editor schema parsing | MIT |
 | Apple frameworks (Metal, AppKit, VideoToolbox, CoreAudio) | Rendering, UI, movie decoding, audio | Apple SDK terms |

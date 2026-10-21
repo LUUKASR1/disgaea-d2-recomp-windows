@@ -23,23 +23,26 @@ def main():
     assert not any(line.startswith('uses-permission:') for line in badging.splitlines())
     with zipfile.ZipFile(args.apk) as archive:
         libs = [p for p in archive.namelist() if p.startswith('lib/') and p.endswith('.so')]
-        assert libs == ['lib/arm64-v8a/libd2_android_bootstrap.so'], libs
-        data = archive.read(libs[0])
-        assert data[:6] == b'\x7fELF\x02\x01'  # ELF64 little endian.
-        assert struct.unpack_from('<H', data, 18)[0] == 183  # EM_AARCH64.
-        phoff = struct.unpack_from('<Q', data, 32)[0]
-        phsize, phcount = struct.unpack_from('<HH', data, 54)
-        load_count = 0
-        for i in range(phcount):
-            header = struct.unpack_from('<IIQQQQQQ', data, phoff + i * phsize)
-            if header[0] == 1:  # PT_LOAD.
-                load_count += 1
-                assert header[7] >= 16384, header
-                assert header[2] % 16384 == header[3] % 16384, header
-        assert load_count
+        assert set(libs) == {'lib/arm64-v8a/libd2_android_bootstrap.so',
+                             'lib/arm64-v8a/libd2_android_udfread.so'}, libs
+        assert 'assets/libudfread-COPYING.txt' in archive.namelist()
+        for name in libs:
+            data = archive.read(name)
+            assert data[:6] == b'\x7fELF\x02\x01'
+            assert struct.unpack_from('<H', data, 18)[0] == 183
+            phoff = struct.unpack_from('<Q', data, 32)[0]
+            phsize, phcount = struct.unpack_from('<HH', data, 54)
+            load_count = 0
+            for i in range(phcount):
+                header = struct.unpack_from('<IIQQQQQQ', data, phoff + i * phsize)
+                if header[0] == 1:
+                    load_count += 1
+                    assert header[7] >= 16384, (name, header)
+                    assert header[2] % 16384 == header[3] % 16384, (name, header)
+            assert load_count
         with tempfile.TemporaryDirectory() as temporary:
             library = Path(temporary) / 'bootstrap.so'
-            library.write_bytes(data)
+            library.write_bytes(archive.read('lib/arm64-v8a/libd2_android_bootstrap.so'))
             symbols = subprocess.check_output([args.readelf, '--dyn-syms', str(library)], text=True)
             assert any('ANativeActivity_onCreate' in line and 'GLOBAL' in line and 'UND' not in line
                        for line in symbols.splitlines()), 'NativeActivity entry is not exported'

@@ -1,6 +1,8 @@
 #include "document_probe.h"
 #include "descriptor_file.h"
+#include "iso_vfs.h"
 #include <array>
+#include <algorithm>
 #include <cstring>
 #include <sys/stat.h>
 
@@ -38,5 +40,35 @@ std::string d2_inspect_document(int fd,int64_t base,int64_t declared_length) {
     report+="document_bytes="+std::to_string(length)+"\ndocument_head_sample_bytes="+std::to_string(count)+
         "\ndocument_tail_sample_bytes="+std::to_string(tail_count)+"\ndocument_container_hint="+hint+
         "\ndocument_boundary_check=passed\ndocument_status="+(length ? std::string("readable") : std::string("empty"))+"\n";
+    if(std::strcmp(hint,"iso9660-header-only") && std::strcmp(hint,"udf-header-only"))
+        return report+"disc_status=not-disc\n";
+    report+="disc_mount_scope=read-only-inspection\ndisc_game_boot=false\n";
+    try {
+        d2::vfs::IsoVfs disc(fd,offset,length);
+        report+="disc_backend="+disc.BackendName()+"\n";
+        auto title=disc.TitleId();
+        report+="disc_title_id="+title+"\n";
+        if(title!="BLUS31313") return report+"disc_status=other-title\n";
+        unsigned checked=0, failed=0;
+        auto check=[&](const std::string &path) {
+            try {
+                auto file=disc.Open(path);
+                std::array<std::byte,4096> sample{};
+                if(!file->Size() || file->ReadAt(0,sample)!=std::min<std::uint64_t>(file->Size(),sample.size())) ++failed;
+                else ++checked;
+            } catch(const d2::vfs::Error&) { ++failed; }
+        };
+        check("/PS3_GAME/PARAM.SFO"); check("/PS3_GAME/USRDIR/EBOOT.BIN");
+        for(const char *stem:{"START","ANM_HI"}) for(unsigned part=0;part<7;++part)
+            check(std::string("/PS3_GAME/USRDIR/Data/")+stem+(part ? "_"+std::to_string(part) : "")+".dat");
+        check("/PS3_GAME/USRDIR/Data/NisAnmShadow.txf");
+        check("/PS3_GAME/USRDIR/Data/SOUND/SndPakBgm/SndPakBgm_0.pak");
+        report+="disc_required_files_checked="+std::to_string(checked)+"\ndisc_required_files_failed="+
+            std::to_string(failed)+"\ndisc_asset_decryption_validated=false\ndisc_status="+
+            (failed ? std::string("missing-or-unreadable-base-files") : std::string("base-files-readable"))+"\n";
+    } catch(const d2::vfs::Error &e) {
+        // Do not include provider URI, host paths or untrusted on-disc strings.
+        report+="disc_status=rejected\ndisc_error_code="+std::to_string(static_cast<int>(e.code))+"\n";
+    }
     return report;
 }
