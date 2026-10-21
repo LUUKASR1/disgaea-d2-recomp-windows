@@ -55,7 +55,7 @@ def main():
         button()
     for _ in range(12):
         report = adb('shell', 'run-as', PACKAGE, 'cat', 'files/android-vulkan-report.txt')
-        if 'status=presenting-test-triangle' in report and 'elf_status=passed' in report:
+        if 'status=presenting-test-triangle' in report and 'dispatch_status=passed' in report:
             break
         time.sleep(1)
     (args.output / 'native-report.txt').write_text(report)
@@ -73,6 +73,20 @@ def main():
     assert 'elf_full_ppu_loader_linked=false' in report
     assert 'elf_code_executed=false' in report
     assert 'elf_game_loaded=false' in report
+    assert 'dispatch_status=passed' in report and 'dispatch_failures=0' in report, report
+    assert 'dispatch_generated_functions=6' in report
+    assert 'dispatch_lifted_code_executed=true' in report
+    assert 'dispatch_game_executed=false' in report
+    assert 'dispatch_full_runtime_available=false' in report
+    for name in ('dispatch_context_abi', 'dispatch_sdk_registry',
+                 'dispatch_registry_collision_and_replace', 'dispatch_lifted_toc_arithmetic',
+                 'dispatch_lifted_big_endian_store_load', 'dispatch_lifted_tail_trampoline',
+                 'dispatch_lifted_indirect_call', 'dispatch_lifted_direct_call',
+                 'dispatch_missing_target_rejected', 'dispatch_unsupported_syscall_rejected',
+                 'dispatch_invalid_opd_rejected', 'dispatch_memory_bounds_rejected',
+                 'dispatch_recovers_after_errors', 'dispatch_thread_local_context',
+                 'dispatch_fixture_removed', 'dispatch_vm_release'):
+        assert name + '=passed' in report, report
     assert 'elf_rejected_fixtures=29' in report, report
     for name in ('elf_segments_and_bss', 'elf_entry_opd_and_toc',
                  'elf_tls_template_metadata', 'elf_invalid_images_no_monitored_writes',
@@ -97,7 +111,8 @@ def main():
     else:
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-elf-fixture-')
-    print('PASS: SDK core + ELF subset (29 rejected fixtures), Vulkan presents, Home/restore twice, share chooser opens')
+    assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-dispatch-fixture-')
+    print('PASS: six lifted PPC functions + SDK core + ELF subset, Vulkan presents, Home/restore twice, share chooser opens')
 
 
 if __name__ == '__main__':

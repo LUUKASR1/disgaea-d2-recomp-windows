@@ -11,6 +11,7 @@
 #include <thread>
 #include "runtime_probe.h"
 #include "elf_probe.h"
+#include "dispatch_probe.h"
 #include "vulkan_renderer.h"
 
 namespace {
@@ -38,8 +39,12 @@ struct State {
             // One worker, sequential ownership: core probe releases its guest VM
             // before the isolated ELF subset creates a new one. No game session.
             if (core_result == 0) {
-                d2_elf_probe_run(app->activity->internalDataPath, result, sizeof result);
+                int elf_result = d2_elf_probe_run(app->activity->internalDataPath, result, sizeof result);
                 combined += result;
+                if (elf_result == 0) {
+                    d2_dispatch_probe_run(app->activity->internalDataPath, result, sizeof result);
+                    combined += result;
+                } else combined += "dispatch_status=skipped-elf-failed\n";
             } else combined += "elf_status=skipped-core-failed\n";
             std::lock_guard<std::mutex> lock(core_lock);
             core_report = combined;
@@ -56,7 +61,7 @@ struct State {
         const std::string path = std::string(app->activity->internalDataPath) + "/android-vulkan-report.txt";
         const std::string temporary = path + ".tmp";
         std::ofstream out(temporary, std::ios::trunc);
-        out << "Disgaea D2 Android bootstrap 0.0.4\n"
+        out << "Disgaea D2 Android bootstrap 0.0.5\n"
             << "game_runtime_linked=false\ngameplay_available=false\n"
 #if defined(__aarch64__)
             << "abi=arm64-v8a\n"

@@ -1,8 +1,37 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.4
+# Disgaea D2 — Android ARM64 bootstrap 0.0.5
 
 ## Português
 
-### Teste do subconjunto ELF na 0.0.4
+### Execução sintética na 0.0.5
+
+Seis funções PowerPC escritas para este teste são traduzidas pelo próprio
+`ppu_lifter.py` do SDK fixado e compiladas em código ARM64 durante o build.
+Não são funções do jogo nem C++ escrito à mão para fingir uma recompilação.
+A imagem ELF, a lista de funções e o código gerado têm hashes de proveniência.
+O aplicativo não distribui ou executa o lifter Python no aparelho.
+
+Um worker único executa núcleo, ELF e despacho em sequência; cada etapa libera
+sua VM antes da próxima. O teste de despacho carrega seu ELF sintético, resolve
+OPD/TOC, registra as funções usando o registro hash extraído literalmente do SDK
+e executa o C++ gerado. A ponte de chamadas deste teste é limitada: não é o
+`ps3_indirect_call`/`ppu_run` completo do SDK. Ela testa soma com leitura via TOC,
+store/load big-endian, chamada direta, chamada indireta e tail trampoline.
+Também compara tamanho, alinhamento e offsets do contexto gerado com o contexto
+real do SDK, verifica colisão/substituição no registro, rejeita endereços fora
+da memória e funções ausentes, e separa erros/contextos entre threads.
+
+Uma função sintética com `sc` deve retornar **erro de syscall indisponível**:
+o teste só passa se a operação não fingir sucesso. Nenhum HLE, áudio, RSX do
+jogo, scheduler completo ou função de Disgaea é iniciado. Os limites da ponte
+não interrompem loops arbitrários de código gerado: só as seis funções fixas
+são admitidas neste teste privado.
+
+Aguarde cerca de 10 segundos e compartilhe o relatório. Esperado:
+`dispatch_status=passed`, `dispatch_failures=0`,
+`dispatch_generated_functions=6`, `dispatch_lifted_code_executed=true` e
+`dispatch_game_executed=false`. Não selecione ISO ou arquivos do jogo.
+
+### Teste do subconjunto ELF mantido da 0.0.4
 
 Depois de o núcleo liberar a VM, um único worker cria uma VM nova e carrega
 somente um ELF sintético criado no diretório privado do aplicativo. O parser
@@ -85,7 +114,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.4-ELF-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.5-Dispatch-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos
@@ -138,7 +167,23 @@ Referências: [NativeActivity](https://developer.android.com/ndk/samples/sample_
 
 ## English
 
-Version 0.0.4 additionally tests a **pinned SDK ELF validation/segment-copy
+Version 0.0.5 runs **six genuinely lifted synthetic PPC functions**: the
+locked SDK lifter translates our own PPC words at build time, then the NDK
+compiles the generated C++ into ARM64. No game code or Python runtime ships.
+The fixture's image, function map, lifter inputs and generated files are hashed.
+The SDK registry subset is reused verbatim, with a limited test-only call bridge
+rather than the full SDK dispatcher/ppu_run. It checks the generated context ABI,
+OPD/TOC, arithmetic, big-endian load/store, direct/indirect calls, tail trampolines,
+registry collisions, missing targets, memory bounds and thread-local isolation.
+An unsupported synthetic `sc` must return an error for the test to pass.
+This bridge does not preempt arbitrary lifted loops; it accepts only our fixed
+six functions. Core, ELF and dispatch probes own their VMs sequentially.
+Expect `dispatch_status=passed`, `dispatch_failures=0`,
+`dispatch_generated_functions=6`, `dispatch_lifted_code_executed=true`, and
+`dispatch_game_executed=false`. Disgaea boot, full HLE/scheduling and game RSX
+are still unavailable. No ISO is needed for this stage.
+
+The ELF test retained from 0.0.4 additionally tests a **pinned SDK ELF validation/segment-copy
 subset**, after the core probe releases its VM. It loads only an internally
 created synthetic ELF, checks PT_LOAD/BSS, entry OPD/TOC, PT_TLS metadata,
 29 rejected malformed/truncated fixtures, successful reload, and file/VM cleanup.
@@ -174,7 +219,7 @@ test, targeting the AYN Odin 2 Portal first. Reuses the project's experimental
 Vulkan renderer with Android window/surface support, NativeActivity lifecycle
 handling and physical gamepad event counters. The Windows release is unchanged.
 
-Install the APK, open **D2 Android • ELF test**, and check for a colored
+Install the APK, open **D2 Android • Dispatch test**, and check for a colored
 triangle and the diagnostic notice. Press physical buttons/D-pad and move the
 sticks. Background/restore the app twice, lock/unlock the screen, then use
 **Share diagnostic report** and describe any visual issue or crash. No ISO or

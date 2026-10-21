@@ -10,6 +10,7 @@ from pathlib import Path
 import posixpath
 import re
 import subprocess
+from prepare_dispatch_fixture import TOOLS, generate, registry_subset
 
 ROOT = Path(__file__).resolve().parents[2]
 SEEDS = (
@@ -147,22 +148,30 @@ def prepare(sdk, output):
             pending.append(found)
     if output.exists():
         raise RuntimeError('Output already exists; use a new directory. Nothing overwritten.')
+    for name in TOOLS:
+        files[name] = git('show', lock['tree'] + ':' + name)
     adapted = {name: adapt_android(name, data) for name, data in files.items()}
     loader_path = 'runtime/ppu/ppu_loader.cpp'
     loader_original = git('show', lock['tree'] + ':' + loader_path)
     # Not added to include traversal: the full loader pulls in HLE/RSX services
     # that this subset intentionally neither links nor pretends to implement.
     adapted['generated/ppu_elf_subset.cpp'] = elf_subset(loader_original)
+    adapted['generated/ppu_registry_subset.inc'] = registry_subset(loader_original)
     output.mkdir(parents=True)
     for name, data in adapted.items():
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+    for name in generate(output):
+        adapted[name] = (output / name).read_bytes()
     receipt = {'schema': 1, 'sdk_tree': lock['tree'], 'game_sources_included': False,
                'android_adaptations': ['cooperative-guest-poll-stop', 'tid-based-affinity'],
                'elf_subset_source': {'path': loader_path,
                    'sha256': hashlib.sha256(loader_original).hexdigest(),
                    'scope': 'validation-and-segment-copy-before-debug-hooks'},
+               'dispatch_fixture': {'input': 'project-owned-synthetic-PPC-instructions',
+                   'lifter': 'tools/ppu_lifter.py', 'game_code_executed': False,
+                   'registry': 'verbatim-pinned-SDK-subset'},
                'original_files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(files.items())},
                'files': {p: hashlib.sha256(b).hexdigest() for p, b in sorted(adapted.items())}}
     (output / 'core-provenance.json').write_text(json.dumps(receipt, indent=2) + '\n')
