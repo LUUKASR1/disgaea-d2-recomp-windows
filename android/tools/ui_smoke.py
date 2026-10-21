@@ -131,6 +131,7 @@ def main():
     assert 'status=presenting-test-triangle' in report, report
     assert re.search(r'presented_test_frames=[1-9]\d*', report), report
     assert 'gameplay_available=false' in report
+    assert 'document_picker_integrated=true' in report
     assert 'core_status=passed' in report and 'core_failures=0' in report, report
     for name in ('core_vm_reservation', 'core_ppu_big_endian', 'core_ppu_integer_ops',
                  'core_ppu_inline_reservation_cas', 'core_host_threads_guest_cas',

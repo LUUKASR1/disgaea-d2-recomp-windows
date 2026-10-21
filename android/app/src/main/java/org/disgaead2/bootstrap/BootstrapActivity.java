@@ -23,6 +23,9 @@ import java.nio.file.Files;
 
 /** NativeActivity owns the surface; the overlay only labels and shares diagnostics. */
 public final class BootstrapActivity extends NativeActivity {
+    // NativeActivity opens its entry library separately. Register it with the
+    // Java class loader as well so our descriptor JNI method resolves reliably.
+    static { System.loadLibrary("d2_android_bootstrap"); }
     private PopupWindow diagnostics;
     private static final int PICK_DOCUMENT = 41;
     private final ExecutorService reader = Executors.newSingleThreadExecutor();
