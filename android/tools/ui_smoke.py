@@ -74,10 +74,18 @@ def main():
     assert 'elf_code_executed=false' in report
     assert 'elf_game_loaded=false' in report
     assert 'dispatch_status=passed' in report and 'dispatch_failures=0' in report, report
-    assert 'dispatch_generated_functions=6' in report
+    assert 'dispatch_generated_functions=10' in report
     assert 'dispatch_lifted_code_executed=true' in report
     assert 'dispatch_game_executed=false' in report
     assert 'dispatch_full_runtime_available=false' in report
+    assert 'services_status=passed' in report and 'services_failures=0' in report, report
+    for name in ('services_tables_initialized', 'services_nid_matches_lifted_import',
+                 'services_syscall_timebase_frequency', 'services_syscall_current_time',
+                 'services_hle_rtc_tick', 'services_hle_big_endian_output',
+                 'services_hle_null_returns_einval', 'services_unknown_hle_rejected',
+                 'services_unknown_syscall_returns_enosys',
+                 'services_invalid_guest_pointers_rejected', 'services_recovery_after_errors'):
+        assert name + '=passed' in report, report
     for name in ('dispatch_context_abi', 'dispatch_sdk_registry',
                  'dispatch_registry_collision_and_replace', 'dispatch_lifted_toc_arithmetic',
                  'dispatch_lifted_big_endian_store_load', 'dispatch_lifted_tail_trampoline',
@@ -112,7 +120,7 @@ def main():
         raise AssertionError('Tapping the visible share button did not open the Android chooser')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-elf-fixture-')
     assert not adb('shell', 'run-as', PACKAGE, 'ls', 'files/').count('d2-dispatch-fixture-')
-    print('PASS: six lifted PPC functions + SDK core + ELF subset, Vulkan presents, Home/restore twice, share chooser opens')
+    print('PASS: ten lifted PPC functions + real SDK time syscalls/RTC HLE + core/ELF; Vulkan, Home/restore twice, share UI')
 
 
 if __name__ == '__main__':

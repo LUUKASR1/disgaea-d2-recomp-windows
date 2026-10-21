@@ -3,10 +3,12 @@
 #include "ppu_recomp.h"
 #include "dispatch_image.h"
 #include "dispatch_probe.h"
+#include "ps3emu/error_codes.h"
 #include <array>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <string>
 #include <thread>
@@ -61,7 +63,7 @@ void invoke(ppu_context *ctx,uint32_t code) {
     ppu_context *prior=active; active=ctx; ++depth;
     fn(ctx);
     // Bounds the fixture's outer tail chain. This does not preempt arbitrary
-    // loops/direct calls in generated code: only our fixed six functions run.
+    // loops/direct calls in generated code: only our fixed ten functions run.
     while(!fault && g_trampoline_fn) {
         if(++trampoline_steps>64) { d2_lift_fault(D2_DISPATCH_TRAMPOLINE); break; }
         auto next=g_trampoline_fn; g_trampoline_fn=nullptr;
@@ -79,7 +81,7 @@ int call_opd(uint64_t opd,uint64_t argument,uint64_t target,uint64_t &result,
     // Top-level entry only. Nested bctrl calls use the same per-thread state.
     if(depth) return D2_DISPATCH_DEPTH;
     fault=0; trampoline_steps=0; g_trampoline_fn=nullptr;
-    if(opd>UINT32_MAX || (opd&3) || opd<0x20000 || opd>0x20028) {
+    if(opd>UINT32_MAX || (opd&3) || opd<0x20000 || opd>0x20048) {
         d2_lift_fault(D2_DISPATCH_BAD_OPD); return fault;
     }
     uint32_t code=d2_lift_read32(opd), toc=d2_lift_read32(opd+4);
@@ -109,16 +111,16 @@ struct Cleanup {
 };
 void exercise(Report &r) {
     r.line("dispatch_generated_functions=%llu\n",(unsigned long long)function_table_count);
-    r.check("dispatch_generated_function_count",function_table_count==6);
+    r.check("dispatch_generated_function_count",function_table_count==10);
     for(uint64_t i=0;i<function_table_count;++i)
         d2_fixture_register_function(function_table[i].addr,function_table[i].func);
-    r.check("dispatch_sdk_registry",d2_fixture_function_count()==6);
+    r.check("dispatch_sdk_registry",d2_fixture_function_count()==10);
     // Same low hash bits: exercise the real SDK collision and replacement paths.
     auto first=ppu_lookup(0x10000);
     d2_fixture_register_function(0x50000,first);
     d2_fixture_register_function(0x50000,first);
     r.check("dispatch_registry_collision_and_replace",first && ppu_lookup(0x50000)==first &&
-        ppu_lookup(0x10000)==first && d2_fixture_function_count()==7 && !ppu_lookup(0x90000));
+        ppu_lookup(0x10000)==first && d2_fixture_function_count()==11 && !ppu_lookup(0x90000));
 
     uint64_t result=0,toc=0; bool arithmetic=true;
     for(uint64_t a : {uint64_t(0),uint64_t(5),UINT64_MAX}) {
@@ -149,12 +151,48 @@ void exercise(Report &r) {
     r.check("dispatch_memory_bounds_rejected",bounds);
     r.check("dispatch_recovers_after_errors",call_opd(0x20000,5,0,result)==0 && result==12);
 
+    unsigned before_services=r.failures;
+    r.check("services_nid_matches_lifted_import",d2_services_rtc_nid()==d2_rtc_nid);
+    r.check("services_syscall_timebase_frequency",call_opd(0x20030,0,0,result)==0 && result==79800000);
+    time_t before_time=time(nullptr);
+    bool current=call_opd(0x20038,0x20140,0x20148,result)==0 && result==0;
+    uint64_t seconds=d2_lift_read64(0x20140),nanos=d2_lift_read64(0x20148);
+    time_t after_time=time(nullptr);
+    r.check("services_syscall_current_time",current && seconds+1>=(uint64_t)before_time &&
+            seconds<=(uint64_t)after_time+1 && nanos<1000000000);
+    uint64_t rtc_before=(uint64_t)time(nullptr);
+    bool rtc=call_opd(0x20040,0x20150,0,result)==0 && result==0;
+    uint64_t tick=d2_lift_read64(0x20150);
+    uint64_t rtc_after=(uint64_t)time(nullptr);
+    constexpr uint64_t epoch=62135596800ULL;
+    r.check("services_hle_rtc_tick",rtc && tick>=(rtc_before+epoch-1)*1000000 &&
+            tick<=(rtc_after+epoch+2)*1000000);
+    uint64_t raw=0;
+    for(unsigned i=0;i<8;++i) raw=(raw<<8)|d2_lift_read8(0x20150+i);
+    r.check("services_hle_big_endian_output",raw==tick && tick!=0);
+    r.check("services_hle_null_returns_einval",call_opd(0x20040,0,0,result)==0 &&
+            result==(uint64_t)(int64_t)(int32_t)CELL_EINVAL);
+    r.check("services_unknown_hle_rejected",call_opd(0x20048,0,0,result)==D2_DISPATCH_HLE_UNAVAILABLE &&
+            result==(uint64_t)(int64_t)(int32_t)CELL_ENOSYS);
+    r.check("services_unknown_syscall_returns_enosys",call_opd(0x20028,0,0,result)==D2_DISPATCH_SYSCALL_UNAVAILABLE &&
+            result==(uint64_t)(int64_t)(int32_t)CELL_ENOSYS);
+    fault=0; d2_lift_write64(0x20140,0xa5a5a5a5a5a5a5a5ULL);
+    bool invalid=call_opd(0x20038,UINT64_C(0x100020140),0x20140,result)==D2_DISPATCH_WRITE;
+    fault=0; invalid &= d2_lift_read64(0x20140)==0xa5a5a5a5a5a5a5a5ULL;
+    invalid &= call_opd(0x20040,0x10fffffc,0,result)==D2_DISPATCH_WRITE;
+    invalid &= call_opd(0x20038,0x20141,0,result)==D2_DISPATCH_WRITE;
+    r.check("services_invalid_guest_pointers_rejected",invalid);
+    r.check("services_recovery_after_errors",call_opd(0x20030,0,0,result)==0 && result==79800000);
+    r.line("services_scope=two-time-syscalls-and-one-rtc-hle\nservices_failures=%u\nservices_status=%s\n",
+        r.failures-before_services,r.failures==before_services ? "passed" : "failed");
+
     bool other_thread=true,main_thread=true;
     std::thread worker([&] {
         uint64_t value=0;
         for(unsigned i=0;i<100;++i) {
             other_thread &= call_opd(0x20028,0,0,value)==D2_DISPATCH_SYSCALL_UNAVAILABLE;
             other_thread &= call_opd(0x20010,i,0,value)==0 && value==i+7;
+            other_thread &= call_opd(0x20030,0,0,value)==0 && value==79800000;
         }
     });
     for(unsigned i=0;i<100;++i)
@@ -170,8 +208,8 @@ extern "C" void ps3_indirect_call(ppu_context *ctx) {
     if(ctx->ctr>UINT32_MAX) { d2_lift_fault(D2_DISPATCH_MISSING_FUNCTION); return; }
     invoke(ctx,(uint32_t)ctx->ctr);
 }
-extern "C" void lv2_syscall(ppu_context *) { d2_lift_fault(D2_DISPATCH_SYSCALL_UNAVAILABLE); }
-extern "C" void ps3_hle_call(unsigned int,ppu_context *) { d2_lift_fault(D2_DISPATCH_HLE_UNAVAILABLE); }
+extern "C" void lv2_syscall(ppu_context *ctx) { d2_services_syscall(ctx,sizeof(*ctx)); }
+extern "C" void ps3_hle_call(unsigned int nid,ppu_context *ctx) { d2_services_hle(nid,ctx,sizeof(*ctx)); }
 
 int d2_dispatch_probe_run(const char *directory,char *report,size_t capacity) {
     if(!report || capacity<2048) return 1;
@@ -182,6 +220,7 @@ int d2_dispatch_probe_run(const char *directory,char *report,size_t capacity) {
     try {
         Cleanup cleanup;
         r.check("dispatch_context_abi",layout_matches());
+        r.check("services_tables_initialized",d2_services_init()!=0);
         if(directory && *directory && !r.failures) cleanup.owns_vm=d2_dispatch_vm_begin()!=0;
         r.check("dispatch_private_vm",cleanup.owns_vm);
         if(cleanup.owns_vm) {

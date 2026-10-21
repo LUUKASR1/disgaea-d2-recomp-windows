@@ -26,8 +26,17 @@ add_library(d2_android_core STATIC
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/elf_probe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/dispatch_probe.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/dispatch_memory.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/services_bridge.c"
+    "${D2_CORE_SDK_DIR}/runtime/syscalls/sys_timer.c"
+    "${D2_CORE_SDK_DIR}/libs/system/cellRtc.c"
     "${D2_CORE_SDK_DIR}/generated/ppu_recomp.c"
     "${D2_CORE_SDK_DIR}/generated/ppu_elf_subset.cpp")
+# Compile the full, unmodified SDK modules; retain only the selected clock
+# handlers at link time. Timer/event workers and calendar helpers stay unlinked.
+set_source_files_properties("${D2_CORE_SDK_DIR}/runtime/syscalls/sys_timer.c"
+    "${D2_CORE_SDK_DIR}/libs/system/cellRtc.c"
+    PROPERTIES COMPILE_OPTIONS "-ffunction-sections;-fdata-sections")
+target_link_options(d2_android_core INTERFACE "-Wl,--gc-sections")
 set(lifted_definitions
     ppu_context=d2_fixture_context ppu_vr=d2_fixture_vr
     function_table=d2_fixture_function_table function_table_count=d2_fixture_function_table_count

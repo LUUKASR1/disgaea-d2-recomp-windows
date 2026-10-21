@@ -14,6 +14,11 @@ enum {
 int d2_dispatch_probe_run(const char *private_directory, char *report, size_t capacity);
 int d2_dispatch_vm_begin(void);
 int d2_dispatch_vm_end(void);
+int d2_dispatch_guest_range(uint64_t address,uint32_t bytes,int write);
+int d2_services_init(void);
+uint32_t d2_services_rtc_nid(void);
+void d2_services_syscall(void *context,size_t bytes);
+void d2_services_hle(uint32_t nid,void *context,size_t bytes);
 size_t d2_sdk_ppu_layout(size_t *values, size_t capacity);
 void d2_lift_fault(int error);
 int d2_lift_faulted(void);

@@ -40,6 +40,9 @@ static int checked(uint64_t address,uint32_t bytes,int write) {
     }
     return 1;
 }
+int d2_dispatch_guest_range(uint64_t address,uint32_t bytes,int write) {
+    return checked(address,bytes,write);
+}
 #define READ(width,type) type d2_lift_read##width(uint64_t a) { \
     return checked(a,sizeof(type),0) ? vm_read##width((uint32_t)a) : 0; }
 #define WRITE(width,type) void d2_lift_write##width(uint64_t a,type v) { \

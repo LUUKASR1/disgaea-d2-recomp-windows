@@ -1,8 +1,30 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.5
+# Disgaea D2 — Android ARM64 bootstrap 0.0.6
 
 ## Português
 
-### Execução sintética na 0.0.5
+### Primeiros serviços reais na 0.0.6
+
+O teste agora tem dez funções PPC sintéticas traduzidas pelo lifter. As novas
+funções chamam duas syscalls reais de horário do SDK (145 e 147) e uma importação
+HLE `cellRtcGetCurrentTick`. A ponte usa a tabela LV2 e a tabela NID do SDK;
+o NID calculado no build é comparado com o calculado pelo próprio SDK em execução.
+`sys_timer.c` e `cellRtc.c` são compilados sem alterar seus bytes, com seções
+individuais: o linker mantém somente os handlers selecionados. Não se habilitam
+threads de timers, filas de eventos ou outros serviços dessas bibliotecas.
+
+Antes dos handlers receberem ponteiros, a ponte verifica a faixa inteira, a
+largura de 64 bits e o alinhamento. Os testes comparam o horário com o relógio
+do host, verificam epoch/unidade do RTC e saída big-endian. NULL no RTC retorna
+o `CELL_EINVAL` real. Syscalls/NIDs desconhecidos retornam `CELL_ENOSYS` e
+marcam a chamada como não suportada; não simulam sucesso. O contexto gerado é
+copiado para o contexto do SDK depois de validar a ABI, sem aliasing entre tipos.
+
+Esperado: **`services_status=passed`**, **`services_failures=0`**,
+`dispatch_status=passed` e `dispatch_generated_functions=10`.
+Ainda são fixtures privadas. Não há inicialização de Disgaea, áudio, VFS do jogo,
+scheduler PPU/SPU completo ou ponte genérica para todas as syscalls/HLE.
+
+### Execução sintética introduzida na 0.0.5
 
 Seis funções PowerPC escritas para este teste são traduzidas pelo próprio
 `ppu_lifter.py` do SDK fixado e compiladas em código ARM64 durante o build.
@@ -114,7 +136,7 @@ o Android destruir a janela e pausa a renderização ao perder foco ou minimizar
 
 ### Teste no aparelho
 
-1. Baixe o APK `DisgaeaD2-Android-0.0.5-Dispatch-Test-arm64.apk` e instale no Odin.
+1. Baixe o APK `DisgaeaD2-Android-0.0.6-Services-Test-arm64.apk` e instale no Odin.
 2. Abra **D2 Android • Teste do núcleo**. Deve aparecer um triângulo colorido e um
    aviso de que o app ainda não executa Disgaea D2.
 3. Aperte os botões físicos e direcional; mova os analógicos. O app conta eventos
@@ -167,7 +189,20 @@ Referências: [NativeActivity](https://developer.android.com/ndk/samples/sample_
 
 ## English
 
-Version 0.0.5 runs **six genuinely lifted synthetic PPC functions**: the
+Version 0.0.6 extends the fixture to ten lifted PPC functions and connects
+**two actual SDK time syscall handlers (145/147) and cellRtcGetCurrentTick**.
+The bridge uses the SDK LV2/NID tables; build-time and runtime NIDs must match.
+The complete unmodified sys_timer.c/cellRtc.c modules are compiled with individual
+sections; the linker retains only selected handlers, excluding timer/event workers.
+The bridge validates full 64-bit pointer ranges and alignment before invoking
+handlers, copies the ABI-checked context without type aliasing, checks host time,
+RTC epoch/units and big-endian outputs. NULL returns real CELL_EINVAL; unavailable
+syscalls/NIDs return CELL_ENOSYS and an explicit unsupported-call error.
+Expect `services_status=passed`, `services_failures=0`, `dispatch_status=passed`
+and `dispatch_generated_functions=10`. This is not full HLE, scheduling or game
+boot. No ISO is needed.
+
+The dispatch test introduced in 0.0.5 runs **six genuinely lifted synthetic PPC functions**: the
 locked SDK lifter translates our own PPC words at build time, then the NDK
 compiles the generated C++ into ARM64. No game code or Python runtime ships.
 The fixture's image, function map, lifter inputs and generated files are hashed.

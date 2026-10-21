@@ -19,6 +19,7 @@ SEEDS = (
     'runtime/spu/spu_coherency.c',
     'runtime/spu/tests/test_spu_helpers.c',
     'runtime/spu/tests/test_spu_numeric_semantics.c',
+    'runtime/syscalls/sys_timer.c', 'libs/system/cellRtc.c', 'include/ps3emu/nid.h',
 )
 
 
