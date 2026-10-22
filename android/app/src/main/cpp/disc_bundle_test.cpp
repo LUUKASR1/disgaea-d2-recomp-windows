@@ -134,6 +134,14 @@ int d2_disc_bundle_run(const char *directory,char *report,size_t capacity) {
         inspect_fixture(zipped,"executable_reason=self-invalid-compressed-segment\n");
         auto malformed=self_image(bytes,0); be_write(malformed.data()+30*block+72,UINT64_MAX,8);
         inspect_fixture(malformed,"executable_reason=self-program-or-segment-table-bounds\n");
+        auto misaligned=self_image(bytes,0);
+        be_write(misaligned.data()+30*block+208+48,512,8);
+        inspect_fixture(misaligned,"executable_reason=self-load-offset-address-incongruent\n");
+        auto detail=d2_inspect_document(cleanup.fd,prefix.size(),bytes.size());
+        need(detail.find("self_failure_segment_index=0\n")!=std::string::npos,"self failure index");
+        need(detail.find("self_failure_checks=offset-address-incongruent\n")!=std::string::npos,"self exact condition");
+        need(detail.find("self_segment_1=")!=std::string::npos,"self full public table");
+        text+="disc_guest_self_failure_details=passed\n";
         inspect_fixture(bytes,"executable_status=elf-plan-valid\n");
         text+="disc_guest_self_plain_plan=passed\ndisc_guest_self_encrypted_gate=passed\n"
             "disc_guest_self_rejection_and_recovery=passed\ndisc_guest_self_zlib_plan=passed\n";

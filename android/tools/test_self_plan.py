@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'port/vfs/tests'))
 from make_iso9660 import create, both
 
 cli=Path(sys.argv[1]).resolve()
+previous_cli=Path(sys.argv[2]).resolve() if len(sys.argv)>2 else None
 def fixture():
     data=bytearray(800)
     struct.pack_into('>4sIHHIQQ',data,0,b'SCE\0',2,0,1,416,512,544)
@@ -35,7 +36,13 @@ with tempfile.TemporaryDirectory() as tmp:
         result=subprocess.check_output([str(cli),str(path)],text=True,timeout=15)
         for field in (*expected,'executable_code_executed=false','executable_guest_memory_written=false'):
             assert field+'\n' in result,(name,field,result)
+        if previous_cli:
+            prior=subprocess.check_output([str(previous_cli),str(path)],text=True,stderr=subprocess.PIPE,timeout=15)
+            def status(text):
+                return next(line for line in text.splitlines() if line.startswith('executable_status='))
+            assert status(prior)==status(result),(name,'acceptance changed',prior,result)
         cases+=1
+        return result
     check('plain',fixture(),'executable_status=self-plain-plan-valid','self_load_segments=2',
           'executable_planned_memory_bytes=72','self_signature_verified=false')
     def mutate(name,offset,fmt,value,reason=None,status='rejected'):
@@ -63,13 +70,13 @@ with tempfile.TemporaryDirectory() as tmp:
         ('ph-count',200,'>H',129,'self-program-or-segment-table-bounds'),
         ('ph-offset',56,'>Q',0xfffffffffffffff0,'self-program-or-segment-table-bounds'),
         ('seg-offset',72,'>Q',0xfffffffffffffff0,'self-program-or-segment-table-bounds'),
-        ('payload-overflow',320,'>Q',0xffffffffffffffff,'self-segment-bounds-or-flags'),
-        ('payload-in-header',320,'>Q',144,'self-segment-bounds-or-flags'),
-        ('payload-outside',328,'>Q',0xffffffffffffffff,'self-segment-bounds-or-flags'),
-        ('bad-encryption',344,'>Q',3,'self-segment-bounds-or-flags'),
-        ('bad-compression',336,'>I',3,'self-segment-bounds-or-flags'),
+        ('payload-overflow',320,'>Q',0xffffffffffffffff,'self-stored-segment-outside-container'),
+        ('payload-in-header',320,'>Q',144,'self-stored-segment-inside-headers'),
+        ('payload-outside',328,'>Q',0xffffffffffffffff,'self-stored-segment-outside-container'),
+        ('bad-encryption',344,'>Q',3,'self-unsupported-encryption-flag'),
+        ('bad-compression',336,'>I',3,'self-unsupported-compression-flag'),
         ('size-mismatch',328,'>Q',7,'self-plain-segment-size-mismatch'),
-        ('guest-overflow',224,'>Q',0x100000000,'self-load-segment-bounds-or-alignment'),
+        ('guest-overflow',224,'>Q',0x100000000,'self-load-address-width'),
         ('guest-overlap',280,'>Q',0x10004,'self-overlapping-load-segments'),
         ('bad-entry',168,'>Q',0x30000,'entry-opd-not-file-backed'),
         ('bad-opd',768,'>I',0x30000,'entry-code-or-toc-outside-load-plan'),
@@ -107,5 +114,27 @@ with tempfile.TemporaryDirectory() as tmp:
     struct.pack_into('>IIQ',data,384,3,144,0); data[400:404]=b'NPD\0'; struct.pack_into('>I',data,408,3)
     data[1024:1032]=code; data[1280:1312]=opd
     check('npd-valid',data,'self_npd_license_type=3','executable_status=self-plain-plan-valid')
+    for name,offset,value,reason,kind in (
+        ('load-file-size',248,7,'filesz-exceeds-memsz','load-layout'),
+        ('load-address-width',224,0x100000000,'address-width','load-layout'),
+        ('load-budget',248,256*1024*1024+1,'segment-budget','inspection-budget'),
+        ('load-align-power',256,3,'alignment-not-power-of-two','load-layout'),
+        ('load-align-congruence',256,512,'offset-address-incongruent','load-layout'),
+    ):
+        data=fixture(); struct.pack_into('>Q',data,offset,value)
+        result=check(name,data,'executable_reason=self-load-'+reason,'self_failure_checks='+reason,
+                     'self_failure_segment_index=0','self_failure_class='+kind,
+                     'self_declared_encrypted_segments=0','self_program_headers=2')
+        assert 'self_segment_1=' in result, result  # Full table survives first-row rejection.
+    data=fixture(); struct.pack_into('>Q',data,224,0xfffffffc); struct.pack_into('>Q',data,248,8)
+    check('load-address-range',data,'executable_reason=self-load-address-range','self_failure_checks=address-range')
+    data=fixture(); struct.pack_into('>Q',data,248,7); struct.pack_into('>Q',data,256,512)
+    check('multiple-failures',data,'self_failure_checks=filesz-exceeds-memsz,offset-address-incongruent')
+    data=fixture(); struct.pack_into('>Q',data,280,0x100000000)
+    check('second-row-failure',data,'self_failure_segment_index=1','executable_reason=self-load-address-width')
+    result=check('diagnostic-values',fixture(),'executable_status=self-plain-plan-valid',
+                 'self_layout_diagnostics=public-numeric-fields-v1','self_container_bytes=800')
+    row=dict(item.split(':',1) for item in next(line.split('=',1)[1] for line in result.splitlines() if line.startswith('self_segment_0=')).split(';'))
+    assert row==dict(type='1',flags='5',elf_offset='256',virtual_address='65536',file_bytes='8',memory_bytes='8',alignment='4',offset_mod_alignment='0',address_mod_alignment='0',container_offset='512',stored_bytes='8',compression='1',encryption='0'), row
     check('valid-after-rejections' ,fixture(),'executable_status=self-plain-plan-valid')
 print(f'PASS: {cases} SELF cases: plain plan, encrypted/compressed gates, bounded tables, recovery; no guest writes or execution')

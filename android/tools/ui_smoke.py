@@ -55,12 +55,27 @@ def tap_node(text=None, description=None):
     return False
 
 
+def cancel_picker():
+    # A back event can close a picker drawer/transition rather than the picker.
+    # Wait for visible windows and bound retries; the caller still checks the
+    # actual cancellation report, never bypassing it with an activity restart.
+    for _ in range(4):
+        root = hierarchy()
+        if any(n.get('package') == PACKAGE and n.get('text', '').casefold() ==
+               'share diagnostic report' for n in root.iter('node')):
+            return
+        assert any('documentsui' in n.get('package', '').lower() for n in root.iter('node')), ET.tostring(root, encoding='unicode')
+        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+        time.sleep(1)
+    button()
+
+
 def document_test(output):
     tap(button('Select file to validate'))
     time.sleep(2)
     foreground = adb('shell', 'dumpsys', 'activity', 'activities')
     assert 'documentsui' in foreground.lower(), foreground
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    cancel_picker()
     button()
     cancelled = adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
     assert 'document_status=cancelled' in cancelled, cancelled
@@ -103,7 +118,7 @@ def document_test(output):
     # validated file or retaining a descriptor in the application.
     tap(button('Select file to validate'))
     time.sleep(1)
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    cancel_picker()
     button()
     assert 'document_status=cancelled' in adb('shell', 'run-as', PACKAGE, 'cat', 'files/selected-document-report.txt')
     # A generated UDF fixture has synthetic SFO and tiny placeholder assets.
@@ -189,6 +204,7 @@ def main():
     assert 'disc_guest_game_executed=false' in report
     for name in ('disc_guest_self_plain_plan', 'disc_guest_self_encrypted_gate',
                  'disc_guest_self_rejection_and_recovery', 'disc_guest_self_zlib_plan',
+                 'disc_guest_self_failure_details',
                  'disc_guest_executable_plan', 'disc_guest_assets_stat_seek_and_eof',
                  'disc_guest_errors_and_mount_transaction', 'disc_guest_descriptor_lifetime_and_cleanup',
                  'dispatch_integrated_disc'):

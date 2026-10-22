@@ -1,6 +1,56 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.12
+# Disgaea D2 — Android ARM64 bootstrap 0.0.13
 
 ## Português
+
+### Pacote integrado da 0.0.13 — causa exata da rejeição SELF
+
+O relatório real da 0.0.12 chegou a SELF v2/revisão 28/tipo de aplicação 4, mas
+parou em `self-load-segment-bounds-or-alignment`. Esse código reunia seis
+condições e não continha os campos do segmento; não permite determinar qual
+falhou nem concluir que a ISO está inválida.
+
+A 0.0.13 mantém os critérios de aceitação da 0.0.12 e melhora o diagnóstico:
+
+- Registra todos os até 128 programas da tabela pública já limitada, antes de
+  rejeitar um segmento. Cada linha `self_segment_N` contém somente números:
+  tipo/flags, offset ELF, endereço virtual, tamanhos em arquivo/memória,
+  alinhamento e restos da divisão, offset/tamanho no SELF, compressão/encriptação.
+- Informa contagens declaradas de compressão/criptografia mesmo quando um
+  segmento é rejeitado. Essas declarações não autenticam nem decodificam dados.
+- `self_failure_segment_index` identifica o programa com falha (índice começa
+  em zero). `self_failure_checks` lista todas as condições LOAD que falharam
+  nesse programa: `filesz-exceeds-memsz`, `address-width`, `address-range`,
+  `segment-budget`, `alignment-not-power-of-two`, `offset-address-incongruent`.
+- `self_failure_class=inspection-budget` distingue o teto local de 256 MiB por
+  segmento das outras verificações (`load-layout`). Essa classificação não
+  afirma que o restante do executável seja válido. `executable_reason` aponta
+  a primeira condição; o grupo antigo fica em `self_failure_group`.
+- Limites lógicos/físicos e flags inválidos também recebem motivos separados.
+  Não são registrados caminhos, conteúdo do jogo, identificadores ou chaves.
+
+O teste integrado novo, `disc_guest_self_failure_details=passed`, reproduz uma
+incongruência sintética e verifica a causa, o índice e a tabela completa. Os
+52 cenários SELF locais incluem cada condição, falhas simultâneas, rejeição no
+segundo programa, valores exatos e recuperação. Uma comparação opcional com o
+CLI anterior confirma que os mesmos cenários continuam aceitos/rejeitados.
+O teste UI espera as janelas do seletor e limita os comandos de voltar; a
+confirmação de cancelamento continua obrigatória no relatório real do app.
+
+**Ainda não corrige a causa do segmento real nem inicia o jogo.** Precisamos
+dos campos que a 0.0.12 não coletou. Instale, aguarde os testes, selecione a
+mesma ISO e compartilhe o relatório. Não precisa trocar ou extrair a ISO.
+
+Referência dos critérios ELF: [System V gABI, Program Header](https://gabi.xinuos.com/elf/08-pheader.html).
+Nenhum critério de alinhamento foi relaxado nesta etapa.
+
+**English:** 0.0.13 retains 0.0.12 acceptance rules while reporting bounded,
+public numeric program/segment fields before rejection. LOAD failures include
+index, all failed checks, exact first reason and a separate inspection-budget
+classification. It does not fix the unknown real-image failure, decrypt retail
+SELF, map guest memory or boot the game. The integrated synthetic diagnostic
+check and 52 host cases cover exact causes and recovery; the optional old/new
+CLI comparison checks acceptance parity. Picker cancellation waits for visible
+windows with bounded Back retries while still asserting the real cancel result.
 
 ### Pacote integrado da 0.0.12 — cabeçalhos SELF e segmentos plain/zlib
 

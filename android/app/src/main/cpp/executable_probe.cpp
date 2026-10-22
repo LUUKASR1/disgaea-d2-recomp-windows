@@ -10,6 +10,20 @@ uint64_t be(const std::byte *p,unsigned n) {
     uint64_t v=0; for(unsigned i=0;i<n;++i) v=(v<<8)|std::to_integer<unsigned char>(p[i]); return v;
 }
 struct Segment { uint64_t offset,address,bytes,memory; unsigned flags; };
+// Keep every 0.0.12 load rule: explain failures without weakening acceptance.
+std::vector<const char*> load_failures(const Segment &s,uint64_t align) {
+    std::vector<const char*> failures;
+    if(s.bytes>s.memory) failures.push_back("filesz-exceeds-memsz");
+    if(s.address>UINT32_MAX) failures.push_back("address-width");
+    else if(s.memory>UINT64_C(0x100000000)-s.address) failures.push_back("address-range");
+    if(s.memory>256u*1024u*1024u) failures.push_back("segment-budget");
+    if(align>1) {
+        if(align&(align-1)) failures.push_back("alignment-not-power-of-two");
+        if(s.address%align!=s.offset%align) failures.push_back("offset-address-incongruent");
+    }
+    return failures;
+}
+
 }
 namespace {
 using Read = std::function<size_t(uint64_t,std::span<std::byte>)>;
@@ -109,6 +123,25 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
     std::vector<std::byte> programs(count*56), segments(count*32);
     if(file.ReadAt(ph,programs)!=programs.size() || file.ReadAt(seg,segments)!=segments.size())
         return fail("self-table-read-failed");
+    report+="self_layout_diagnostics=public-numeric-fields-v1\nself_elf_declared_bytes="+std::to_string(elfsize)+
+        "\nself_container_bytes="+std::to_string(file.Size())+"\nself_header_bytes="+std::to_string(headers)+
+        "\nself_program_headers="+std::to_string(count)+"\n";
+    unsigned declared_encrypted=0,declared_compressed=0;
+    for(uint64_t i=0;i<count;++i) {
+        auto p=programs.data()+i*56, s=segments.data()+i*32;
+        auto align=be(p+48,8);
+        report+="self_segment_"+std::to_string(i)+"=type:"+std::to_string(be(p,4))+
+            ";flags:"+std::to_string(be(p+4,4))+";elf_offset:"+std::to_string(be(p+8,8))+
+            ";virtual_address:"+std::to_string(be(p+16,8))+";file_bytes:"+std::to_string(be(p+32,8))+
+            ";memory_bytes:"+std::to_string(be(p+40,8))+";alignment:"+std::to_string(align)+
+            ";offset_mod_alignment:"+std::to_string(align ? be(p+8,8)%align : 0)+
+            ";address_mod_alignment:"+std::to_string(align ? be(p+16,8)%align : 0)+
+            ";container_offset:"+std::to_string(be(s,8))+";stored_bytes:"+std::to_string(be(s+8,8))+
+            ";compression:"+std::to_string(be(s+16,4))+";encryption:"+std::to_string(be(s+24,8))+"\n";
+        declared_encrypted+=be(s+24,8)==2; declared_compressed+=be(s+16,4)==2;
+    }
+    report+="self_declared_encrypted_segments="+std::to_string(declared_encrypted)+
+        "\nself_declared_compressed_segments="+std::to_string(declared_compressed)+"\n";
     // Supplemental chain is bounded independently of untrusted next flags.
     uint64_t cursor=controls, end=controls+controlsize;
     unsigned controlcount=0; bool npd=false;
@@ -132,25 +165,40 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
     struct Compressed {uint64_t logical,physical,stored,bytes;};
     std::vector<Compressed> packed;
     std::vector<Mapping> maps{{0,eh,64},{logicalph,ph,count*56}};
-    unsigned encrypted=0, compressed=0, loads=0;
+    unsigned encrypted=0, loads=0;
     uint64_t total=0;
     std::vector<Segment> loadplans;
     for(uint64_t i=0;i<count;++i) {
         auto p=programs.data()+i*56, s=segments.data()+i*32;
         const auto physical=be(s,8), stored=be(s+8,8), compression=be(s+16,4), encryption=be(s+24,8);
         const auto logical=be(p+8,8), bytes=be(p+32,8);
-        if(!range(logical,bytes,elfsize) || !range(physical,stored,file.Size()) ||
-           (stored && physical<headers) || encryption>2 || (compression!=1 && compression!=2))
-            return fail("self-segment-bounds-or-flags");
+        auto segment_fail=[&](const char *why) {
+            report+="self_failure_segment_index="+std::to_string(i)+"\n";
+            return fail(why);
+        };
+        if(!range(logical,bytes,elfsize)) return segment_fail("self-logical-segment-outside-elf");
+        if(!range(physical,stored,file.Size())) return segment_fail("self-stored-segment-outside-container");
+        if(stored && physical<headers) return segment_fail("self-stored-segment-inside-headers");
+        if(encryption>2) return segment_fail("self-unsupported-encryption-flag");
+        if(compression!=1 && compression!=2) return segment_fail("self-unsupported-compression-flag");
         if(encryption==2) ++encrypted;
-        if(compression==2) ++compressed;
         if(compression==1 && stored!=bytes) return fail("self-plain-segment-size-mismatch");
         if(be(p,4)==1) {
             Segment plan{logical,be(p+16,8),bytes,be(p+40,8),unsigned(be(p+4,4))};
             auto align=be(p+48,8);
-            if(bytes>plan.memory || plan.address>UINT32_MAX || plan.memory>UINT64_C(0x100000000)-plan.address ||
-               plan.memory>256u*1024u*1024u || (align>1 && ((align&(align-1)) || plan.address%align!=logical%align)))
-                return fail("self-load-segment-bounds-or-alignment");
+            auto failures=load_failures(plan,align);
+            if(!failures.empty()) {
+                report+="self_failure_segment_index="+std::to_string(i)+
+                    "\nself_failure_group=load-segment-bounds-or-alignment\nself_failure_checks=";
+                bool policy_only=true;
+                for(size_t f=0;f<failures.size();++f) {
+                    if(f) report+=",";
+                    report+=failures[f];
+                    policy_only &= std::strcmp(failures[f],"segment-budget")==0;
+                }
+                report+="\nself_failure_class="+std::string(policy_only ? "inspection-budget" : "load-layout")+"\n";
+                return report+"executable_status=rejected\nexecutable_reason=self-load-"+failures.front()+"\n";
+            }
             for(const auto &prior:loadplans) if(plan.memory && prior.memory &&
                 plan.address<prior.address+prior.memory && prior.address<plan.address+plan.memory)
                 return fail("self-overlapping-load-segments");
@@ -163,10 +211,7 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
         }
     }
     if(!loads) return fail("self-no-load-segments");
-    report+="self_program_headers="+std::to_string(count)+"\nself_load_segments="+std::to_string(loads)+
-        "\nself_declared_encrypted_segments="+std::to_string(encrypted)+
-        "\nself_declared_compressed_segments="+std::to_string(compressed)+
-        "\nself_public_headers=structurally-valid\n";
+    report+="self_load_segments="+std::to_string(loads)+"\nself_public_headers=structurally-valid\n";
     if(encrypted) return report+"executable_status=self-decryption-required\n";
     // zlib is an Android/host system library, not a downloaded runtime.
     // Strict input/output caps and exact stream termination bound inflate.
