@@ -23,6 +23,30 @@ def fixture():
         struct.pack_into('>QQIIQ',data,320+i*32,768 if i else 512,32 if i else 8,1,0,0)
     struct.pack_into('>II',data,768,0x10000,0x20010)
     return data
+def layout_fixture():
+    # Own scaled fixture of the reported topology, never copied game bytes.
+    elf=bytearray(2048)
+    elf[:16]=b'\x7fELF\x02\x02\x01'+bytes(9)
+    struct.pack_into('>HHIQQQIHHHHHH',elf,16,2,21,1,0x20000,64,0,0,64,56,8,0,0,0)
+    rows=[(1,5,0,0x10000,832,832,65536),
+          (1,6,1024,0x20000,256,4096,1024),
+          (1,4,1280,0,0,0,65536),(1,6,1280,0,0,0,65536),
+          (1,0x6600006,1280,0,0,0,65536),
+          (7,4,1088,0x20040,4,336,8),
+          (0x60000001,0,700,0x10000+700,40,40,4),
+          (0x60000002,0,740,0x10000+740,64,64,4)]
+    for i,(typ,flags,off,va,filesz,memsz,align) in enumerate(rows):
+        struct.pack_into('>II6Q',elf,64+56*i,typ,flags,off,va,0,filesz,memsz,align)
+    struct.pack_into('>II',elf,1024,0x10200,0x20080)
+    data=bytearray(1024)+elf
+    struct.pack_into('>4sIHHIQQ',data,0,b'SCE\0',2,28,1,896,1024,len(elf))
+    struct.pack_into('>10Q',data,32,3,112,144,208,0,656,0,0,0,0)
+    struct.pack_into('>I',data,124,4)
+    data[144:208]=elf[:64]; data[208:656]=elf[64:512]
+    for i,row in enumerate(rows):
+        struct.pack_into('>QQIIQ',data,656+32*i,1024+row[2],row[4],1,0,1 if i<5 else 0)
+    return data
+
 cases=0
 with tempfile.TemporaryDirectory() as tmp:
     root=Path(tmp); create(root/'base.iso'); original=(root/'base.iso').read_bytes()
@@ -32,11 +56,14 @@ with tempfile.TemporaryDirectory() as tmp:
         disc=bytearray(original)
         disc[marker+10:marker+18]=both(len(payload),4)
         disc[351*2048:351*2048+len(payload)]=payload
+        if len(disc)>len(original):
+            disc.extend(bytes((-len(disc))%2048))
+            disc[16*2048+80:16*2048+88]=both(len(disc)//2048,4)
         path=root/(name+'.iso'); path.write_bytes(disc)
         result=subprocess.check_output([str(cli),str(path)],text=True,timeout=15)
         for field in (*expected,'executable_code_executed=false','executable_guest_memory_written=false'):
             assert field+'\n' in result,(name,field,result)
-        if previous_cli:
+        if previous_cli and not name.startswith('layout-'):
             prior=subprocess.check_output([str(previous_cli),str(path)],text=True,stderr=subprocess.PIPE,timeout=15)
             def status(text):
                 return next(line for line in text.splitlines() if line.startswith('executable_status='))
@@ -136,5 +163,49 @@ with tempfile.TemporaryDirectory() as tmp:
                  'self_layout_diagnostics=public-numeric-fields-v1','self_container_bytes=800')
     row=dict(item.split(':',1) for item in next(line.split('=',1)[1] for line in result.splitlines() if line.startswith('self_segment_0=')).split(';'))
     assert row==dict(type='1',flags='5',elf_offset='256',virtual_address='65536',file_bytes='8',memory_bytes='8',alignment='4',offset_mod_alignment='0',address_mod_alignment='0',container_offset='512',stored_bytes='8',compression='1',encryption='0'), row
+    data=layout_fixture()
+    check('layout-eight-programs',data,'executable_status=self-plain-plan-valid',
+          'self_empty_load_segments_ignored=3','self_load_segments=2',
+          'executable_empty_load_segments_ignored=3','executable_load_segments=2',
+          'self_overlap_validation=passed','self_overlap_compared_bytes=512')
+    for index in (2,3,4):
+        data=layout_fixture(); struct.pack_into('>Q',data,208+index*56+48,3)
+        check('layout-empty-invalid-align-'+str(index),data,'executable_reason=self-load-alignment-not-power-of-two')
+    data=layout_fixture(); struct.pack_into('>Q',data,208+2*56+40,16)
+    check('layout-bss-must-align',data,'executable_reason=self-load-offset-address-incongruent')
+    data=layout_fixture(); struct.pack_into('>Q',data,208+2*56+32,4); struct.pack_into('>Q',data,656+2*32+8,4)
+    check('layout-empty-with-file-bytes',data,'executable_reason=self-load-filesz-exceeds-memsz')
+    for name,off in (('header',1024+10),('program-table',1024+64+4)):
+        data=layout_fixture(); data[off]^=1
+        check('layout-conflicting-'+name,data,'executable_reason=self-plain-overlap-content-mismatch')
+    # Nested record has a second physical copy; both identical and conflicting
+    # copies must be checked against the containing LOAD, not only neighbors.
+    for index in (5,6,7):
+        for conflict in (False,True):
+            data=layout_fixture(); seg=656+32*index
+            source,length=struct.unpack_from('>QQ',data,seg)
+            duplicate=data[source:source+length]
+            if conflict: duplicate[-1]^=1
+            struct.pack_into('>Q',data,seg,len(data)); data.extend(duplicate)
+            check('layout-nested-'+str(index)+'-'+str(conflict),data,
+                  'executable_reason=self-plain-overlap-content-mismatch' if conflict else 'executable_status=self-plain-plan-valid')
+    data=layout_fixture(); payload=zlib.compress(data[1024:1024+832])
+    struct.pack_into('>QQI',data,656,len(data),len(payload),2); data.extend(payload)
+    check('layout-compressed-overlap',data,'executable_status=self-plain-plan-valid','self_decompressed_segments=1')
+    data=layout_fixture(); payload=zlib.compress(data[1024:1024+832])
+    struct.pack_into('>QQI',data,656,len(data),len(payload),2); data.extend(payload); data[144+10]^=1
+    check('layout-compressed-header-conflict',data,'executable_reason=self-plain-overlap-content-mismatch')
+    # Oversized identical duplicate must hit the comparison cap before I/O.
+    data=layout_fixture(); size=4*1024*1024+1
+    data.extend(bytes(1024+size-len(data)))
+    struct.pack_into('>Q',data,24,size); struct.pack_into('>Q',data,168,0x800000)
+    struct.pack_into('>QQ',data,208+32,size,size); struct.pack_into('>Q',data,656+8,size)
+    struct.pack_into('>Q',data,208+56+16,0x800000)
+    struct.pack_into('>II6Q',data,208+2*56,0x60000003,4,0,0,0,size,size,1)
+    struct.pack_into('>QQIIQ',data,656+2*32,len(data),size,1,0,1)
+    data[1024:1088]=data[144:208]; data[1088:1536]=data[208:656]
+    struct.pack_into('>II',data,2048,0x10200,0x800080)
+    data.extend(data[1024:1024+size])
+    check('layout-overlap-budget',data,'executable_reason=self-overlap-validation-budget')
     check('valid-after-rejections' ,fixture(),'executable_status=self-plain-plan-valid')
 print(f'PASS: {cases} SELF cases: plain plan, encrypted/compressed gates, bounded tables, recovery; no guest writes or execution')

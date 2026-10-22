@@ -1,6 +1,61 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.13
+# Disgaea D2 — Android ARM64 bootstrap 0.0.14
 
 ## Português
+
+### Pacote integrado da 0.0.14 — segmentos vazios e aliases SELF
+
+Corrige o bloqueio identificado no relatório real da 0.0.13: os programas 2, 3
+e 4 de BLUS31313 declaram zero bytes em arquivo e memória, mas tinham offsets
+não congruentes com endereço zero. O plano agora dispensa congruência apenas
+quando `p_memsz == 0`; `p_filesz <= p_memsz`, limites de arquivo/endereço e
+alinhamento em potência de dois continuam obrigatórios. LOADs vazios não contam
+como regiões carregadas. O mesmo tratamento vale para ELF direto e para a
+visão ELF dentro de SELF. Espere `self_empty_load_segments_ignored=3` e dois
+LOADs não vazios se o restante da imagem passar.
+
+Também substitui a rejeição geral de sobreposição lógica por uma verificação
+limitada. Cabeçalhos dentro do primeiro LOAD e registros TLS/processo dentro de
+um LOAD podem descrever bytes compartilhados. Cada par sobreposto é conferido,
+incluindo regiões aninhadas não adjacentes:
+
+- O mesmo intervalo físico do mesmo arquivo é um alias e não precisa ser relido.
+- Cópias em locais distintos, ou em buffers zlib, precisam coincidir byte a byte.
+- Conteúdo diferente produz `self-plain-overlap-content-mismatch`; nenhum lado
+  é escolhido arbitrariamente. Os índices referem-se às regiões da visão
+  ordenada (incluindo cabeçalhos), não aos índices da tabela de programas.
+- As comparações usam blocos de 4 KiB, até 4 MiB de bytes comparados. Excesso
+  produz `self-overlap-validation-budget`. Os limites de I/O da montagem e de
+  descompressão anteriores continuam em vigor. Sobreposição na memória guest
+  entre LOADs não vazios continua rejeitada.
+
+Os campos `self_overlap_alias_regions`, `self_overlap_compared_regions` e
+`self_overlap_compared_bytes` descrevem a auditoria; `self_overlap_validation=passed`
+aprova somente esse passo. `self-plain-plan-valid` ainda significa plano
+estrutural limitado, sem VM guest, decodificação retail, dispatch ou gameplay.
+
+O pacote integrado acrescenta `disc_guest_self_empty_and_overlap_plan=passed`
+e `disc_guest_self_overlap_conflict_rejected=passed`. Usa oito programas
+sintéticos com a topologia observada: dois LOADs, três placeholders vazios,
+TLS e dois registros de processo, com cabeçalhos dentro do primeiro LOAD.
+Nenhum byte do jogo foi copiado. Os 69 casos SELF locais cobrem placeholders,
+alinhamento de BSS, sobreposição idêntica/divergente, regiões aninhadas,
+zlib, teto de comparação e os casos anteriores. A comparação opcional com o
+CLI anterior continua conferindo os 52 casos antigos; os novos layouts têm
+mudança intencional de aceitação.
+
+**O jogo ainda não inicia.** A correção passou em fixtures próprias; a ISO real
+continua dependendo de verificação no Odin. Selecione a mesma ISO e envie o
+relatório. Não precisa extrair ou modificar o jogo.
+
+**English:** 0.0.14 fixes zero-memory LOAD congruence handling in direct ELF and
+SELF plans while retaining file-size, bounds and power-of-two checks. Empty
+LOADs are excluded from loaded-region counts. Logical overlaps are accepted
+only for the same backing bytes or bounded byte-identical copies, including
+zlib buffers and non-adjacent nested regions. Conflicts and comparison-budget
+excess are rejected; nonempty guest LOAD overlaps remain invalid. A new
+on-device eight-program synthetic layout and 69 host cases cover both fixes.
+No game bytes are bundled; real-device image planning remains unverified and
+game boot/runtime integration is still unavailable.
 
 ### Pacote integrado da 0.0.13 — causa exata da rejeição SELF
 

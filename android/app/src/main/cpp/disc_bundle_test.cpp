@@ -81,6 +81,40 @@ std::vector<unsigned char> self_image(const std::vector<unsigned char> &base,uns
     both(&*it-33+10,800,4);
     return bytes;
 }
+std::vector<unsigned char> layout_self_image(const std::vector<unsigned char> &base) {
+    auto bytes=base;
+    std::vector<unsigned char> elf(2048);
+    auto e=elf.data(); std::memcpy(e,"\x7f" "ELF\x02\x02\x01",7);
+    be_write(e+16,2,2); be_write(e+18,21,2); be_write(e+20,1,4);
+    be_write(e+24,0x20000,8); be_write(e+32,64,8); be_write(e+52,64,2);
+    be_write(e+54,56,2); be_write(e+56,8,2);
+    // type, flags, logical offset, guest address, file bytes, memory, alignment.
+    const uint64_t rows[8][7]={
+        {1,5,0,0x10000,832,832,65536},{1,6,1024,0x20000,256,4096,1024},
+        {1,4,1280,0,0,0,65536},{1,6,1280,0,0,0,65536},{1,0x6600006,1280,0,0,0,65536},
+        {7,4,1088,0x20040,4,336,8},{0x60000001,0,700,0x10000+700,40,40,4},
+        {0x60000002,0,740,0x10000+740,64,64,4}};
+    for(unsigned i=0;i<8;++i) {
+        auto p=e+64+56*i; const auto &r=rows[i];
+        be_write(p,r[0],4); be_write(p+4,r[1],4); be_write(p+8,r[2],8);
+        be_write(p+16,r[3],8); be_write(p+32,r[4],8); be_write(p+40,r[5],8); be_write(p+48,r[6],8);
+    }
+    be_write(e+1024,0x10200,4); be_write(e+1028,0x20080,4);
+    auto p=bytes.data()+30*block; std::memset(p,0,3072);
+    std::memcpy(p,"SCE\0",4); be_write(p+4,2,4); be_write(p+8,28,2); be_write(p+10,1,2);
+    be_write(p+12,896,4); be_write(p+16,1024,8); be_write(p+24,elf.size(),8);
+    be_write(p+32,3,8); be_write(p+40,112,8); be_write(p+48,144,8);
+    be_write(p+56,208,8); be_write(p+72,656,8); be_write(p+124,4,4);
+    std::memcpy(p+144,e,64); std::memcpy(p+208,e+64,448); std::memcpy(p+1024,e,elf.size());
+    for(unsigned i=0;i<8;++i) {
+        auto s=p+656+32*i; be_write(s,1024+rows[i][2],8); be_write(s+8,rows[i][4],8);
+        be_write(s+16,1,4); be_write(s+24,i<5 ? 1 : 0,8);
+    }
+    const char marker[]="EBOOT.BIN;1";
+    auto it=std::search(bytes.begin()+22*block,bytes.begin()+23*block,marker,marker+sizeof(marker)-1);
+    need(it!=bytes.begin()+23*block,"layout fixture directory record"); both(&*it-33+10,3072,4);
+    return bytes;
+}
 uint64_t call(uint64_t number,std::initializer_list<uint64_t> values={}) {
     std::array<uint64_t,8> args{}; size_t i=0; for(auto v:values) args.at(i++)=v;
     uint64_t result=0; need(!d2_fixture_syscall(number,args.data(),1,&result),"disc bridge fault"); return result;
@@ -142,6 +176,15 @@ int d2_disc_bundle_run(const char *directory,char *report,size_t capacity) {
         need(detail.find("self_failure_checks=offset-address-incongruent\n")!=std::string::npos,"self exact condition");
         need(detail.find("self_segment_1=")!=std::string::npos,"self full public table");
         text+="disc_guest_self_failure_details=passed\n";
+        auto layout=layout_self_image(bytes);
+        inspect_fixture(layout,"executable_status=self-plain-plan-valid\n");
+        detail=d2_inspect_document(cleanup.fd,prefix.size(),bytes.size());
+        need(detail.find("self_empty_load_segments_ignored=3\n")!=std::string::npos,"self empty placeholders");
+        need(detail.find("executable_load_segments=2\n")!=std::string::npos,"self populated LOAD count");
+        need(detail.find("self_overlap_validation=passed\n")!=std::string::npos,"self header/TLS overlaps");
+        layout[30*block+1024+10]^=1;
+        inspect_fixture(layout,"executable_reason=self-plain-overlap-content-mismatch\n");
+        text+="disc_guest_self_empty_and_overlap_plan=passed\ndisc_guest_self_overlap_conflict_rejected=passed\n";
         inspect_fixture(bytes,"executable_status=elf-plan-valid\n");
         text+="disc_guest_self_plain_plan=passed\ndisc_guest_self_encrypted_gate=passed\n"
             "disc_guest_self_rejection_and_recovery=passed\ndisc_guest_self_zlib_plan=passed\n";

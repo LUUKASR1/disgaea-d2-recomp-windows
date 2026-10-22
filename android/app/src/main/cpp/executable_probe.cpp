@@ -10,7 +10,8 @@ uint64_t be(const std::byte *p,unsigned n) {
     uint64_t v=0; for(unsigned i=0;i<n;++i) v=(v<<8)|std::to_integer<unsigned char>(p[i]); return v;
 }
 struct Segment { uint64_t offset,address,bytes,memory; unsigned flags; };
-// Keep every 0.0.12 load rule: explain failures without weakening acceptance.
+// Empty LOADs have no mapped bytes: retain range/power checks, but do not
+// impose address/offset congruence on a zero-size memory image.
 std::vector<const char*> load_failures(const Segment &s,uint64_t align) {
     std::vector<const char*> failures;
     if(s.bytes>s.memory) failures.push_back("filesz-exceeds-memsz");
@@ -19,7 +20,7 @@ std::vector<const char*> load_failures(const Segment &s,uint64_t align) {
     if(s.memory>256u*1024u*1024u) failures.push_back("segment-budget");
     if(align>1) {
         if(align&(align-1)) failures.push_back("alignment-not-power-of-two");
-        if(s.address%align!=s.offset%align) failures.push_back("offset-address-incongruent");
+        if(s.memory && s.address%align!=s.offset%align) failures.push_back("offset-address-incongruent");
     }
     return failures;
 }
@@ -44,6 +45,7 @@ std::string inspect_elf(uint64_t size,const Read &read,std::string report,const 
         if(read(table,ph)!=ph.size()) return fail("program-table-read-failed");
         std::vector<Segment> loads;
         uint64_t total=0;
+        unsigned empty_loads=0;
         for(uint64_t i=0;i<count;++i) {
             auto p=ph.data()+i*56;
             if(be(p,4)!=1) continue;
@@ -51,8 +53,9 @@ std::string inspect_elf(uint64_t size,const Read &read,std::string report,const 
             uint64_t align=be(p+48,8);
             if(s.bytes>s.memory || s.offset>size || s.bytes>size-s.offset ||
                s.address>UINT32_MAX || s.memory>UINT64_C(0x100000000)-s.address ||
-               s.memory>256u*1024u*1024u || (align>1 && ((align&(align-1)) || s.address%align!=s.offset%align)))
+               s.memory>256u*1024u*1024u || (align>1 && ((align&(align-1)) || (s.memory && s.address%align!=s.offset%align))))
                 return fail("load-segment-bounds-or-alignment");
+            if(!s.memory) { ++empty_loads; continue; }
             for(const auto &prior:loads) if(s.memory && prior.memory &&
                 s.address<prior.address+prior.memory && prior.address<s.address+s.memory)
                 return fail("overlapping-load-segments");
@@ -76,7 +79,8 @@ std::string inspect_elf(uint64_t size,const Read &read,std::string report,const 
             toc_found |= (s.flags&4) && toc>=s.address && toc-s.address<s.memory;
         }
         if(!code_found || !toc_found) return fail("entry-code-or-toc-outside-load-plan");
-        return report+"executable_load_segments="+std::to_string(loads.size())+
+        return report+"executable_empty_load_segments_ignored="+std::to_string(empty_loads)+
+            "\nexecutable_load_segments="+std::to_string(loads.size())+
             "\nexecutable_planned_memory_bytes="+std::to_string(total)+
             "\nexecutable_entry_opd=structurally-valid\nexecutable_status="+success+"\n";
 }
@@ -165,7 +169,7 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
     struct Compressed {uint64_t logical,physical,stored,bytes;};
     std::vector<Compressed> packed;
     std::vector<Mapping> maps{{0,eh,64},{logicalph,ph,count*56}};
-    unsigned encrypted=0, loads=0;
+    unsigned encrypted=0, loads=0, empty_loads=0;
     uint64_t total=0;
     std::vector<Segment> loadplans;
     for(uint64_t i=0;i<count;++i) {
@@ -199,6 +203,7 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
                 report+="\nself_failure_class="+std::string(policy_only ? "inspection-budget" : "load-layout")+"\n";
                 return report+"executable_status=rejected\nexecutable_reason=self-load-"+failures.front()+"\n";
             }
+            if(!plan.memory) { ++empty_loads; continue; }
             for(const auto &prior:loadplans) if(plan.memory && prior.memory &&
                 plan.address<prior.address+prior.memory && prior.address<plan.address+plan.memory)
                 return fail("self-overlapping-load-segments");
@@ -211,7 +216,8 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
         }
     }
     if(!loads) return fail("self-no-load-segments");
-    report+="self_load_segments="+std::to_string(loads)+"\nself_public_headers=structurally-valid\n";
+    report+="self_empty_load_segments_ignored="+std::to_string(empty_loads)+
+        "\nself_load_segments="+std::to_string(loads)+"\nself_public_headers=structurally-valid\n";
     if(encrypted) return report+"executable_status=self-decryption-required\n";
     // zlib is an Android/host system library, not a downloaded runtime.
     // Strict input/output caps and exact stream termination bound inflate.
@@ -235,12 +241,46 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
         maps.push_back({part.logical,0,part.bytes,std::move(output)});
     }
     report+="self_decompressed_segments="+std::to_string(packed.size())+"\n";
-    // Plain-only virtual ELF view. No output file, guest VM or executable code.
-    // Overlapping logical regions are ambiguous and deliberately unsupported.
-    std::sort(maps.begin(),maps.end(),[](auto &a,auto &b){return a.logical<b.logical;});
-    for(size_t i=1;i<maps.size();++i)
-        if(maps[i].logical<maps[i-1].logical+maps[i-1].bytes)
-            return fail("self-plain-logical-overlap");
+    // Multiple public records can describe the same logical ELF bytes: ELF
+    // headers inside the first LOAD, or TLS/process metadata inside a LOAD.
+    // Accept only identical backing or byte-for-byte matching overlap. Check
+    // every overlapping pair, including non-adjacent nested regions.
+    auto mapping_read=[&](const Mapping &m,uint64_t logical,std::span<std::byte> out)->bool {
+        if(logical<m.logical || !range(logical-m.logical,out.size(),m.bytes)) return false;
+        if(!m.decoded.empty()) {
+            std::memcpy(out.data(),m.decoded.data()+(logical-m.logical),out.size()); return true;
+        }
+        return file.ReadAt(m.physical+(logical-m.logical),out)==out.size();
+    };
+    std::stable_sort(maps.begin(),maps.end(),[](auto &a,auto &b){return a.logical<b.logical;});
+    uint64_t compared=0, alias_regions=0, compared_regions=0;
+    constexpr uint64_t overlap_budget=4u*1024u*1024u;
+    std::array<std::byte,4096> left{},right{};
+    for(size_t i=0;i<maps.size();++i) for(size_t j=i+1;j<maps.size();++j) {
+        const auto &a=maps[i], &b=maps[j];
+        if(b.logical>=a.logical+a.bytes) break;
+        uint64_t begin=b.logical, end=std::min(a.logical+a.bytes,b.logical+b.bytes);
+        if(a.decoded.empty() && b.decoded.empty() &&
+           a.physical+(begin-a.logical)==b.physical+(begin-b.logical)) {
+            ++alias_regions; continue;
+        }
+        if(end-begin>overlap_budget-compared) return fail("self-overlap-validation-budget");
+        for(uint64_t pos=begin;pos<end;) {
+            auto n=std::min<uint64_t>(left.size(),end-pos);
+            if(!mapping_read(a,pos,std::span(left).first(n)) ||
+               !mapping_read(b,pos,std::span(right).first(n))) return fail("self-overlap-read-failed");
+            if(std::memcmp(left.data(),right.data(),n)) {
+                report+="self_overlap_left_mapping_index="+std::to_string(i)+
+                    "\nself_overlap_right_mapping_index="+std::to_string(j)+"\n";
+                return fail("self-plain-overlap-content-mismatch");
+            }
+            compared+=n; pos+=n;
+        }
+        ++compared_regions;
+    }
+    report+="self_overlap_alias_regions="+std::to_string(alias_regions)+
+        "\nself_overlap_compared_regions="+std::to_string(compared_regions)+
+        "\nself_overlap_compared_bytes="+std::to_string(compared)+"\nself_overlap_validation=passed\n";
     Read read=[&](uint64_t offset,std::span<std::byte> out)->size_t {
         if(!range(offset,out.size(),elfsize)) return 0;
         size_t copied=0;
