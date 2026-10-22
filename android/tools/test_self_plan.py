@@ -207,5 +207,64 @@ with tempfile.TemporaryDirectory() as tmp:
     struct.pack_into('>II',data,2048,0x10200,0x800080)
     data.extend(data[1024:1024+size])
     check('layout-overlap-budget',data,'executable_reason=self-overlap-validation-budget')
+    healthy=('self_battery_checks_run=10','self_battery_status=completed','self_battery_limit_reached=false',
+             'self_probe_header_copy=identical','self_probe_program_table_copy=identical',
+             'self_probe_load_samples=readable','self_probe_entry_opd=readable',
+             'self_probe_entry_code=file-backed-executable','self_probe_entry_toc=mapped-file-readable',
+             'self_probe_tls=file-template-consistent','self_probe_process_records=file-records-consistent',
+             'self_probe_read_bounds=passed','self_probe_split_view_plan=structurally-valid-diagnostic-only')
+    check('layout-battery-healthy',layout_fixture(),*healthy)
+    data=layout_fixture(); data[1024:1088]=bytes(64)
+    check('layout-battery-zero-payload-header',data,'self_probe_header_copy=different',
+          'self_probe_payload_header_hint=all-zero','self_probe_program_table_copy=identical',
+          'self_probe_tls=file-template-consistent','self_probe_entry_code=file-backed-executable',
+          'self_probe_split_view_plan=structurally-valid-diagnostic-only','self_battery_checks_run=10',
+          'executable_reason=self-plain-overlap-content-mismatch')
+    data=layout_fixture(); data[1024+64+4]^=1
+    check('layout-battery-table-mismatch',data,'self_probe_program_table_copy=different',
+          'self_probe_tls=file-template-consistent','self_probe_read_bounds=passed','self_battery_checks_run=10')
+    for name,value,field in (
+        ('bad-code',0x30000,'self_probe_entry_code=unreadable-or-unmapped'),
+        ('unaligned-code',0x10201,'self_probe_entry_code=invalid-code-pointer'),
+        ('nonexecutable-code',0x20020,'self_probe_entry_code=unreadable-or-unmapped')):
+        data=layout_fixture(); struct.pack_into('>I',data,2048,value)
+        check('layout-battery-'+name,data,field,'self_probe_entry_toc=mapped-file-readable',
+              'self_probe_tls=file-template-consistent','self_battery_checks_run=10','self_probe_split_view_plan=rejected')
+    for name,value,expected in (
+        ('toc-bss',0x20110,'mapped-bss'),('toc-outside',0x50000,'outside-readable-loads')):
+        data=layout_fixture(); struct.pack_into('>I',data,2052,value)
+        check('layout-battery-'+name,data,'self_probe_entry_toc='+expected,
+              'self_probe_entry_code=file-backed-executable','self_probe_read_bounds=passed','self_battery_checks_run=10')
+    data=layout_fixture(); struct.pack_into('>Q',data,168,0x30000); data[1024:1088]=data[144:208]
+    check('layout-battery-missing-opd',data,'self_probe_entry_opd=unreadable-or-unmapped',
+          'self_probe_entry_code=unavailable-opd','self_probe_tls=file-template-consistent',
+          'self_probe_read_bounds=passed','self_battery_checks_run=10')
+    for index,expected in ((5,'self_probe_tls=template-differs-from-load'),
+                           (6,'self_probe_process_records=record-differs-from-load')):
+        data=layout_fixture(); seg=656+32*index; source,length=struct.unpack_from('>QQ',data,seg)
+        duplicate=data[source:source+length]; duplicate[-1]^=1
+        struct.pack_into('>Q',data,seg,len(data)); data.extend(duplicate)
+        check('layout-battery-conflicting-record-'+str(index),data,expected,
+              'self_probe_entry_code=file-backed-executable','self_probe_read_bounds=passed',
+              'self_battery_checks_run=10','executable_reason=self-plain-overlap-content-mismatch')
+    data=layout_fixture(); struct.pack_into('>Q',data,208+5*56+40,1); data[1088:1536]=data[208:656]
+    check('layout-battery-invalid-tls',data,'self_probe_tls=invalid-layout',
+          'self_probe_process_records=file-records-consistent','self_probe_read_bounds=passed','self_battery_checks_run=10')
+    data=layout_fixture(); struct.pack_into('>I',data,208+6*56,7); data[1088:1536]=data[208:656]
+    check('layout-battery-duplicate-tls',data,'self_probe_tls=multiple-templates','self_probe_read_bounds=passed','self_battery_checks_run=10')
+    # Large template is explicitly limited, while independent entry/bounds tests continue.
+    data=layout_fixture(); size=131072; data.extend(bytes(1024+size-len(data)))
+    struct.pack_into('>Q',data,24,size)
+    struct.pack_into('>QQ',data,208+56+32,size-1024,size-1024)
+    struct.pack_into('>Q',data,656+32+8,size-1024)
+    struct.pack_into('>QQ',data,208+5*56+32,65537,65537)
+    struct.pack_into('>Q',data,656+5*32+8,65537)
+    data[1024:1088]=data[144:208]; data[1088:1536]=data[208:656]
+    check('layout-battery-tls-limit',data,'self_probe_tls=template-limit',
+          'self_probe_entry_code=file-backed-executable','self_probe_read_bounds=passed','self_battery_checks_run=10')
+    struct.pack_into('>QQ',data,208+6*56+32,4097,4097); struct.pack_into('>Q',data,656+6*32+8,4097)
+    data[1088:1536]=data[208:656]
+    check('layout-battery-process-limit',data,'self_probe_process_records=record-limit',
+          'self_probe_read_bounds=passed','self_battery_checks_run=10')
     check('valid-after-rejections' ,fixture(),'executable_status=self-plain-plan-valid')
 print(f'PASS: {cases} SELF cases: plain plan, encrypted/compressed gates, bounded tables, recovery; no guest writes or execution')

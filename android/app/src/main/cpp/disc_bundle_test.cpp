@@ -184,6 +184,14 @@ int d2_disc_bundle_run(const char *directory,char *report,size_t capacity) {
         need(detail.find("self_overlap_validation=passed\n")!=std::string::npos,"self header/TLS overlaps");
         layout[30*block+1024+10]^=1;
         inspect_fixture(layout,"executable_reason=self-plain-overlap-content-mismatch\n");
+        detail=d2_inspect_document(cleanup.fd,prefix.size(),bytes.size());
+        for(const char *field:{"self_battery_checks_run=10\n","self_battery_status=completed\n",
+                "self_probe_header_copy=different\n","self_probe_program_table_copy=identical\n",
+                "self_probe_entry_code=file-backed-executable\n","self_probe_entry_toc=mapped-file-readable\n",
+                "self_probe_tls=file-template-consistent\n","self_probe_process_records=file-records-consistent\n",
+                "self_probe_read_bounds=passed\n","self_probe_split_view_plan=structurally-valid-diagnostic-only\n"})
+            need(detail.find(field)!=std::string::npos,"self independent battery after conflict");
+        text+="disc_guest_self_independent_battery=passed\n";
         text+="disc_guest_self_empty_and_overlap_plan=passed\ndisc_guest_self_overlap_conflict_rejected=passed\n";
         inspect_fixture(bytes,"executable_status=elf-plan-valid\n");
         text+="disc_guest_self_plain_plan=passed\ndisc_guest_self_encrypted_gate=passed\n"

@@ -28,7 +28,7 @@ std::vector<const char*> load_failures(const Segment &s,uint64_t align) {
 }
 namespace {
 using Read = std::function<size_t(uint64_t,std::span<std::byte>)>;
-std::string inspect_elf(uint64_t size,const Read &read,std::string report,const char *success) {
+std::string inspect_elf(uint64_t size,const Read &read,std::string report,const char *success,const Read &payload_read={}) {
     auto fail=[&](const char *why) { return report+"executable_status=rejected\nexecutable_reason="+why+"\n"; };
     std::array<std::byte,64> header{};
     size_t head_size=std::min<uint64_t>(size,header.size());
@@ -70,7 +70,7 @@ std::string inspect_elf(uint64_t size,const Read &read,std::string report,const 
         for(const auto &s:loads) if((s.flags&4) && entry>=s.address && entry-s.address<=s.bytes &&
             s.bytes-(entry-s.address)>=8) {
             std::array<std::byte,8> opd{};
-            if(read(s.offset+(entry-s.address),opd)!=opd.size()) return fail("opd-read-failed");
+            if((payload_read ? payload_read : read)(s.offset+(entry-s.address),opd)!=opd.size()) return fail("opd-read-failed");
             code=be(opd.data(),4); toc=be(opd.data()+4,4); opd_found=true; break;
         }
         if(!opd_found || !code || (code&3)) return fail("entry-opd-not-file-backed");
@@ -165,8 +165,8 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
         }
         cursor+=bytes;
     }
-    struct Mapping {uint64_t logical,physical,bytes; std::vector<std::byte> decoded{};};
-    struct Compressed {uint64_t logical,physical,stored,bytes;};
+    struct Mapping {uint64_t logical,physical,bytes; std::vector<std::byte> decoded{}; int program=-1;};
+    struct Compressed {uint64_t logical,physical,stored,bytes; int program;};
     std::vector<Compressed> packed;
     std::vector<Mapping> maps{{0,eh,64},{logicalph,ph,count*56}};
     unsigned encrypted=0, loads=0, empty_loads=0;
@@ -211,14 +211,14 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
             if(total>512u*1024u*1024u) return fail("self-load-plan-budget");
         }
         if(bytes && encryption!=2) {
-            if(compression==1) maps.push_back({logical,physical,bytes});
-            else packed.push_back({logical,physical,stored,bytes});
+            if(compression==1) maps.push_back({logical,physical,bytes,{},int(i)});
+            else packed.push_back({logical,physical,stored,bytes,int(i)});
         }
     }
     if(!loads) return fail("self-no-load-segments");
     report+="self_empty_load_segments_ignored="+std::to_string(empty_loads)+
         "\nself_load_segments="+std::to_string(loads)+"\nself_public_headers=structurally-valid\n";
-    if(encrypted) return report+"executable_status=self-decryption-required\n";
+    if(encrypted) return report+"self_battery_status=not-run-encryption-required\nexecutable_status=self-decryption-required\n";
     // zlib is an Android/host system library, not a downloaded runtime.
     // Strict input/output caps and exact stream termination bound inflate.
     uint64_t budget=0;
@@ -238,7 +238,7 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
         inflateEnd(&stream);
         if(!valid) return fail("self-invalid-compressed-segment");
         output.resize(part.bytes);
-        maps.push_back({part.logical,0,part.bytes,std::move(output)});
+        maps.push_back({part.logical,0,part.bytes,std::move(output),part.program});
     }
     report+="self_decompressed_segments="+std::to_string(packed.size())+"\n";
     // Multiple public records can describe the same logical ELF bytes: ELF
@@ -250,8 +250,172 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
         if(!m.decoded.empty()) {
             std::memcpy(out.data(),m.decoded.data()+(logical-m.logical),out.size()); return true;
         }
-        return file.ReadAt(m.physical+(logical-m.logical),out)==out.size();
+        try { return file.ReadAt(m.physical+(logical-m.logical),out)==out.size(); }
+        catch(const d2::vfs::Error&) { return false; }
     };
+    // Independent read-only probes run before strict overlap acceptance.
+    // Their results never turn a conflicting strict plan into an accepted one.
+    auto battery=[&]() {
+        std::string out="self_battery_scope=independent-read-only-public-layout-and-payload-probes\n";
+        uint64_t used=0,calls=0; unsigned checks=0; bool limited=false;
+        auto sample=[&](const Mapping &m,uint64_t logical,std::span<std::byte> dest) {
+            if(logical<m.logical || !range(logical-m.logical,dest.size(),m.bytes)) return false;
+            if(calls>=512 || dest.size()>2u*1024u*1024u-used) {limited=true;return false;}
+            ++calls; used+=dest.size(); return mapping_read(m,logical,dest);
+        };
+        auto program_map=[&](int index)->const Mapping* {
+            for(const auto &m:maps) if(m.program==index) return &m;
+            return nullptr;
+        };
+        auto logical_source=[&](uint64_t off,uint64_t n)->const Mapping* {
+            for(const auto &m:maps) if(m.program>=0 && be(programs.data()+m.program*56,4)==1 &&
+                off>=m.logical && range(off-m.logical,n,m.bytes)) return &m;
+            return nullptr;
+        };
+        Read payload=[&](uint64_t offset,std::span<std::byte> dest)->size_t {
+            if(!range(offset,dest.size(),elfsize)) return 0;
+            size_t done=0;
+            while(done<dest.size()) {
+                auto m=logical_source(offset,1); if(!m) return done;
+                auto n=std::min<uint64_t>(dest.size()-done,m->bytes-(offset-m->logical));
+                if(!sample(*m,offset,dest.subspan(done,n))) return done;
+                done+=n;offset+=n;
+            }
+            return done;
+        };
+        auto guest=[&](uint64_t address,std::span<std::byte> dest,unsigned flags)->bool {
+            for(uint64_t i=0;i<count;++i) {
+                auto p=programs.data()+i*56; auto base=be(p+16,8),bytes=be(p+32,8);
+                if(be(p,4)!=1 || (be(p+4,4)&flags)!=flags || address<base || !range(address-base,dest.size(),bytes)) continue;
+                auto m=program_map(i); return m && sample(*m,m->logical+(address-base),dest);
+            }
+            return false;
+        };
+        auto unavailable=[&]() {return limited ? std::string("limited") : std::string("unreadable-or-unmapped");};
+        auto probe=[&](const char *name,auto run) {
+            ++checks;
+            try {out+=std::string(name)+"="+run()+"\n";}
+            catch(...) {out+=std::string(name)+"=read-error\n";}
+        };
+        auto compare_copy=[&](uint64_t logical,std::span<const std::byte> expected,const char *prefix) {
+            auto m=logical_source(logical,expected.size()); if(!m) return std::string("not-file-backed");
+            std::vector<std::byte> actual(expected.size());
+            if(!sample(*m,logical,actual)) return unavailable();
+            uint64_t different=0,first=0;
+            for(size_t i=0;i<expected.size();++i) if(actual[i]!=expected[i]) {if(!different) first=logical+i;++different;}
+            out+=std::string(prefix)+"_different_bytes="+std::to_string(different)+"\n";
+            if(different) out+=std::string(prefix)+"_first_difference_offset="+std::to_string(first)+"\n";
+            out+=std::string(prefix)+"_source_program="+std::to_string(m->program)+"\n";
+            if(logical==0 && expected.size()==64) {
+                const bool zero=std::all_of(actual.begin(),actual.end(),[](auto v){return v==std::byte{0};});
+                const char *hint=zero ? "all-zero" : !std::memcmp(actual.data(),"\x7f" "ELF",4) ? "elf-magic" :
+                    !std::memcmp(actual.data(),"SCE\0",4) ? "sce-magic" : "other";
+                out+="self_probe_payload_header_hint="+std::string(hint)+"\n";
+                // Nine field groups: ident/type+machine/version/entry/phoff/shoff/
+                // flags/ehsize+phentsize+phnum/shentsize+shnum+shstrndx.
+                const unsigned boundaries[]={0,16,20,24,32,40,48,52,58,64};
+                uint64_t mask=0;
+                for(unsigned i=0;i<9;++i) if(std::memcmp(actual.data()+boundaries[i],expected.data()+boundaries[i],boundaries[i+1]-boundaries[i])) mask|=uint64_t{1}<<i;
+                out+="self_probe_header_difference_mask="+std::to_string(mask)+"\n";
+            }
+            return std::string(different ? "different" : "identical");
+        };
+        probe("self_probe_header_copy",[&]{return compare_copy(0,elf,"self_probe_header");});
+        probe("self_probe_program_table_copy",[&]{return compare_copy(logicalph,programs,"self_probe_program_table");});
+        probe("self_probe_load_samples",[&]{
+            unsigned tested=0,zero_heads=0;
+            for(uint64_t i=0;i<count;++i) {
+                auto p=programs.data()+i*56; auto bytes=be(p+32,8);
+                if(be(p,4)!=1 || !bytes) continue;
+                auto m=program_map(i); if(!m) return std::string("missing-payload");
+                std::array<std::byte,256> first{},last{}; auto n=std::min<uint64_t>(bytes,first.size());
+                if(!sample(*m,m->logical,std::span(first).first(n)) ||
+                   !sample(*m,m->logical+bytes-n,std::span(last).first(n))) return unavailable();
+                zero_heads+=std::all_of(first.begin(),first.begin()+n,[](auto b){return b==std::byte{0};});++tested;
+            }
+            out+="self_probe_load_samples_checked="+std::to_string(tested)+"\nself_probe_load_zero_heads="+std::to_string(zero_heads)+"\n";
+            return std::string("readable");
+        });
+        auto opd=[&](uint64_t &code,uint64_t &toc) {
+            auto entry=be(e+24,8); if(entry>UINT32_MAX || (entry&3)) return false;
+            std::array<std::byte,8> value{}; if(!guest(entry,value,4)) return false;
+            code=be(value.data(),4);toc=be(value.data()+4,4);return true;
+        };
+        probe("self_probe_entry_opd",[&]{
+            uint64_t code=0,toc=0; if(!opd(code,toc)) return unavailable();
+            out+="self_probe_entry_address="+std::to_string(be(e+24,8))+"\nself_probe_code_address="+std::to_string(code)+
+                "\nself_probe_toc_address="+std::to_string(toc)+"\n";return std::string("readable");
+        });
+        probe("self_probe_entry_code",[&]{
+            uint64_t code=0,toc=0; if(!opd(code,toc)) return std::string("unavailable-opd");
+            if(!code || (code&3)) return std::string("invalid-code-pointer");
+            std::array<std::byte,4> instruction{}; return guest(code,instruction,1) ? std::string("file-backed-executable") : unavailable();
+        });
+        probe("self_probe_entry_toc",[&]{
+            uint64_t code=0,toc=0; if(!opd(code,toc)) return std::string("unavailable-opd");
+            for(const auto &load:loadplans) if((load.flags&4) && toc>=load.address && toc-load.address<load.memory) {
+                if(toc-load.address>=load.bytes) return std::string("mapped-bss");
+                std::array<std::byte,1> value{}; return guest(toc,value,4) ? std::string("mapped-file-readable") : unavailable();
+            }
+            return std::string("outside-readable-loads");
+        });
+        probe("self_probe_tls",[&]{
+            unsigned found=0; uint64_t index=0;
+            for(uint64_t i=0;i<count;++i) if(be(programs.data()+i*56,4)==7) {++found;index=i;}
+            if(!found) return std::string("absent"); if(found!=1) return std::string("multiple-templates");
+            auto p=programs.data()+index*56; auto bytes=be(p+32,8),memory=be(p+40,8),align=be(p+48,8),address=be(p+16,8);
+            out+="self_probe_tls_file_bytes="+std::to_string(bytes)+"\nself_probe_tls_memory_bytes="+std::to_string(memory)+"\n";
+            if(bytes>memory || address>UINT32_MAX || memory>UINT64_C(0x100000000)-address || (align>1 && (align&(align-1)))) return std::string("invalid-layout");
+            if(!bytes) return std::string("bss-only-template");
+            if(bytes>64u*1024u) return std::string("template-limit");
+            auto m=program_map(index); if(!m) return std::string("missing-payload");
+            std::vector<std::byte> own(bytes),loaded(bytes);
+            if(!sample(*m,m->logical,own) || !guest(address,loaded,4)) return unavailable();
+            return std::string(own==loaded ? "file-template-consistent" : "template-differs-from-load");
+        });
+        probe("self_probe_process_records",[&]{
+            unsigned found=0;
+            for(uint64_t i=0;i<count;++i) {
+                auto p=programs.data()+i*56; auto type=be(p,4),bytes=be(p+32,8);
+                if(type!=0x60000001 && type!=0x60000002) continue;
+                if(bytes>4096) return std::string("record-limit");
+                auto m=program_map(i); if(!m && bytes) return std::string("missing-payload");
+                std::vector<std::byte> own(bytes),loaded(bytes);
+                if(bytes && (!sample(*m,m->logical,own) || !guest(be(p+16,8),loaded,4))) return unavailable();
+                if(own!=loaded) return std::string("record-differs-from-load");++found;
+            }
+            out+="self_probe_process_records_checked="+std::to_string(found)+"\n";
+            return std::string(found ? "file-records-consistent" : "absent");
+        });
+        probe("self_probe_read_bounds",[&]{
+            for(const auto &m:maps) if(m.program>=0 && m.bytes) {
+                std::array<std::byte,1> sentinel{std::byte{0xa5}};
+                if(sample(m,m.logical+m.bytes,sentinel) || sentinel[0]!=std::byte{0xa5}) return std::string("failed");
+                if(!sample(m,m.logical+m.bytes,std::span(sentinel).first(0))) return unavailable();
+                return std::string("passed");
+            }
+            return std::string("no-file-backed-segment");
+        });
+        probe("self_probe_split_view_plan",[&]{
+            Read metadata=[&](uint64_t off,std::span<std::byte> dest)->size_t {
+                if(range(off,dest.size(),64)) {std::memcpy(dest.data(),elf.data()+off,dest.size());return dest.size();}
+                if(off>=logicalph && range(off-logicalph,dest.size(),programs.size())) {
+                    std::memcpy(dest.data(),programs.data()+off-logicalph,dest.size());return dest.size();
+                }
+                return payload(off,dest);
+            };
+            auto result=inspect_elf(elfsize,metadata,"","split-view-plan-valid",payload);
+            if(result.find("executable_status=split-view-plan-valid\n")!=std::string::npos) return std::string("structurally-valid-diagnostic-only");
+            const std::string key="executable_reason=";auto pos=result.find(key);
+            if(pos!=std::string::npos) {auto end=result.find('\n',pos);out+="self_probe_split_failure_reason="+result.substr(pos+key.size(),end-pos-key.size())+"\n";}
+            return limited ? std::string("limited") : std::string("rejected");
+        });
+        out+="self_battery_checks_run="+std::to_string(checks)+"\nself_battery_read_bytes="+std::to_string(used)+
+            "\nself_battery_read_calls="+std::to_string(calls)+"\nself_battery_limit_reached="+(limited ? std::string("true") : std::string("false"))+
+            "\nself_battery_status=completed\n";
+        return out;
+    };
+    report+=battery();
     std::stable_sort(maps.begin(),maps.end(),[](auto &a,auto &b){return a.logical<b.logical;});
     uint64_t compared=0, alias_regions=0, compared_regions=0;
     constexpr uint64_t overlap_budget=4u*1024u*1024u;
@@ -288,9 +452,7 @@ std::string inspect_self(const d2::vfs::IsoVfs::File &file,std::string report) {
             auto it=std::find_if(maps.begin(),maps.end(),[&](auto &m){return offset>=m.logical && offset-m.logical<m.bytes;});
             if(it==maps.end()) return copied;
             auto n=std::min<uint64_t>(out.size()-copied,it->bytes-(offset-it->logical));
-            if(!it->decoded.empty())
-                std::memcpy(out.data()+copied,it->decoded.data()+(offset-it->logical),n);
-            else if(file.ReadAt(it->physical+(offset-it->logical),out.subspan(copied,n))!=n) return copied;
+            if(!mapping_read(*it,offset,out.subspan(copied,n))) return copied;
             copied+=n; offset+=n;
         }
         return copied;

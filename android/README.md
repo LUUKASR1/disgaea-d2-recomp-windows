@@ -1,6 +1,71 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.14
+# Disgaea D2 — Android ARM64 bootstrap 0.0.15
 
 ## Português
+
+### Pacote integrado da 0.0.15 — dez verificações por seleção
+
+Agrupa a investigação do relatório real 0.0.14 em uma só instalação. Depois de
+validar as tabelas públicas, limites dos segmentos e buffers plain/zlib, executa
+**dez verificações independentes antes da auditoria estrita de sobreposição**:
+
+1. Compara o cabeçalho ELF público com a cópia no primeiro LOAD que cobre esse
+   offset. Informa quantidade/primeiro offset de diferenças, programa de origem,
+   indicação `all-zero`/`elf-magic`/`sce-magic`/`other` da amostra de 64 bytes e
+   máscara de nove grupos de campos. Não publica bytes do payload.
+2. Compara a tabela pública de programas com a cópia no LOAD, quando existe.
+3. Lê até 256 bytes do início e fim de cada LOAD com dados; informa quantos foram
+   lidos e quantas amostras iniciais eram inteiramente zero. Não é auditoria
+   integral dos segmentos nem validação de criptografia.
+4. Lê o OPD de entrada a partir dos dados do LOAD (sem sobrepor cabeçalhos).
+5. Verifica se o endereço de código do OPD permite ler quatro bytes em um LOAD
+   executável; os bytes não são executados nem publicados.
+6. Verifica se o TOC pertence a um LOAD legível, distinguindo dados em arquivo
+   de uma região BSS prevista. Nenhuma BSS ou VM é alocada aqui.
+7. Verifica o layout básico de um TLS, detecta múltiplos templates e compara
+   seus bytes iniciais completos com o LOAD correspondente, até 64 KiB.
+8. Compara os registros de processo 0x60000001/2 com os LOADs, até 4 KiB por
+   registro. Não interpreta seus serviços, NIDs ou importações.
+9. Verifica rejeição de um byte além do primeiro mapeamento de payload e leitura
+   vazia no seu fim, preservando sentinela. Não realiza a leitura fora do limite.
+10. Avalia um **plano diagnóstico de visão separada**: cabeçalho/tabela públicos
+    alimentam o parser, enquanto OPD vem exclusivamente do payload dos LOADs.
+    O resultado é `self_probe_split_view_plan=structurally-valid-diagnostic-only`
+    ou uma rejeição com motivo. Não reconstrói um ELF nem autoriza execução.
+
+Cada resultado tem campo `self_probe_*` próprio. Falha ou divergência em uma
+verificação não impede as seguintes; dependências ausentes ficam explícitas,
+por exemplo `unavailable-opd`. As leituras adicionais têm teto compartilhado de
+2 MiB / 512 operações, além do orçamento de montagem. Resultados limitados ou
+ilegíveis não são marcados como aprovados. Layout público inválido, payload
+criptografado ou descompressão rejeitada podem impedir a bateria com segurança.
+
+`self_battery_checks_run=10` / `self_battery_status=completed` significa que as
+verificações terminaram, **não que todas passaram**. Um conflito continua
+produzindo `executable_status=rejected` na auditoria estrita, acompanhado dos
+resultados independentes. O plano alternativo não altera esse status, não
+resolve automaticamente a diferença e não escreve memória guest. A nova
+máscara do cabeçalho usa bits 0..8, respectivamente: ident; tipo/máquina;
+versão; entrada; offset PH; offset SH; flags; tamanhos EH/PH+contagem PH;
+tamanho/contagem/índice SH.
+
+O teste integrado `disc_guest_self_independent_battery=passed` força uma cópia
+de cabeçalho divergente e exige que OPD/código/TOC, TLS, registros, limites e
+plano alternativo sejam relatados mesmo com rejeição estrita. Os 84 cenários
+SELF host incluem falhas de código, TOC/BSS, OPD ausente, TLS inválido/duplicado,
+registros divergentes e limites de templates. Dados são exclusivamente sintéticos.
+
+**O jogo ainda não inicia.** Selecione a mesma ISO uma vez e envie o relatório:
+a intenção é coletar essas evidências juntas, sem criar um APK para cada teste.
+
+**English:** 0.0.15 adds ten independent read-only SELF probes before strict
+logical-overlap acceptance: header and program-table copies, LOAD samples,
+entry OPD/code/TOC, TLS, process records, read bounds and a diagnostic split
+metadata/payload ELF plan. Every outcome is reported separately; completion
+is not all-pass. Strict conflicts remain rejected and the candidate plan does
+not enable guest writes, retail decryption, game execution or gameplay. Extra
+reads are capped at 2 MiB/512 operations. Unsafe public layouts or rejected
+payload preparation stop dependent probes. An integrated conflicting-header
+fixture and 84 host cases check result independence and error reporting.
 
 ### Pacote integrado da 0.0.14 — segmentos vazios e aliases SELF
 
