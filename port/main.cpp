@@ -45,6 +45,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <atomic>
+#ifdef D2_ENABLE_ISO_VFS
+#include "iso_runtime.h"
+#include <filesystem>
+#include <string>
+#ifdef _WIN32
+#include <shellapi.h>
+#endif
+#endif
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #include "sys_overlay.h"
@@ -508,7 +516,7 @@ int main(int argc, char** argv)
     d2_settings_init();
 #endif
     if (argc < 2) {
-        printf("usage: %s <PPU ELF>\n", argv[0]);
+        printf("usage: %s <PPU ELF> [--iso <decrypted ISO>]\n", argv[0]);
         return 2;
     }
 
@@ -527,6 +535,33 @@ int main(int argc, char** argv)
         fprintf(stderr, "ERROR: could not allocate the guest address space\n");
         return 1;
     }
+
+#ifdef D2_ENABLE_ISO_VFS
+    d2_iso_bind_memory(vm_base, UINT64_C(0x100000000));
+    std::string iso_path;
+#ifdef _WIN32
+    const wchar_t* selected_iso = _wgetenv(L"D2_GAME_ISO");
+    int wide_count = 0;
+    wchar_t** wide_args = CommandLineToArgvW(GetCommandLineW(), &wide_count);
+    if (argc == 4 && strcmp(argv[2], "--iso") == 0 && wide_args && wide_count == 4)
+        selected_iso = wide_args[3];
+    if (selected_iso && *selected_iso) {
+        auto utf8 = std::filesystem::path(selected_iso).u8string();
+        iso_path.assign(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+    }
+    if (wide_args) LocalFree(wide_args);
+#else
+    const char* selected_iso = getenv("D2_GAME_ISO");
+    if (argc == 4 && strcmp(argv[2], "--iso") == 0) selected_iso = argv[3];
+    if (selected_iso) iso_path = selected_iso;
+#endif
+    if (!iso_path.empty()) {
+        if (d2_iso_mount(iso_path.c_str()) != 0 || d2_iso_check_title("BLUS31313") != 0) {
+            fprintf(stderr, "ERROR: ISO mount: %s\n", d2_iso_last_error()); return 1;
+        }
+        fprintf(stderr, "[vfs] direct ISO mounted; updates/DLC/saves use existing HDD mounts\n");
+    }
+#endif
 
     uint32_t entry = ppu_load_elf(argv[1]);
     if (!entry) {

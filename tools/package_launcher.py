@@ -7,6 +7,9 @@ import subprocess
 import sys
 import urllib.request
 
+onefile = '--onefile' in sys.argv
+package_name = 'DisgaeaD2Launcher-Standalone-Preview' if onefile else 'DisgaeaD2Launcher'
+
 root = Path(__file__).resolve().parents[1]
 staging = root / 'launcher-package'
 if staging.exists():
@@ -29,6 +32,7 @@ for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(root / name, payload / name)
 vendor = staging / 'vendor'
 (vendor / 'bin').mkdir(parents=True)
+if onefile: (vendor / 'standalone.json').write_text(json.dumps({'version': 1}), encoding='utf-8')
 for name in ('cmake', 'ninja'):
     tool = shutil.which(name)
     if not tool:
@@ -49,5 +53,11 @@ header.parent.mkdir(parents=True)
 header.write_bytes(data)
 (vendor / 'JSON-LICENSE.MIT').write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT', timeout=60).read())
 (vendor / 'json-sha256.txt').write_text(hashlib.sha256(data).hexdigest() + '\n')
-subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed', '--name', 'DisgaeaD2Launcher', '--icon', str(root / 'windows/assets/launcher.ico'), '--collect-all', 'capstone', '--collect-all', 'construct', '--collect-all', 'Crypto', '--collect-all', 'tabulate', '--collect-all', 'tqdm', '--collect-all', 'py7zr', '--add-data', str(payload) + ';payload', '--add-data', str(root / 'windows') + ';windows', '--add-data', str(vendor) + ';vendor', str(root / 'windows/launcher.py')], cwd=root, check=True)
-print('Launcher ready in dist/DisgaeaD2Launcher. No game executable was packaged.')
+subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
+                '--onefile' if onefile else '--onedir', '--windowed', '--name', package_name,
+                '--icon', str(root / 'windows/assets/launcher.ico'), '--collect-all', 'capstone',
+                '--collect-all', 'construct', '--collect-all', 'Crypto', '--collect-all', 'tabulate',
+                '--collect-all', 'tqdm', '--collect-all', 'py7zr', '--add-data', str(payload) + ';payload',
+                '--add-data', str(root / 'windows') + ';windows', '--add-data', str(vendor) + ';vendor',
+                str(root / 'windows/launcher.py')], cwd=root, check=True)
+print('Launcher ready:', package_name, '. No game executable was packaged.')

@@ -16,9 +16,12 @@ import threading
 import urllib.request
 import uuid
 
-VERSION = '0.1.10-preview'
+VERSION = '0.1.13-standalone-preview'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
-HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'DisgaeaD2Recomp'
+_standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
+_clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
+HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
+    'DisgaeaD2Recomp-Standalone' if _standalone else 'DisgaeaD2Recomp-ISO-Clean' if _clean_iso else 'DisgaeaD2Recomp')
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 RPCS3_URL = 'https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3-v0.0.43-20284-2ba2f75b_win64_msvc.7z'
 RPCS3_SHA = '8914810c74508b0e53c6b6cb39d4ed334ecee99639973062d259b1481bfa1720'
@@ -245,6 +248,10 @@ class Backend:
         self.home = Path(home)
         self.notify = notify
 
+    @property
+    def standalone(self):
+        return self.home.name == 'DisgaeaD2Recomp-Standalone'
+
     def run(self, args, env=None, timeout=None, cwd=None, label=None, log_path=None, on_started=None):
         self.home.mkdir(parents=True, exist_ok=True)
         log = Path(log_path) if log_path else self.home / 'preparacao.log'
@@ -340,6 +347,7 @@ class Backend:
             return None
 
     def helper(self):
+        if self.standalone: raise RuntimeError('O perfil standalone não utiliza RPCS3.')
         directory = self.home / 'auxiliar-rpcs3'
         exe = directory / 'rpcs3.exe'
         if exe.is_file():
@@ -386,15 +394,19 @@ class Backend:
             self.notify('Bibliotecas locais anteriores preservadas; usando a instalação oficial do Windows.')
         ensure_runtimes(self.home, download, self.notify)
 
-    def prepare(self, folder, packages, firmware=None):
-        game = self.check_game_files(folder)
+    def prepare(self, folder, packages, firmware=None, iso_path=None):
+        if self.standalone and (not iso_path or firmware):
+            raise ValueError('Standalone requer ISO e PKGs; firmware não é necessário.')
+        game = self.prepare_iso_source(iso_path) if iso_path else self.check_game_files(folder)
         packages = [Path(package).resolve() for package in packages]
         for package in packages:
             if package.suffix.lower() != '.pkg' or not package.is_file() or not package.stat().st_size:
                 raise ValueError('Pacote PKG inexistente ou vazio: ' + str(package))
         previous = self.cached_build()
+        if iso_path and previous and not previous.get("native_iso"):
+            previous = None
         if previous and not packages and not firmware:
-            previous['game_root'] = str(game)
+            previous.update(game_root=str(game), iso_path=str(iso_path) if iso_path else None)
             self.save(previous)
             (self.home / 'preparacao-inputs.json').unlink(missing_ok=True)
             self.notify('Build local existente pronta para jogar; nenhuma recompilacao necessaria.')
@@ -403,31 +415,37 @@ class Backend:
         inputs_record = self.home / 'preparacao-inputs.json'
         temporary = inputs_record.with_suffix('.tmp')
         temporary.write_text(json.dumps(dict(game_root=str(game), packages=list(map(str, packages)),
-                                            firmware=str(firmware) if firmware else ''), ensure_ascii=False), encoding='utf-8')
+                                            firmware=str(firmware) if firmware else '', iso_path=str(iso_path) if iso_path else None), ensure_ascii=False), encoding='utf-8')
         temporary.replace(inputs_record)
-        helper = self.helper()
-        self.ensure_firmware(helper, firmware)
-        hdd = helper.parent / 'dev_hdd0'
-        for package in packages:
-            package = Path(package).resolve()
-            if package.suffix.lower() != '.pkg' or not package.is_file():
-                raise ValueError('Pacote PKG inexistente: ' + str(package))
-            self.notify('Instalando pacote local: ' + package.name)
-            rpc_log = helper.parent / 'log/RPCS3.log'
-            previous_sha = digest(rpc_log) if rpc_log.is_file() else None
-            try:
-                self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent,
-                         label='Instalar PKG ' + package.name)
-            except StageFailure as error:
-                if completed_update_install(helper.parent, package, previous_sha, error.returncode):
-                    message = 'Atualizacao US 1.40 instalada; auxiliar encerrou com erro apos confirmar. O ELF sera verificado antes do uso.'
-                elif completed_dlc_install(helper.parent, package, previous_sha, error.returncode):
-                    message = 'Pacote DLC NPUB31321 instalado e arquivos conferidos; auxiliar encerrou com erro apos confirmar. Confira o conteudo no jogo.'
-                else:
-                    raise
-                with (self.home / 'preparacao.log').open('a', encoding='utf-8') as log:
-                    log.write(message + '\n')
-                self.notify(message)
+        if self.standalone:
+            hdd = self.home / 'hdd0'
+            for package in packages:
+                self.run([sys.executable, ROOT / 'payload/tools/import_owned_pkg.py',
+                          '--pkg', package, '--hdd', hdd], label='Importar PKG sem auxiliar: ' + package.name)
+        else:
+            helper = self.helper()
+            self.ensure_firmware(helper, firmware)
+            hdd = helper.parent / 'dev_hdd0'
+            for package in packages:
+                package = Path(package).resolve()
+                if package.suffix.lower() != '.pkg' or not package.is_file():
+                    raise ValueError('Pacote PKG inexistente: ' + str(package))
+                self.notify('Instalando pacote local: ' + package.name)
+                rpc_log = helper.parent / 'log/RPCS3.log'
+                previous_sha = digest(rpc_log) if rpc_log.is_file() else None
+                try:
+                    self.run([helper, '--headless', '--installpkg', package], timeout=1800, cwd=helper.parent,
+                             label='Instalar PKG ' + package.name)
+                except StageFailure as error:
+                    if completed_update_install(helper.parent, package, previous_sha, error.returncode):
+                        message = 'Atualizacao US 1.40 instalada; auxiliar encerrou com erro apos confirmar. O ELF sera verificado antes do uso.'
+                    elif completed_dlc_install(helper.parent, package, previous_sha, error.returncode):
+                        message = 'Pacote DLC NPUB31321 instalado e arquivos conferidos; auxiliar encerrou com erro apos confirmar. Confira o conteudo no jogo.'
+                    else:
+                        raise
+                    with (self.home / 'preparacao.log').open('a', encoding='utf-8') as log:
+                        log.write(message + '\n')
+                    self.notify(message)
         update = hdd / 'game/BLUS31313/USRDIR'
         if not (update / 'Data/START_7.dat').is_file() or not (update / 'EBOOT.BIN').is_file():
             raise RuntimeError('A atualizacao US 1.40 (BLUS31313) nao foi encontrada. Selecione o PKG correto.')
@@ -437,13 +455,17 @@ class Backend:
         binary = inputs / 'EBOOT.BIN'
         shutil.copy2(update / 'EBOOT.BIN', binary)
         elf = binary.with_suffix('.elf')
-        elf.unlink(missing_ok=True)
         self.notify('Preparando o executavel da sua copia do jogo.')
-        self.run([helper, '--decrypt', binary], timeout=180, cwd=helper.parent, label='Preparar ELF US 1.40')
+        if self.standalone:
+            self.run([sys.executable, ROOT / 'payload/tools/prepare_owned_self.py', '--self', binary,
+                      '--elf', elf], timeout=180, label='Preparar ELF 1.40 sem firmware ou auxiliar')
+        else:
+            elf.unlink(missing_ok=True)
+            self.run([helper, '--decrypt', binary], timeout=180, cwd=helper.parent, label='Preparar ELF US 1.40')
         if not elf.is_file() or digest(elf) != ELF_SHA:
             raise RuntimeError('Executavel diferente da versao US 1.40 suportada. Nenhuma build foi criada.')
         if previous:
-            previous.update(game_root=str(game), hdd0_root=str(hdd))
+            previous.update(game_root=str(game), hdd0_root=str(hdd), iso_path=str(iso_path) if iso_path else None)
             self.save(previous)
             inputs_record.unlink(missing_ok=True)
             self.notify('Conteudo importado. Build local existente pronta para jogar.')
@@ -472,10 +494,13 @@ class Backend:
             self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env, label='Preparar SDK Windows')
         command = [sys.executable, repo / 'tools/build_windows.py', '--elf', elf,
                    '--json-include', ROOT / 'vendor/include', '--jobs', '4']
+        if iso_path:
+            command.append('--iso-vfs')
         if resume:
             command.append('--resume')
         self.run(command, env, label='Gerar e compilar jogo Windows')
-        self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd)))
+        self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd),
+                       iso_path=str(iso_path) if iso_path else None, native_iso=bool(iso_path), standalone=self.standalone))
         pending.unlink(missing_ok=True)
         inputs_record.unlink(missing_ok=True)
         self.notify('Preparação concluída.')
@@ -484,6 +509,38 @@ class Backend:
         self.prepare(folder, packages, firmware)
         if on_prepared:
             on_prepared()
+        self.play()
+
+    def open_clean_iso_test(self):
+        command = [sys.executable]
+        if not getattr(sys, 'frozen', False): command.append(str(Path(__file__).resolve()))
+        subprocess.Popen(command + ['--iso-clean-test'])
+
+    def prepare_iso_source(self, image):
+        image = Path(image).resolve()
+        if image.suffix.lower() != '.iso' or not image.is_file():
+            raise ValueError('Selecione uma ISO existente USA BLUS31313.')
+        env = self.compiler_environment()
+        result = self.home / ('iso-reader-' + uuid.uuid4().hex + '.txt')
+        try:
+            self.run([sys.executable, ROOT / 'payload/tools/build_iso_reader.py',
+                      '--source', ROOT / 'payload/port/vfs', '--output', self.home / 'iso-readers',
+                      '--result', result], env, label='Preparar leitor ISO nativo')
+            reader = Path(result.read_text(encoding='utf-8'))
+        finally:
+            result.unlink(missing_ok=True)
+        stat = image.stat()
+        key = hashlib.sha256((str(image) + str(stat.st_size) + str(stat.st_mtime_ns)).encode()).hexdigest()[:24]
+        root = self.home / 'iso-metadata' / key
+        self.run([reader, '--metadata-root', root, image], env, label='Validar ISO e ler metadados')
+        if not (root / 'PS3_GAME/PARAM.SFO').is_file():
+            raise RuntimeError('Leitor terminou sem metadados do jogo.')
+        return root
+
+    def prepare_iso_and_play(self, image, packages=(), firmware=None, on_prepared=None):
+        image = Path(image).resolve()
+        self.prepare(None, packages, firmware, iso_path=image)
+        if on_prepared: on_prepared()
         self.play()
 
     def check_game_files(self, folder):
@@ -519,16 +576,49 @@ class Backend:
         temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
         temporary.replace(target)
 
-    def play(self):
+    def play_iso(self, image):
+        image = Path(image).resolve()
+        if image.suffix.lower() != '.iso' or not image.is_file():
+            raise ValueError('Selecione uma ISO existente do jogo USA BLUS31313.')
+        try:
+            config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raise RuntimeError('Prepare o jogo USA 1.40 primeiro no launcher atual. Este teste reutiliza a preparacao existente.')
+        if config.get('native_iso'):
+            metadata = self.prepare_iso_source(image)
+            self.play(iso_path=image, iso_executable=Path(config['workspace']) / 'port/build-windows-140/DisgaeaD2Recomp.exe', iso_root=metadata)
+            return
+        source = ROOT / 'payload'
+        identity = build_source_signature(source) + digest(source / 'tools/build_iso_preview.py') + str(Path(config['workspace']).resolve())
+        key = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        preview = self.home / 'iso-builds' / key
+        env = self.compiler_environment()
+        self.notify('Preparando o modo ISO. Na primeira vez, aguarde a compilação automática.')
+        self.run([sys.executable, source / 'tools/build_iso_preview.py', '--source', source,
+                  '--workspace', config['workspace'], '--preview', preview,
+                  '--json-include', ROOT / 'vendor/include'], env, label='Preparar runtime ISO experimental')
+        metadata = self.prepare_iso_source(image)
+        self.play(iso_path=image, iso_executable=preview / 'build/DisgaeaD2Recomp.exe', iso_root=metadata)
+
+    def play(self, iso_path=None, iso_executable=None, iso_root=None):
         config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
         repo = Path(config['workspace'])
-        self.check_game_files(config['game_root'])
+        if iso_path is None and config.get('iso_path'):
+            iso_path = Path(config['iso_path'])
+            iso_executable = repo / 'port/build-windows-140/DisgaeaD2Recomp.exe'
+        if iso_path is None:
+            self.check_game_files(config['game_root'])
+        elif not Path(iso_path).is_file() or not iso_executable or not Path(iso_executable).is_file():
+            raise RuntimeError('ISO ou executavel experimental ausente.')
         sys.path.insert(0, str(ROOT / 'windows'))
         from iniciar_build import launch_environment
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())
         from display_settings import load_settings, display_environment, configure_game_window
         settings = load_settings(self.home)
         env = display_environment(launch_environment(profile, config, os.environ), settings)
+        env.pop('D2_GAME_ISO', None)
+        if iso_root is not None:
+            env['PS3_VFS_ROOT'] = str(iso_root)
         self.notify('Jogo em execução.')
         stop = threading.Event()
         workers = []
@@ -544,9 +634,11 @@ class Backend:
             thread = threading.Thread(target=configure, daemon=True)
             workers.append(thread)
             thread.start()
-        log = self.home / 'logs' / ('jogo-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
+        log = self.home / 'logs' / (('jogo-ISO-' if iso_path else 'jogo-') + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
         try:
-            self.run([repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf'], env, cwd=repo,
+            command = [iso_executable or repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf']
+            if iso_path: command += ['--iso', Path(iso_path)]
+            self.run(command, env, cwd=repo,
                      label='Executar jogo nativo', log_path=log, on_started=on_started)
         finally:
             stop.set()
@@ -607,6 +699,16 @@ def main():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
+    elif '--native-preparation-test' in sys.argv:
+        import unittest
+        sys.path.insert(0, str(ROOT / 'payload/tools'))
+        sys.path.insert(0, str(ROOT / 'payload/windows'))
+        import test_native_preparation
+        HOME.mkdir(parents=True, exist_ok=True)
+        with (HOME / 'native-preparation-test.log').open('w', encoding='utf-8') as output:
+            result = unittest.TextTestRunner(stream=output, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(test_native_preparation))
+        if not result.wasSuccessful(): raise RuntimeError('Embedded PKG/SELF regressions failed')
+        if HOME.name != 'DisgaeaD2Recomp-Standalone': raise RuntimeError('Standalone profile isolation failed')
     elif '--toolchain-test' in sys.argv:
         backend = Backend(lambda text: None)
         env = backend.compiler_environment()
