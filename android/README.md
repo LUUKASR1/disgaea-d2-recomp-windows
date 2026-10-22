@@ -1,6 +1,57 @@
-# Disgaea D2 — Android ARM64 bootstrap 0.0.11
+# Disgaea D2 — Android ARM64 bootstrap 0.0.12
 
 ## Português
+
+### Pacote integrado da 0.0.12 — cabeçalhos SELF e segmentos plain/zlib
+
+Substitui a identificação por assinatura da 0.0.11 por um parser independente
+limitado dos cabeçalhos públicos SCE v2 / SELF ext v3 / ELF64 PPC64 big-endian.
+Valida limites de tabelas, contagem de programas, regiões dos segmentos,
+alinhamento, endereços guest, sobreposição dos PT_LOAD e cadeia de controles.
+Informa tipo de aplicação, revisão, tipo numérico de licença NPD (quando existe)
+e contagens declaradas de segmentos criptografados/comprimidos. Não registra
+conteúdo, caminhos, IDs de licença nem chaves. As assinaturas não são verificadas;
+`self_public_headers=structurally-valid` cobre somente este subconjunto público.
+
+Se qualquer segmento declara criptografia solicitada (`encryption=2`), informa
+`executable_status=self-decryption-required` e para antes de ler seu conteúdo.
+O flag sozinho não autentica a criptografia. Perfis de cabeçalho fora do
+subconjunto têm `self-profile-unsupported`; estruturas inválidas são rejeitadas
+com motivo fixo. O decoder Python do Windows é exclusivo da atualização USA 1.40
+e não foi ligado ao Android nem generalizado para o executável-base da ISO.
+
+Para segmentos que declaram formato plain, sem criptografia solicitada,
+constrói uma visão ELF somente para leitura, sem extrair arquivos. Segmentos
+zlib usam a biblioteca de sistema com stream completo e tamanho exato; rejeita
+truncamento, bytes extras, expansão excessiva e tamanho divergente. Limites:
+16 MiB por entrada/saída e 24 MiB acumulados de entrada+saída zlib, além do
+orçamento de I/O por montagem já existente. Regiões ELF lógicas sobrepostas
+(inclusive segmentos que englobam cabeçalho/tabela) são um layout não suportado
+e são rejeitadas. Não se trata de um decoder SELF geral.
+
+`executable_status=self-plain-plan-valid` significa que a visão plain/zlib
+passou no mesmo plano limitado PT_LOAD/OPD/código/TOC da 0.0.11. Não escreve
+memória guest, não executa PPC e não valida TLS, importações ou dependências.
+O teste integrado do APK cobre SELF sintético plain, gate de criptografia,
+zlib válido/inválido, tabela inválida e recuperação; os testes anteriores
+continuam no mesmo pacote. Espere os quatro campos `disc_guest_self_*` aprovados.
+
+**O jogo ainda não inicia.** Esta etapa prepara e valida a visão de leitura;
+carregador completo, decodificação retail, runtime jogável, RSX e áudio ainda
+estão pendentes. Selecione a mesma ISO e compartilhe o relatório para identificar
+qual perfil público o executável-base realmente apresenta.
+
+Referência de formato: [layout SELF público do RPCS3, revisão fixada](https://github.com/RPCS3/rpcs3/blob/2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3/Crypto/unself.h).
+A implementação deste parser é independente; nenhum código RPCS3 foi copiado.
+
+**English:** 0.0.12 adds an independent bounded SCE/SELF public-header parser and
+plain/zlib segment-backed ELF planning. Encryption-requested segments are gated
+before reading their payload; no keys or retail decryption are implemented.
+System zlib uses exact stream/input/output checks and strict memory caps.
+The virtual ELF plan remains read-only, with no guest writes or game execution.
+Overlapping logical layouts and unsupported profiles are rejected. Four new
+on-device synthetic checks cover plain, encrypted gating, zlib and recovery.
+Public-header validity is partial, unsigned and is not proof of a playable game.
 
 ### Pacote integrado da 0.0.11 — serviços de disco e plano do executável
 

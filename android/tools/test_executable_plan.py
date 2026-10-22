@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory() as tmp:
             assert 'executable_guest_memory_written=false\n' in result
     check('valid',elf(),'executable_status=elf-plan-valid','executable_load_segments=2',
           'executable_planned_memory_bytes=72','executable_entry_opd=structurally-valid')
-    check('self',b'SCE\0'+bytes(60),'executable_format=self-container','executable_status=self-loader-required')
+    check('self',b'SCE\0'+bytes(60),'executable_format=self-container','executable_status=rejected','executable_reason=truncated-self-header')
     check('unknown',b'D2OK','executable_status=unrecognized')
     check('short',b'\x7fELF','executable_reason=truncated-elf-header')
     def mutate(name,offset,fmt,value,reason):

@@ -17,7 +17,7 @@
     <string name="disc_other_title">A imagem pertence a outro título. Consulte o relatório.</string>
     <string name="disc_missing">Alguns arquivos-base estão ausentes ou ilegíveis. Compartilhe o relatório.</string>
     <string name="disc_rejected">Arquivo legível, mas a imagem não foi montada. Compartilhe o relatório.</string>
-    <string name="disc_self">Imagem-base legível. Executável SELF identificado; o carregador ainda não está integrado.</string>
+    <string name="disc_self">Imagem-base legível. Cabeçalhos SELF analisados; este perfil ainda precisa de suporte para decodificação. Compartilhe o relatório.</string>
     <string name="disc_elf_plan">Imagem-base legível. Plano ELF verificado; a execução do jogo ainda não está integrada.</string>
     <string name="disc_executable_rejected">Imagem-base legível, mas a estrutura do executável foi rejeitada. Compartilhe o relatório.</string>
 </resources>

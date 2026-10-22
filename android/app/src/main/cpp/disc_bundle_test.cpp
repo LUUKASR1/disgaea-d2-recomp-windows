@@ -4,6 +4,8 @@
 #include "document_probe.h"
 #include "runtime/syscalls/lv2_syscall_table.h"
 #include <array>
+#include <algorithm>
+#include <zlib.h>
 #include <cstring>
 #include <cstdio>
 #include <string>
@@ -56,6 +58,29 @@ std::vector<unsigned char> image() {
     be_write(p+512,0x10000,4); be_write(p+516,0x20010,4);
     return bytes;
 }
+// Compact public-layout SELF containing the same two synthetic ELF segments.
+std::vector<unsigned char> self_image(const std::vector<unsigned char> &base,unsigned encryption) {
+    auto bytes=base;
+    auto p=bytes.data()+30*block;
+    std::array<unsigned char,544> elf{}; std::memcpy(elf.data(),p,elf.size());
+    std::memset(p,0,1024);
+    std::memcpy(p,"SCE\0",4); be_write(p+4,2,4); be_write(p+10,1,2);
+    be_write(p+12,416,4); be_write(p+16,512,8); be_write(p+24,544,8);
+    be_write(p+32,3,8); be_write(p+40,112,8); be_write(p+48,144,8);
+    be_write(p+56,208,8); be_write(p+72,320,8); be_write(p+124,4,4);
+    std::memcpy(p+144,elf.data(),64); std::memcpy(p+208,elf.data()+64,112);
+    for(unsigned i=0;i<2;++i) {
+        auto record=p+320+i*32;
+        be_write(record,i ? 768 : 512,8); be_write(record+8,i ? 32 : 8,8);
+        be_write(record+16,1,4); be_write(record+24,encryption,8);
+    }
+    std::memcpy(p+512,elf.data()+256,8); std::memcpy(p+768,elf.data()+512,32);
+    const char marker[]="EBOOT.BIN;1";
+    auto it=std::search(bytes.begin()+22*block,bytes.begin()+23*block,marker,marker+sizeof(marker)-1);
+    need(it!=bytes.begin()+23*block,"self fixture directory record");
+    both(&*it-33+10,800,4);
+    return bytes;
+}
 uint64_t call(uint64_t number,std::initializer_list<uint64_t> values={}) {
     std::array<uint64_t,8> args{}; size_t i=0; for(auto v:values) args.at(i++)=v;
     uint64_t result=0; need(!d2_fixture_syscall(number,args.data(),1,&result),"disc bridge fault"); return result;
@@ -89,6 +114,29 @@ int d2_disc_bundle_run(const char *directory,char *report,size_t capacity) {
         need(inspection.find("executable_status=elf-plan-valid\n")!=std::string::npos,"disc executable plan");
         need(inspection.find("executable_guest_memory_written=false\n")!=std::string::npos,"disc plan no guest writes");
         text+="disc_guest_executable_plan=passed\n";
+        auto inspect_fixture=[&](const std::vector<unsigned char> &candidate,const char *expected) {
+            need(pwrite(cleanup.fd,candidate.data(),candidate.size(),prefix.size())==ssize_t(candidate.size()),"self fixture write");
+            auto result=d2_inspect_document(cleanup.fd,prefix.size(),candidate.size());
+            need(result.find(expected)!=std::string::npos,"self fixture status");
+            need(result.find("executable_guest_memory_written=false\n")!=std::string::npos,"self no guest write");
+            need(result.find("executable_code_executed=false\n")!=std::string::npos,"self no execution");
+        };
+        inspect_fixture(self_image(bytes,0),"executable_status=self-plain-plan-valid\n");
+        inspect_fixture(self_image(bytes,2),"executable_status=self-decryption-required\n");
+        auto zipped=self_image(bytes,0);
+        std::array<unsigned char,32> packed{}; uLongf packed_size=packed.size();
+        std::array<unsigned char,8> zeros{};
+        need(compress(packed.data(),&packed_size,zeros.data(),zeros.size())==Z_OK,"self synthetic zlib");
+        std::memcpy(zipped.data()+30*block+512,packed.data(),packed_size);
+        be_write(zipped.data()+30*block+328,packed_size,8); be_write(zipped.data()+30*block+336,2,4);
+        inspect_fixture(zipped,"executable_status=self-plain-plan-valid\n");
+        zipped[30*block+512]=0;
+        inspect_fixture(zipped,"executable_reason=self-invalid-compressed-segment\n");
+        auto malformed=self_image(bytes,0); be_write(malformed.data()+30*block+72,UINT64_MAX,8);
+        inspect_fixture(malformed,"executable_reason=self-program-or-segment-table-bounds\n");
+        inspect_fixture(bytes,"executable_status=elf-plan-valid\n");
+        text+="disc_guest_self_plain_plan=passed\ndisc_guest_self_encrypted_gate=passed\n"
+            "disc_guest_self_rejection_and_recovery=passed\ndisc_guest_self_zlib_plan=passed\n";
         need(d2_files_mount_disc(cleanup.fd,prefix.size(),bytes.size()),"disc mount");
         constexpr const char *asset="/dev_bdvd/PS3_GAME/USRDIR/FIXTURE.BIN";
         uint32_t a=open_file(asset), b=open_file(asset), sfo=open_file("/dev_bdvd/PS3_GAME/PARAM.SFO");
