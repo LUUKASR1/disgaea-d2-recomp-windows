@@ -156,6 +156,11 @@ static void pad_probe(ppu_context* ctx)
 
 extern "C" void d2_register_debug_warp(void)
 {
+#if D2_GAME_VERSION == 130
+    if (std::getenv("D2_WARP_STAGE") || std::getenv("D2_HUB_CHARACTER"))
+        std::fprintf(stderr, "[D2-warp] not available in the JP 1.30 build\n");
+    return;
+#endif
     const char* stage = std::getenv("D2_WARP_STAGE");
     const char* hub = std::getenv("D2_HUB_CHARACTER");
     const char* delay = std::getenv("D2_WARP_DELAY_SECONDS");

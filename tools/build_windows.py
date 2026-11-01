@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and compile Windows 1.40 locally from the user's own executable."""
+"""Generate and compile Windows 1.40 (USA) or 1.30 (Japan) locally from the user's own executable."""
 import argparse
 import hashlib
 import json
@@ -10,6 +10,9 @@ import subprocess
 import sys
 
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
+# Supported executables: USA BLUS31313 1.40 (default) and Japan BLJS10206 1.30.
+ELF_SHAS = {'140': ELF_SHA, '130': 'e30b3c7f83486a491f175be88642b778c0bcc3b2615272e7b44c072120026850'}
+VERSION_NAMES = {'140': 'USA 1.40', '130': 'Japan 1.30'}
 
 
 def generation_snapshot(directory):
@@ -17,9 +20,9 @@ def generation_snapshot(directory):
             for p in sorted(directory.rglob('*')) if p.is_file() and p.name != 'windows-generation.json'}
 
 
-def verify_generation(directory, sdk_tree):
+def verify_generation(directory, sdk_tree, elf_sha=ELF_SHA):
     receipt = json.loads((directory / 'windows-generation.json').read_text(encoding='utf-8'))
-    if receipt.get('elf_sha256') != ELF_SHA or receipt.get('sdk_tree') != sdk_tree:
+    if receipt.get('elf_sha256') != elf_sha or receipt.get('sdk_tree') != sdk_tree:
         raise RuntimeError('Generated input provenance differs; existing files were preserved.')
     if not receipt.get('files') or receipt['files'] != generation_snapshot(directory):
         raise RuntimeError('Generated files changed or are incomplete; existing files were preserved.')
@@ -31,6 +34,8 @@ def main():
     p.add_argument('--json-include', required=True, type=Path,
                    help='Directory containing nlohmann/json.hpp, supplied separately.')
     p.add_argument('--jobs', type=int, default=4)
+    p.add_argument('--version', choices=sorted(ELF_SHAS), default='140',
+                   help='Executable version: 140 = USA BLUS31313 1.40 (default), 130 = Japan BLJS10206 1.30.')
     p.add_argument('--iso-vfs', action='store_true', help='Build directly against ISO assets.')
     p.add_argument('--resume', action='store_true', help='Resume a verified, fully generated local build.')
     args = p.parse_args()
@@ -44,9 +49,10 @@ def main():
     for name in ['git', 'cmake', 'ninja'] + ([] if portable else ['clang-cl']):
         if not shutil.which(name):
             p.error('Missing build tool: ' + name)
+    version, elf_sha = args.version, ELF_SHAS[args.version]
     elf = args.elf.resolve()
-    if not elf.is_file() or hashlib.sha256(elf.read_bytes()).hexdigest() != ELF_SHA:
-        p.error('The supplied ELF is not the supported US 1.40 executable.')
+    if not elf.is_file() or hashlib.sha256(elf.read_bytes()).hexdigest() != elf_sha:
+        p.error('The supplied ELF is not the supported ' + VERSION_NAMES[version] + ' executable.')
     include = args.json_include.resolve()
     if not (include / 'nlohmann/json.hpp').is_file():
         p.error('nlohmann/json.hpp not found in --json-include.')
@@ -65,28 +71,28 @@ def main():
         tree = subprocess.check_output(['git', '-C', str(sdk), 'write-tree'], env=env, text=True).strip()
         if tree != lock['tree']:
             p.error('SDK sources differ from SDK-WINDOWS.lock.')
-    build = root / 'port/build-windows-140'
-    generated = root / 'port-140-windows-generated'
+    build = root / ('port/build-windows-' + version)
+    generated = root / ('port-' + version + '-windows-generated')
     if not args.resume and (build.exists() or generated.exists()):
         p.error('Fresh-build command requires new build/generated directories. Existing files were preserved.')
     def run(*cmd):
         subprocess.run(list(map(str, cmd)), cwd=root, check=True, stdout=sys.stdout, stderr=sys.stderr)
-    local_elf = root / 'work/v140/EBOOT.elf'
+    local_elf = root / ('work/v' + version + '/EBOOT.elf')
     local_elf.parent.mkdir(parents=True, exist_ok=True)
     if local_elf.exists():
-        if hashlib.sha256(local_elf.read_bytes()).hexdigest() != ELF_SHA:
+        if hashlib.sha256(local_elf.read_bytes()).hexdigest() != elf_sha:
             p.error('Existing local ELF differs. It was preserved.')
     elif local_elf.resolve() != elf:
         shutil.copy2(elf, local_elf)
     # The Windows lock is verified above; generate_lifts uses the original
     # macOS lock, so permit this explicitly validated Windows SDK worktree.
     if args.resume:
-        verify_generation(generated, lock['tree'])
+        verify_generation(generated, lock['tree'], elf_sha)
         print('Resuming verified generated files.', flush=True)
     else:
-        run(sys.executable, root / 'tools/generate_lifts.py', '--version', '140', '--elf', local_elf,
+        run(sys.executable, root / 'tools/generate_lifts.py', '--version', version, '--elf', local_elf,
             '--allow-sdk-worktree', '--port-dir', generated)
-        receipt = dict(elf_sha256=ELF_SHA, sdk_tree=lock['tree'], files=generation_snapshot(generated))
+        receipt = dict(elf_sha256=elf_sha, sdk_tree=lock['tree'], files=generation_snapshot(generated))
         (generated / 'windows-generation.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     compiler_options = ['-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl',
                         '-DCMAKE_EXE_LINKER_FLAGS=dxguid.lib']
@@ -104,10 +110,10 @@ def main():
     run('cmake', '-S', root / 'port', '-B', build, '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release', *compiler_options,
         '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DD2_ENABLE_ISO_VFS=' + ('ON' if args.iso_vfs else 'OFF'),
-        '-DD2_GAME_VERSION=140',
+        '-DD2_GAME_VERSION=' + version,
         '-DPS3RECOMP_DIR=' + str(sdk), '-DPython3_EXECUTABLE=' + sys.executable,
-        '-DD2_JSON_INCLUDE_DIR=' + str(include), '-DRECOMP_DIR=' + str(generated / 'src/recomp-140'),
-        '-DD2_OUT_DIR=' + str(generated / 'out-140'), '-DSPU_DIR=' + str(generated / 'spu-140'),
+        '-DD2_JSON_INCLUDE_DIR=' + str(include), '-DRECOMP_DIR=' + str(generated / ('src/recomp-' + version)),
+        '-DD2_OUT_DIR=' + str(generated / ('out-' + version)), '-DSPU_DIR=' + str(generated / ('spu-' + version)),
         '-DD2_SPU_SIMD_SSE41=ON', '-DBUILD_TESTING=OFF')
     run('cmake', '--build', build, '--parallel', args.jobs)
     print('Local build created:', build / 'DisgaeaD2Recomp.exe')

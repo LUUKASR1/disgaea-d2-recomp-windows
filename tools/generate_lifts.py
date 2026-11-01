@@ -11,7 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--sdk', type=Path, default=ROOT / 'ps3recomp')
-parser.add_argument('--version', choices=['100', '140', 'all'], default='all')
+parser.add_argument('--version', choices=['100', '130', '140', 'all'], default='all')
 parser.add_argument('--elf', type=Path, help='ELF input override (requires one version)')
 parser.add_argument('--port-dir', type=Path, default=ROOT / 'port', help='output tree, also supports external storage')
 parser.add_argument('--spu-only', action='store_true', help='Regenerate only embedded SPU extraction/lifts')
@@ -19,7 +19,7 @@ parser.add_argument('--allow-sdk-worktree', action='store_true',
                     help='Development only: record the current SDK revision/diff instead of requiring SDK.lock')
 args = parser.parse_args()
 if args.elf and args.version == 'all':
-    parser.error('--elf requires --version 100 or 140')
+    parser.error('--elf requires a single --version')
 manifest = json.loads((ROOT / 'patches/LIFTS.json').read_text())
 lock = json.loads((ROOT / 'patches' / manifest['sdk_lock']).read_text())
 sdk = args.sdk.resolve()
