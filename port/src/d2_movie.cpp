@@ -9,6 +9,13 @@
 #define d2_original_0015FD14 d2_original_001686AC
 #define d2_original_0015F9F4 d2_original_00168304
 #define d2_original_0015F680 d2_original_00167FC8
+#elif D2_GAME_VERSION == 130
+#define func_0015FD14 func_00166B9C
+#define func_0015F9F4 func_001667F4
+#define func_0015F680 func_001664B8
+#define d2_original_0015FD14 d2_original_00166B9C
+#define d2_original_0015F9F4 d2_original_001667F4
+#define d2_original_0015F680 d2_original_001664B8
 #endif
 #include <cstdio>
 #include <cstdlib>
@@ -29,7 +36,9 @@ static bool native_movie()
 
 static uint32_t movie_state(ppu_context* ctx)
 {
-    #if D2_GAME_VERSION == 140
+    #if D2_GAME_VERSION == 130
+    return vm_read32(ctx->gpr[2] - 0x45C8);
+#elif D2_GAME_VERSION == 140
     return vm_read32(ctx->gpr[2] - 0x4584);
 #else
     return vm_read32(ctx->gpr[2] - 0x487C);

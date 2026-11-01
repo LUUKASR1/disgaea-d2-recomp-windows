@@ -566,7 +566,7 @@ int main(int argc, char** argv)
     if (selected_iso) iso_path = selected_iso;
 #endif
     if (!iso_path.empty()) {
-        if (d2_iso_mount(iso_path.c_str()) != 0 || d2_iso_check_title("BLUS31313") != 0) {
+        if (d2_iso_mount(iso_path.c_str()) != 0 || d2_iso_check_title(D2_GAME_VERSION == 130 ? "BLJS10206" : "BLUS31313") != 0) {
             fprintf(stderr, "ERROR: ISO mount: %s\n", d2_iso_last_error()); return 1;
         }
         fprintf(stderr, "[vfs] direct ISO mounted; updates/DLC/saves use existing HDD mounts\n");
@@ -579,11 +579,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const uint32_t expected_entry = D2_GAME_VERSION == 140 ? 0x461000u : 0x3E0EE8u;
-    const uint32_t expected_toc = D2_GAME_VERSION == 140 ? 0x47DF98u : 0x3FDE60u;
+    const uint32_t expected_entry = D2_GAME_VERSION == 140 ? 0x461000u : D2_GAME_VERSION == 130 ? 0x450FF8u : 0x3E0EE8u;
+    const uint32_t expected_toc = D2_GAME_VERSION == 140 ? 0x47DF98u : D2_GAME_VERSION == 130 ? 0x46DF28u : 0x3FDE60u;
     if (entry != expected_entry || vm_read32(entry + 4) != expected_toc) {
         fprintf(stderr, "ERROR: this build requires D2 version %d (%s)\n",
-                D2_GAME_VERSION, D2_GAME_VERSION == 140 ? "work/v140/EBOOT.elf" : "work/EBOOT.elf");
+                D2_GAME_VERSION, D2_GAME_VERSION == 140 ? "work/v140/EBOOT.elf" : D2_GAME_VERSION == 130 ? "work/v130/EBOOT.elf" : "work/EBOOT.elf");
         return 1;
     }
 

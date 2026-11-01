@@ -1,4 +1,5 @@
-"""Independent, bounded decoder for the exact owned USA 1.40 free-license SELF.
+"""Independent, bounded decoder for the exact owned free-license update SELFs:
+USA BLUS31313 1.40 and Japan BLJS10206 1.30.
 
 This is not an emulator or a general retail-SELF decoder. Unsupported inputs
 are rejected before decryption. Public format/key references are documented
@@ -13,6 +14,9 @@ from Crypto.Cipher import AES
 
 SELF_SHA = 'c2902f309e7220884d03665ebb779e68bb31545019b039ec2976ae41384805b6'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
+SELF_SHA_JP = 'ee6139d5dfe4b56680e37ec01aa0ed01d2221547daa2e2504458992c41277e18'
+ELF_SHA_JP = 'e30b3c7f83486a491f175be88642b778c0bcc3b2615272e7b44c072120026850'
+SUPPORTED = {SELF_SHA: ELF_SHA, SELF_SHA_JP: ELF_SHA_JP}   # SELF -> resulting ELF
 # Public revision 0x1c NPDRM constants, not user/device keys.
 ROOT_KEY = bytes.fromhex('8103ea9db790578219c4cedf0592b43064a7d98b601b6c7bc45108c4047aa80f')
 ROOT_IV = bytes.fromhex('246f4b8328be6a2d394ede20479247c5')
@@ -31,8 +35,9 @@ def ctr(key, iv, data):
 
 
 def decode(data):
-    if hashlib.sha256(data).hexdigest() != SELF_SHA:
-        raise ValueError('EBOOT.BIN diferente da atualização USA 1.40 suportada.')
+    expected = SUPPORTED.get(hashlib.sha256(data).hexdigest())
+    if not expected:
+        raise ValueError('EBOOT.BIN diferente das atualizações suportadas (USA 1.40 / Japão 1.30).')
     magic, version, revision, kind, meta, head_size, elf_size = struct.unpack('>IIHHIQQ', area(data, 0, 32))
     if (magic, version, revision, kind) != (0x53434500, 2, 28, 1) or elf_size > 16 * 1024 * 1024:
         raise ValueError('Unsupported SCE profile')
@@ -91,8 +96,8 @@ def decode(data):
         write(destination, blob)
     if sh: write(shoff, area(data, sh, shnum * shsize))
     result = bytes(output)
-    if hashlib.sha256(result).hexdigest() != ELF_SHA:
-        raise ValueError('ELF gerado não corresponde à versão 1.40 validada; nada foi instalado.')
+    if hashlib.sha256(result).hexdigest() != expected:
+        raise ValueError('ELF gerado não corresponde à versão validada; nada foi instalado.')
     return result
 
 
@@ -106,7 +111,7 @@ def prepare(source, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix('.pending')
     temporary.write_bytes(result); temporary.replace(destination)
-    print('Independent SELF preparation PASS; ELF SHA256=' + ELF_SHA)
+    print('Independent SELF preparation PASS; ELF SHA256=' + hashlib.sha256(result).hexdigest())
 
 
 if __name__ == '__main__':

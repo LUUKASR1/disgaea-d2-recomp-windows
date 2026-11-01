@@ -12,6 +12,16 @@
  * stays lifted. */
 #include "ppu_recomp.h"
 #include <string.h>
+#if D2_GAME_VERSION == 130
+#define func_002FE4AC func_002F7C88
+#define d2_original_002FE4AC d2_original_002F7C88
+#define func_002FF1A0 func_002F897C
+#define D2_SHADER_TOC 0x0046DF28ULL
+#define D2_SHADER_UNIFORM_LR 0x002F80D0
+#else
+#define D2_SHADER_TOC 0x0047DF98ULL
+#define D2_SHADER_UNIFORM_LR 0x002FE8F4
+#endif
 
 extern "C" {
 extern uint8_t* vm_base;
@@ -185,7 +195,7 @@ void func_002FE4AC(ppu_context* ctx)
         r[2] = vm_read32(r[9] + 4);
         ps3_indirect_call(ctx);
         drain(ctx);
-        r[2] = 0x0047DF98ULL;
+        r[2] = D2_SHADER_TOC;
         setcr(ctx, 0, cmps((int32_t)r[3], 0));
         if ((int32_t)r[3] != 0) goto out;
         r[7] = vm_read32(r[31] + 8);
@@ -315,7 +325,7 @@ void func_002FE4AC(ppu_context* ctx)
                         vm_write8(r[1] + 0x7E, (uint8_t)r[11]);
                         vm_write8(r[1] + 0x7F, (uint8_t)r[8]);
                     }
-                    ctx->lr = 0x002FE8F4;
+                    ctx->lr = D2_SHADER_UNIFORM_LR;
                     func_002FF1A0(ctx);
                     drain(ctx);
                 }
