@@ -127,7 +127,7 @@ const char* d2_cheats_preset_path(unsigned slot);
 void d2_cheats_toggle_menu(void);
 void d2_register_cheats(void);
 
-/* Native UI (d2_cheats_ui.m). d2_item_editor_show is provided by the Item
+/* Native UI (d2_cheats_ui.m on macOS, d2_cheats_win.cpp on Windows). d2_item_editor_show is provided by the Item
  * Editor (weak); absent, its menu item is disabled. */
 void d2_cheats_window_toggle(void);
 void d2_item_editor_show(void);

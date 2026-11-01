@@ -19,6 +19,7 @@ conectado nessa porta e a janela do jogo tem foco.
 | Q / W | L1 / R1 |
 | 1 / 2 | L2 / R2 |
 | Enter / Tab | START / SELECT |
+| F1 | Abre ou fecha a janela de cheats (fora do jogo) |
 
 Este guia não acrescenta remapeamento nem seleção direta pelo mouse dentro do
 jogo. Os cliques do launcher funcionam normalmente.
@@ -56,6 +57,7 @@ port and the game window has focus.
 | Q / W | L1 / R1 |
 | 1 / 2 | L2 / R2 |
 | Enter / Tab | START / SELECT |
+| F1 | Shows or hides the cheats window (outside the game) |
 
 The guide does not add remapping or direct pointer selection inside the game.
 Launcher buttons support normal mouse clicks.
