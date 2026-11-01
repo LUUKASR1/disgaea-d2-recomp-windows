@@ -275,6 +275,10 @@ add_executable(${PROJECT_NAME}
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
+if(WIN32)
+    # Native cheats window (F1), the Windows counterpart of d2_cheats_ui.m.
+    target_sources(${PROJECT_NAME} PRIVATE src/d2_cheats_win.cpp)
+endif()
 if(D2_APPEARANCE_WRAPPERS)
     target_sources(${PROJECT_NAME} PRIVATE src/d2_appearance_trace.cpp)
 endif()
