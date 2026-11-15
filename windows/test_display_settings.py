@@ -23,8 +23,14 @@ class DisplayTests(unittest.TestCase):
             display.save_settings(home, {'graphics_api': 'vulkan'})
             selected = display.load_settings(home)
             self.assertEqual(selected['graphics_api'], 'vulkan')
-            with self.assertRaisesRegex(ValueError, 'em implementação'):
-                display.display_environment({}, selected)
+            env = display.display_environment({'LOCALAPPDATA': home}, selected, home=home)
+            self.assertEqual(env['D2_GRAPHICS_API'], 'vulkan')
+            self.assertEqual(env['D2_VULKAN_EXPERIMENTAL'], '1')
+            self.assertEqual(env['D2_VULKAN_FALLBACK'], 'd3d12')
+            self.assertTrue(env['D2_VULKAN_CACHE_DIR'].startswith(home))
+            back = display.display_environment(env, dict(selected, graphics_api='d3d12'))
+            self.assertEqual(back['D2_GRAPHICS_API'], 'd3d12')
+            self.assertNotIn('D2_VULKAN_EXPERIMENTAL', back)
         for invalid in ('', 'opengl', None, True, 12):
             with self.assertRaises(ValueError):
                 display.validate_settings({'graphics_api': invalid})

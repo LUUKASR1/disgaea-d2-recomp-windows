@@ -52,7 +52,7 @@ Estado: M1 concluído e verificado no jogo (RTX 5070, 1.140 frames, encerramento
 - M2: menu inicial/HUD (draws de sprites, alpha) comparando com D3D12 via `DisgaeaD2DrawReplay`. **Status: jogo abre, menu e jogabilidade renderizam sem glitches (testado na GPU do usuário); ~9 ms/frame de gravação em cena pesada.**
 - M3: batalha com cenário e personagens (BC2/BC3, múltiplos pipelines).
 - M4: efeitos (partículas, Mothman), save/load, DLC.
-- M5: seletor do launcher liberado, com fallback explícito (nunca silencioso).
+- M5: seletor do launcher liberado, com fallback explícito (nunca silencioso). **Status: implementado (aguarda teste do usuário):** o launcher habilita "Vulkan (experimental)" e define `D2_VULKAN_EXPERIMENTAL=1`, `D2_VULKAN_FALLBACK=d3d12` e o cache de shaders; se o build não tiver Vulkan ou a inicialização falhar, o jogo mostra um aviso e usa DirectX 12. `D2_VULKAN_FORCE_INIT_FAIL=1` força a falha para testar o fallback.
 
 ## Riscos
 

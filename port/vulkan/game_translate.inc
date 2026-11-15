@@ -639,6 +639,27 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
 }
 
 // Present: submit everything recorded this frame.
+// Very long sessions: the GPU has a hard allocation limit, so under pressure (many cached textures)
+// free the ones that have not been used for a while. Normal play never gets near it, and idle textures
+// are deliberately NOT evicted by age alone: re-created textures showed wrong in the hall after a battle.
+uint64_t tex_evicted = 0;
+void evict_textures(Renderer &r) {
+  static const size_t pressure = [] { const char *e = std::getenv("D2_VULKAN_TEX_PRESSURE"); return size_t(e && *e ? std::atoi(e) : 1500); }();
+  if (frame_no % 60 != 0 || tex_cache.size() <= pressure) return;
+  size_t freed = 0;
+  for (auto it = tex_cache.begin(); it != tex_cache.end();) {
+    const TexEntry &e = it->second;
+    if (e.used_frame == ~0ull || frame_no - e.used_frame > 600) {
+      if (e.handle) {
+        try { r.destroyTexture(e.handle); } catch (const std::exception &) {}
+        tex_evicted++;
+        freed++;
+      }
+      it = tex_cache.erase(it);
+    } else ++it;
+  }
+  std::fprintf(stderr, "[vulkan][m2] texture cache pressure: freed %zu of the idle textures, %zu remain\n", freed, tex_cache.size());
+}
 bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &clear,
             uint32_t guest_w, uint32_t guest_h) {
   DrawParameters params;
@@ -716,7 +737,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     last_uploads = cnt.tex_uploads;
     f_record = 0; f_texup = 0;
   }
-  if (ok) { verts_total += verts.size(); frames_timed++; recs.clear(); verts.clear(); frame_no++; stream.valid = false; stream.carry.clear(); }
+  if (ok) { verts_total += verts.size(); frames_timed++; recs.clear(); verts.clear(); frame_no++; stream.valid = false; stream.carry.clear(); evict_textures(r); }
   return ok;
 }
 
@@ -742,12 +763,12 @@ void print_counters() {
   t_record = t_geom = t_draw = t_fetch = t_consts = t_tex = 0; verts_total = 0; frames_timed = 0;
   std::fprintf(stderr,
                "[vulkan][m2] recorded=%llu skipped: target=%llu prim=%llu shader=%llu other=%llu cap=%llu | "
-               "compiles=%llu (disk cache hits %llu) failures=%llu pipelines=%llu | textures: uploads=%llu unsupported=%llu\n",
+               "compiles=%llu (disk cache hits %llu) failures=%llu pipelines=%llu | textures: uploads=%llu unsupported=%llu live=%zu evicted=%llu\n",
                (unsigned long long)cnt.recorded, (unsigned long long)cnt.skipped_target,
                (unsigned long long)cnt.skipped_prim, (unsigned long long)cnt.skipped_shader,
                (unsigned long long)cnt.skipped_other, (unsigned long long)cnt.skipped_cap,
                (unsigned long long)cnt.compiles, (unsigned long long)cnt.cache_hits, (unsigned long long)cnt.compile_failures,
                (unsigned long long)cnt.pipelines, (unsigned long long)cnt.tex_uploads,
-               (unsigned long long)cnt.tex_unsupported);
+               (unsigned long long)cnt.tex_unsupported, tex_cache.size(), (unsigned long long)tex_evicted);
 }
 } // namespace tr

@@ -316,10 +316,10 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT)
     api_dx12.pack(anchor='w'); entries.append(api_dx12)
     if not official:
-        api_vulkan = tk.Radiobutton(video, text='Vulkan — em implementação', variable=graphics_api, value='vulkan',
-            state='disabled', bg=CARD, fg=MUTED, selectcolor=PANEL, disabledforeground=MUTED)
-        api_vulkan.pack(anchor='w', pady=(0, 8))
-        label(video, 'Vulkan será habilitado quando o backend do jogo estiver disponível. O teste de inicialização já funciona.', 10, MUTED)
+        api_vulkan = tk.Radiobutton(video, text='Vulkan (experimental)', variable=graphics_api, value='vulkan',
+            bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT)
+        api_vulkan.pack(anchor='w', pady=(0, 8)); entries.append(api_vulkan)
+        label(video, 'Vulkan é experimental. Se esta versão do jogo não tiver o backend Vulkan, ou ele não iniciar, o jogo avisa e usa DirectX 12.', 10, MUTED)
     label(video, 'Modo de exibição', bold=True)
     mode_combo = ttk.Combobox(video, textvariable=mode, values=('Janela', 'Tela cheia sem bordas'), state='readonly', style='D2.TCombobox', width=32)
     mode_combo.pack(anchor='w', pady=(0, 18)); entries.append(mode_combo)

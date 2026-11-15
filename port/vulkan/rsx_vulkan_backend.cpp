@@ -347,6 +347,11 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height,
                             const char *title) {
   if (g.initialized)
     return 0;
+  // Test hook for the explicit DirectX 12 fallback.
+  if (const char *force = std::getenv("D2_VULKAN_FORCE_INIT_FAIL"); force && force[0] == '1') {
+    std::fprintf(stderr, "[vulkan] init failure forced by D2_VULKAN_FORCE_INIT_FAIL\n");
+    return -1;
+  }
   const char *gate = std::getenv("D2_VULKAN_EXPERIMENTAL");
   if (!gate || std::string_view(gate) != "1") {
     std::fprintf(stderr, "[vulkan] experimental backend disabled; set "

@@ -1,5 +1,6 @@
 """Launcher-owned presentation settings; no game or save mutations."""
 import json
+import tempfile
 from pathlib import Path
 import time
 import math
@@ -71,12 +72,20 @@ def save_settings(home, value):
     return result
 
 
-def display_environment(inherited, settings):
+def display_environment(inherited, settings, home=None):
     env = inherited.copy()
     value = validate_settings(settings)
-    if value['graphics_api'] == 'vulkan':
-        raise ValueError('O backend Vulkan do jogo ainda está em implementação. Selecione DirectX 12 para jogar.')
     env['D2_GRAPHICS_API'] = value['graphics_api']
+    if value['graphics_api'] == 'vulkan':
+        # Experimental, opt-in, never silent: the game falls back to DirectX 12 with a visible
+        # message if this build has no Vulkan backend or Vulkan cannot start.
+        env['D2_VULKAN_EXPERIMENTAL'] = '1'
+        env['D2_VULKAN_FALLBACK'] = 'd3d12'
+        base = Path(home) if home else Path(env.get('LOCALAPPDATA') or tempfile.gettempdir())
+        env.setdefault('D2_VULKAN_CACHE_DIR', str(base / 'vulkan-shader-cache'))
+    else:
+        for key in ('D2_VULKAN_EXPERIMENTAL', 'D2_VULKAN_FALLBACK'):
+            env.pop(key, None)
     env['D2_PRESENT_INTERVAL'] = '1' if value['vsync'] else '0'
     rw, rh = ('1280x720' if value['render_resolution'] == 'native' else value['render_resolution']).split('x')
     ow, oh = value['resolution'].split('x')

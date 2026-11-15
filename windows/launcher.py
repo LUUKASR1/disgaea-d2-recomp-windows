@@ -651,7 +651,7 @@ class Backend:
         profile = json.loads((ROOT / 'windows/perfil.json').read_text())
         from display_settings import load_settings, display_environment, configure_game_window
         settings = load_settings(self.home)
-        env = display_environment(launch_environment(profile, config, os.environ), settings)
+        env = display_environment(launch_environment(profile, config, os.environ), settings, home=self.home)
         from frame_capture import CaptureSession, clean_capture_environment
         env = clean_capture_environment(env)
         session = None

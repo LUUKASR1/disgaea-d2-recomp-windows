@@ -135,10 +135,21 @@ unsigned cellGcm_flip_request_count(void);
 extern "C" int  rsx_d3d12_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_d3d12_backend_present(void);
 extern "C" int  rsx_d3d12_backend_pump_messages(void);
-#  define rsx_backend_init    rsx_d3d12_backend_init
+#  ifdef D2_VULKAN_GAME_BACKEND
+extern "C" int  rsx_vulkan_backend_init(uint32_t w, uint32_t h, const char* title);
+extern "C" void rsx_vulkan_backend_present(void);
+extern "C" int  rsx_vulkan_backend_pump_messages(void);
+static bool d2_use_vulkan(void) {
+    return d2::graphics::requested_api(getenv("D2_GRAPHICS_API")) == d2::graphics::Api::vulkan;
+}
+#    define rsx_backend_init(w, h, t) (d2_use_vulkan() ? rsx_vulkan_backend_init((w), (h), (t)) : rsx_d3d12_backend_init((w), (h), (t)))
+#    define RSX_BACKEND_NAME    (d2_use_vulkan() ? "Vulkan (experimental)" : "D3D12")
+#  else
+#    define rsx_backend_init    rsx_d3d12_backend_init
+#    define RSX_BACKEND_NAME    "D3D12"
+#  endif
 #  define rsx_backend_present rsx_d3d12_backend_present
 #  define rsx_backend_pump    rsx_d3d12_backend_pump_messages
-#  define RSX_BACKEND_NAME    "D3D12"
 #elif defined(__APPLE__)
 extern "C" int  rsx_metal_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_metal_backend_present(void);
@@ -310,6 +321,25 @@ static DWORD WINAPI frame_clock(LPVOID)
     if (!title || !*title) title = "ps3recomp";
 
     int rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
+#if defined(_WIN32) && defined(D2_VULKAN_GAME_BACKEND)
+    // Explicit (never silent) fallback: Vulkan could not start and the launcher asked for DirectX 12 instead.
+    if (!rsx_ok && d2_use_vulkan()) {
+        const char* fallback = getenv("D2_VULKAN_FALLBACK");
+        if (fallback && strcmp(fallback, "d3d12") == 0) {
+            fprintf(stderr, "[graphics] Vulkan failed to start; falling back to DirectX 12 (explicit fallback).\n");
+            _putenv_s("D2_GRAPHICS_API", "d3d12");
+            MessageBoxA(nullptr,
+                "Vulkan nao iniciou neste computador.\nO jogo vai usar DirectX 12.\n\n"
+                "Vulkan failed to start on this computer.\nThe game will use DirectX 12.",
+                "Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+            rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
+        }
+    }
+    if (rsx_ok && d2_use_vulkan()) {
+        s_backend_present = rsx_vulkan_backend_present;
+        s_backend_pump = rsx_vulkan_backend_pump_messages;
+    }
+#endif
     fprintf(stderr, "[rsx] %s backend init %s\n", RSX_BACKEND_NAME,
             rsx_ok ? "OK -- window open" : "FAILED");
 #ifdef __APPLE__
@@ -516,9 +546,22 @@ int main(int argc, char** argv)
 {
 #ifdef _WIN32
     if (const char* error = d2::graphics::unavailable_reason(
-            d2::graphics::requested_api(getenv("D2_GRAPHICS_API")))) {
-        fprintf(stderr, "[graphics] %s\n", error);
-        return 2;
+            d2::graphics::requested_api(getenv("D2_GRAPHICS_API")),
+            getenv("D2_VULKAN_EXPERIMENTAL"))) {
+        const char* fallback = getenv("D2_VULKAN_FALLBACK");
+        if (d2::graphics::requested_api(getenv("D2_GRAPHICS_API")) == d2::graphics::Api::vulkan &&
+            fallback && strcmp(fallback, "d3d12") == 0) {
+            // This build has no Vulkan backend: say so and use DirectX 12 (never a silent switch).
+            fprintf(stderr, "[graphics] %s Falling back to DirectX 12 (explicit fallback).\n", error);
+            _putenv_s("D2_GRAPHICS_API", "d3d12");
+            MessageBoxA(nullptr,
+                "Esta versao do jogo nao tem o backend Vulkan.\nO jogo vai usar DirectX 12.\n\n"
+                "This build has no Vulkan backend.\nThe game will use DirectX 12.",
+                "Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+        } else {
+            fprintf(stderr, "[graphics] %s\n", error);
+            return 2;
+        }
     }
 #endif
 #ifdef __APPLE__

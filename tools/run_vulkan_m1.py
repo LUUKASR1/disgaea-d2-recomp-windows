@@ -41,6 +41,10 @@ def main():
     if os.environ.get('D2_VULKAN_DUMP') == '1':
         env['D2_VULKAN_DUMP_DIR'] = str(repo / 'vulkan-dump')
         env['D2_VULKAN_STATS'] = '1'
+    if len(sys.argv) > 1 and sys.argv[1] == '--teste-fallback':
+        # Forces the Vulkan init to fail: the game must show a notice and continue on DirectX 12.
+        env['D2_VULKAN_FORCE_INIT_FAIL'] = '1'
+        env['D2_VULKAN_FALLBACK'] = 'd3d12'
     if len(sys.argv) > 1 and sys.argv[1] == '--d3d12':
         env['D2_GRAPHICS_API'] = 'd3d12'
         env.pop('D2_VULKAN_EXPERIMENTAL', None)
