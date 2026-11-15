@@ -113,6 +113,17 @@ def generate(source, output):
     text = replace(text, '    off = _off0; mapped = _map0;\n    t->up->lpVtbl->Unmap(t->up, 0, NULL);',
         '    if (!cube) d2_texture_dump(vm_base + off, tl.face_bytes, w, h, fmt & 0xFFu, (int)tl.fmt, mapped, pitch);\n'
         '    off = _off0; mapped = _map0;\n    t->up->lpVtbl->Unmap(t->up, 0, NULL);')
+    text = replace(text, 'static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, u32 src_pitch)\n{',
+        'static int vp_upload_tex_slot_orig(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, u32 src_pitch)\n{')
+    text = replace(text, '    int used;           /* referenced this frame */\n} VPTexSlot;',
+        '    int used;           /* referenced this frame */\n'
+        '    ID3D12Resource *d2_rep, *d2_rep_up, *d2_orig; /* texture pack replacement (see texture_replace_adapter.inc) */\n'
+        '    u32 d2_key, d2_w, d2_h, d2_fmt, d2_csum; int d2_valid, d2_swapped, d2_rgba;\n'
+        '} VPTexSlot;')
+    text = replace(text, '/* ---------------------------------------------------------------------------\n * Render-to-texture: offscreen RT pool.',
+        '#include "texture_replace_adapter.inc"\n/* ---------------------------------------------------------------------------\n * Render-to-texture: offscreen RT pool.')
+    text = replace(text, '                        DXGI_FORMAT sf =\n                            (_bf == 0x85',
+        '                        DXGI_FORMAT sf = s_d3d.vp_tex[ts].d2_swapped ? DXGI_FORMAT_R8G8B8A8_UNORM :\n                            (_bf == 0x85')
     text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
         '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',
