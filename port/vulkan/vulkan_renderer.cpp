@@ -73,7 +73,7 @@ void check(VkResult r, const char *call) {
                                               X(vkFlushMappedMemoryRanges)      \
                                                   X(vkCmdBindVertexBuffers)     \
                                                       X(vkCmdBindIndexBuffer)   \
-                                                          X(vkCmdDrawIndexed)
+                                                          X(vkCmdDrawIndexed) X(vkCmdBlitImage)
 #define TEXTURE_FUNCTIONS(X)                                                   \
   X(vkCreateDescriptorSetLayout)                                               \
   X(vkDestroyDescriptorSetLayout)                                              \
@@ -124,7 +124,10 @@ class Renderer::Impl {
   VkSemaphore acquire = VK_NULL_HANDLE;
   std::vector<VkSemaphore> finished;
   VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-  VkExtent2D extent{};
+  VkExtent2D extent{}; // size of the render target (the scene); equals swap_extent unless render-scaled
+  VkExtent2D swap_extent{};
+  float render_scale = 1.f;
+  bool scaled = false; // scene is rendered at extent and blitted to the (differently sized) swapchain
   VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
   std::vector<VkImage> images;
   std::vector<VkImageView> views;
@@ -138,6 +141,23 @@ class Renderer::Impl {
     VkImageView view = VK_NULL_HANDLE;
   };
   std::vector<ColorTarget> extra_colors;
+  std::vector<ColorTarget> scenes; // per swapchain image, only when scaled
+  // Optional post-processing pass (scene image -> swapchain): sharpen, scanlines, CRT mask, vignette, colour.
+  // The shaders are compiled by the caller; when absent the scene is just blitted.
+  std::vector<uint32_t> post_vs, post_fs;
+  std::array<float, 8> post_params{};
+  bool post_active = false;
+  VkRenderPass post_pass = VK_NULL_HANDLE;
+  VkPipeline post_pipeline = VK_NULL_HANDLE;
+  VkDescriptorPool post_pool = VK_NULL_HANDLE;
+  VkSampler post_sampler = VK_NULL_HANDLE;
+  VkBuffer post_ubo = VK_NULL_HANDLE;
+  VkDeviceMemory post_ubo_memory = VK_NULL_HANDLE;
+  float *post_ubo_mapped = nullptr;
+  std::vector<VkDescriptorSet> post_sets;
+  std::vector<VkFramebuffer> post_fbs;
+  std::vector<VkImageView> post_views;
+  bool havePost() const { return !post_vs.empty() && !post_fs.empty(); }
   uint32_t color_count = 1;
   bool independent_blend = false, depth_clamp_supported = false,
        bc_supported = false;
@@ -398,8 +418,9 @@ class Renderer::Impl {
     color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color.finalLayout = surface ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-                                : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    color.finalLayout = surface && !scaled ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+                        : surface && havePost() ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     std::vector<VkAttachmentDescription> attachments(color_count + 1, color);
     auto &depth = attachments.back();
     depth = {};
@@ -440,9 +461,14 @@ class Renderer::Impl {
     deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
     deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    deps[1].dstStageMask = surface ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
-                                   : VK_PIPELINE_STAGE_TRANSFER_BIT;
-    deps[1].dstAccessMask = surface ? 0 : VK_ACCESS_TRANSFER_READ_BIT;
+    deps[1].dstStageMask = surface && !scaled ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
+                           : surface && havePost() ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                                                   : VK_PIPELINE_STAGE_TRANSFER_BIT;
+    deps[1].dstAccessMask = surface && !scaled ? 0
+                            : surface && havePost() ? VK_ACCESS_SHADER_READ_BIT
+                                                    : VK_ACCESS_TRANSFER_READ_BIT;
+    deps[0].srcStageMask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT; // the post pass sampled this image last frame
+    deps[0].srcAccessMask |= VK_ACCESS_SHADER_READ_BIT;
     VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     rp.attachmentCount = uint32_t(attachments.size());
     rp.pAttachments = attachments.data();
@@ -495,8 +521,30 @@ class Renderer::Impl {
       dvi.format = depth_format;
       dvi.subresourceRange = {VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT | (depth_has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0)), 0, 1, 0, 1};
       OK(vkCreateImageView(device, &dvi, nullptr, &target.view));
+      VkImage color_image = image;
+      if (scaled) { // render into a private image; draw() blits it to the swapchain image
+        scenes.emplace_back();
+        auto &scene = scenes.back();
+        VkImageCreateInfo sci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        sci.imageType = VK_IMAGE_TYPE_2D;
+        sci.format = format;
+        sci.extent = {extent.width, extent.height, 1};
+        sci.mipLevels = sci.arrayLayers = 1;
+        sci.samples = VK_SAMPLE_COUNT_1_BIT;
+        sci.tiling = VK_IMAGE_TILING_OPTIMAL;
+        sci.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        OK(vkCreateImage(device, &sci, nullptr, &scene.image));
+        VkMemoryRequirements sreq{};
+        vkGetImageMemoryRequirements(device, scene.image, &sreq);
+        VkMemoryAllocateInfo sai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        sai.allocationSize = sreq.size;
+        sai.memoryTypeIndex = memoryType(sreq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        OK(vkAllocateMemory(device, &sai, nullptr, &scene.memory));
+        OK(vkBindImageMemory(device, scene.image, scene.memory, 0));
+        color_image = scene.image;
+      }
       VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-      vi.image = image;
+      vi.image = color_image;
       vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
       vi.format = format;
       vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
@@ -524,8 +572,212 @@ class Renderer::Impl {
         finished.push_back(semaphore);
       }
     }
+    makePost();
+  }
+  // Post pass: scene image -> swapchain with a fullscreen triangle. Reuses the RSX descriptor layouts, so a
+  // post fragment shader reads its parameters from b1 (set 1, binding 1) and the scene from t0 / s0.
+  void makePost() {
+    if (!surface || !scaled || !havePost() || !layout || !rsx_layouts[1])
+      return;
+    VkAttachmentDescription color{};
+    color.format = format;
+    color.samples = VK_SAMPLE_COUNT_1_BIT;
+    color.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    VkAttachmentReference ref{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription sub{};
+    sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    sub.colorAttachmentCount = 1;
+    sub.pColorAttachments = &ref;
+    VkSubpassDependency deps[2]{};
+    deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    deps[0].dstSubpass = 0;
+    deps[0].srcStageMask = deps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    deps[1].srcSubpass = 0;
+    deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    deps[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    rp.attachmentCount = 1;
+    rp.pAttachments = &color;
+    rp.subpassCount = 1;
+    rp.pSubpasses = &sub;
+    rp.dependencyCount = 2;
+    rp.pDependencies = deps;
+    OK(vkCreateRenderPass(device, &rp, nullptr, &post_pass));
+    for (VkImage image : images) {
+      VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+      vi.image = image;
+      vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      vi.format = format;
+      vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+      VkImageView view = VK_NULL_HANDLE;
+      OK(vkCreateImageView(device, &vi, nullptr, &view));
+      post_views.push_back(view);
+      VkFramebufferCreateInfo fb{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+      fb.renderPass = post_pass;
+      fb.attachmentCount = 1;
+      fb.pAttachments = &view;
+      fb.width = swap_extent.width;
+      fb.height = swap_extent.height;
+      fb.layers = 1;
+      VkFramebuffer framebuffer = VK_NULL_HANDLE;
+      OK(vkCreateFramebuffer(device, &fb, nullptr, &framebuffer));
+      post_fbs.push_back(framebuffer);
+    }
+    VkSamplerCreateInfo sc{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sc.magFilter = sc.minFilter = VK_FILTER_LINEAR;
+    sc.addressModeU = sc.addressModeV = sc.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sc.maxLod = 0.f;
+    OK(vkCreateSampler(device, &sc, nullptr, &post_sampler));
+    VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bc.size = 256;
+    bc.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    OK(vkCreateBuffer(device, &bc, nullptr, &post_ubo));
+    VkMemoryRequirements req{};
+    vkGetBufferMemoryRequirements(device, post_ubo, &req);
+    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    ai.allocationSize = req.size;
+    ai.memoryTypeIndex = memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    OK(vkAllocateMemory(device, &ai, nullptr, &post_ubo_memory));
+    OK(vkBindBufferMemory(device, post_ubo, post_ubo_memory, 0));
+    void *mapped = nullptr;
+    OK(vkMapMemory(device, post_ubo_memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+    post_ubo_mapped = static_cast<float *>(mapped);
+    std::memset(post_ubo_mapped, 0, 256);
+    const uint32_t n = uint32_t(images.size());
+    VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, n},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 16 * n},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLER, 16 * n}};
+    VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dp.maxSets = n;
+    dp.poolSizeCount = 3;
+    dp.pPoolSizes = sizes;
+    OK(vkCreateDescriptorPool(device, &dp, nullptr, &post_pool));
+    std::vector<VkDescriptorSetLayout> layouts(n, rsx_layouts[1]);
+    VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    da.descriptorPool = post_pool;
+    da.descriptorSetCount = n;
+    da.pSetLayouts = layouts.data();
+    post_sets.resize(n);
+    OK(vkAllocateDescriptorSets(device, &da, post_sets.data()));
+    for (uint32_t i = 0; i < n; i++) {
+      VkDescriptorBufferInfo bi{post_ubo, 0, 256};
+      std::array<VkDescriptorImageInfo, 16> imgs{}, smps{};
+      for (auto &x : imgs) x = {VK_NULL_HANDLE, views.at(i), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+      for (auto &x : smps) x = {post_sampler, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
+      VkWriteDescriptorSet w[3]{};
+      for (auto &x : w) {
+        x.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        x.dstSet = post_sets[i];
+      }
+      w[0].dstBinding = 1;
+      w[0].descriptorCount = 1;
+      w[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      w[0].pBufferInfo = &bi;
+      w[1].dstBinding = 32;
+      w[1].descriptorCount = 16;
+      w[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      w[1].pImageInfo = imgs.data();
+      w[2].dstBinding = 64;
+      w[2].descriptorCount = 16;
+      w[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+      w[2].pImageInfo = smps.data();
+      vkUpdateDescriptorSets(device, 3, w, 0, nullptr);
+    }
+    VkShaderModule pv = VK_NULL_HANDLE, pf = VK_NULL_HANDLE;
+    VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    sm.codeSize = post_vs.size() * 4;
+    sm.pCode = post_vs.data();
+    OK(vkCreateShaderModule(device, &sm, nullptr, &pv));
+    sm.codeSize = post_fs.size() * 4;
+    sm.pCode = post_fs.data();
+    OK(vkCreateShaderModule(device, &sm, nullptr, &pf));
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    for (auto &st : stages) {
+      st.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+      st.pName = "main";
+    }
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = pv;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = pf;
+    VkPipelineVertexInputStateCreateInfo vertex{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    vp.viewportCount = vp.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.f;
+    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineColorBlendAttachmentState attachment{};
+    attachment.colorWriteMask = 15;
+    VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    blend.attachmentCount = 1;
+    blend.pAttachments = &attachment;
+    const VkDynamicState dynamics[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamic.dynamicStateCount = 2;
+    dynamic.pDynamicStates = dynamics;
+    VkGraphicsPipelineCreateInfo pc{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    pc.stageCount = 2;
+    pc.pStages = stages;
+    pc.pVertexInputState = &vertex;
+    pc.pInputAssemblyState = &assembly;
+    pc.pViewportState = &vp;
+    pc.pRasterizationState = &raster;
+    pc.pMultisampleState = &ms;
+    pc.pColorBlendState = &blend;
+    pc.pDynamicState = &dynamic;
+    pc.layout = layout;
+    pc.renderPass = post_pass;
+    const VkResult made = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pc, nullptr, &post_pipeline);
+    vkDestroyShaderModule(device, pv, nullptr);
+    vkDestroyShaderModule(device, pf, nullptr);
+    OK(made);
+  }
+  void releasePost() {
+    if (post_pipeline)
+      vkDestroyPipeline(device, post_pipeline, nullptr);
+    post_pipeline = VK_NULL_HANDLE;
+    for (auto f : post_fbs)
+      vkDestroyFramebuffer(device, f, nullptr);
+    post_fbs.clear();
+    for (auto v : post_views)
+      vkDestroyImageView(device, v, nullptr);
+    post_views.clear();
+    if (post_pool)
+      vkDestroyDescriptorPool(device, post_pool, nullptr);
+    post_pool = VK_NULL_HANDLE;
+    post_sets.clear();
+    if (post_sampler)
+      vkDestroySampler(device, post_sampler, nullptr);
+    post_sampler = VK_NULL_HANDLE;
+    if (post_ubo_mapped)
+      vkUnmapMemory(device, post_ubo_memory);
+    post_ubo_mapped = nullptr;
+    if (post_ubo)
+      vkDestroyBuffer(device, post_ubo, nullptr);
+    post_ubo = VK_NULL_HANDLE;
+    if (post_ubo_memory)
+      vkFreeMemory(device, post_ubo_memory, nullptr);
+    post_ubo_memory = VK_NULL_HANDLE;
+    if (post_pass)
+      vkDestroyRenderPass(device, post_pass, nullptr);
+    post_pass = VK_NULL_HANDLE;
   }
   void releaseTargets() {
+    releasePost();
     for (auto f : framebuffers)
       vkDestroyFramebuffer(device, f, nullptr);
     framebuffers.clear();
@@ -554,6 +806,13 @@ class Renderer::Impl {
         vkFreeMemory(device, d.memory, nullptr);
     }
     depths.clear();
+    for (auto &sc : scenes) {
+      if (sc.image)
+        vkDestroyImage(device, sc.image, nullptr);
+      if (sc.memory)
+        vkFreeMemory(device, sc.memory, nullptr);
+    }
+    scenes.clear();
     if (layout)
       vkDestroyPipelineLayout(device, layout, nullptr);
     layout = VK_NULL_HANDLE;
@@ -585,6 +844,27 @@ public:
   std::string adapter;
   uint32_t api_version = 0, device_type = 0, present_mode = 0;
   bool dirty = false;
+  void setPostShaders(std::span<const uint32_t> v, std::span<const uint32_t> f) {
+    post_vs.assign(v.begin(), v.end());
+    post_fs.assign(f.begin(), f.end());
+  }
+  void setPostValues(const std::array<float, 8> &params, bool active) {
+    post_params = params;
+    if (post_active != active) {
+      post_active = active;
+      dirty = true; // the scene target is created (or dropped) on the next resize
+    }
+  }
+  void setRenderScaleValue(float scale) {
+    if (render_scale != scale) {
+      render_scale = scale;
+      dirty = true;
+    }
+  }
+  void currentExtent(uint32_t &width, uint32_t &height) const {
+    width = extent.width;
+    height = extent.height;
+  }
   ~Impl() { close(); }
   void close() noexcept {
     if (device && vkDeviceWaitIdle) {
@@ -1806,13 +2086,13 @@ public:
     OK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
     if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))
       throw std::runtime_error("Surface cannot render color attachments");
-    extent = caps.currentExtent.width != UINT32_MAX
-                 ? caps.currentExtent
-                 : VkExtent2D{std::clamp(w, caps.minImageExtent.width,
-                                         caps.maxImageExtent.width),
-                              std::clamp(h, caps.minImageExtent.height,
-                                         caps.maxImageExtent.height)};
-    if (!extent.width || !extent.height)
+    swap_extent = caps.currentExtent.width != UINT32_MAX
+                      ? caps.currentExtent
+                      : VkExtent2D{std::clamp(w, caps.minImageExtent.width,
+                                              caps.maxImageExtent.width),
+                                   std::clamp(h, caps.minImageExtent.height,
+                                              caps.maxImageExtent.height)};
+    if (!swap_extent.width || !swap_extent.height)
       return false;
     uint32_t count = 0;
     OK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count,
@@ -1830,6 +2110,33 @@ public:
     if (selected.format == VK_FORMAT_UNDEFINED)
       selected.format = VK_FORMAT_B8G8R8A8_UNORM;
     format = selected.format;
+    // Internal resolution / post-processing: render the scene into a private image, then either run the post
+    // pass (when its shaders were provided) or blit (linear) to the swapchain.
+    scaled = false;
+    extent = swap_extent;
+    {
+      float k = render_scale;
+      const float longest = float(std::max(swap_extent.width, swap_extent.height)) * k;
+      if (longest > 7680.f) k *= 7680.f / longest; // keep GPU memory reasonable
+      const uint32_t sw = std::max(64u, uint32_t(swap_extent.width * k + 0.5f));
+      const uint32_t sh = std::max(64u, uint32_t(swap_extent.height * k + 0.5f));
+      const bool resized_scene = sw != swap_extent.width || sh != swap_extent.height;
+      if (havePost()) {
+        if (resized_scene || post_active) {
+          extent = {sw, sh};
+          scaled = true;
+        }
+      } else if (resized_scene && (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(physical, format, &fp);
+        const VkFormatFeatureFlags need = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+                                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+        if ((fp.optimalTilingFeatures & need) == need) {
+          extent = {sw, sh};
+          scaled = true;
+        }
+      }
+    }
     OK(vkGetPhysicalDeviceSurfacePresentModesKHR(physical, surface, &count,
                                                  nullptr));
     std::vector<VkPresentModeKHR> modes(count);
@@ -1861,9 +2168,9 @@ public:
     sc.minImageCount = images_count;
     sc.imageFormat = format;
     sc.imageColorSpace = selected.colorSpace;
-    sc.imageExtent = extent;
+    sc.imageExtent = swap_extent;
     sc.imageArrayLayers = 1;
-    sc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    sc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (scaled && !havePost() ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0);
     sc.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sc.preTransform = caps.currentTransform;
     sc.compositeAlpha = alpha;
@@ -2116,6 +2423,50 @@ public:
         vkCmdDraw(cmd, c.count, 1, c.first, 0);
     }
     vkCmdEndRenderPass(cmd);
+    if (surface && scaled && post_pipeline && post_ubo_mapped) {
+      post_ubo_mapped[0] = float(extent.width);
+      post_ubo_mapped[1] = float(extent.height);
+      post_ubo_mapped[2] = float(swap_extent.width);
+      post_ubo_mapped[3] = float(swap_extent.height);
+      for (size_t k = 0; k < post_params.size(); k++)
+        post_ubo_mapped[4 + k] = post_params[k];
+      VkRenderPassBeginInfo pb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+      pb.renderPass = post_pass;
+      pb.framebuffer = post_fbs.at(index);
+      pb.renderArea.extent = swap_extent;
+      vkCmdBeginRenderPass(cmd, &pb, VK_SUBPASS_CONTENTS_INLINE);
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline);
+      VkViewport pv{0.f, 0.f, float(swap_extent.width), float(swap_extent.height), 0.f, 1.f};
+      VkRect2D ps{{0, 0}, swap_extent};
+      vkCmdSetViewport(cmd, 0, 1, &pv);
+      vkCmdSetScissor(cmd, 0, 1, &ps);
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &post_sets.at(index), 0, nullptr);
+      vkCmdDraw(cmd, 3, 1, 0, 0);
+      vkCmdEndRenderPass(cmd);
+    } else if (surface && scaled) {
+      auto barrier = [&](VkImageLayout from, VkImageLayout to, VkAccessFlags src, VkAccessFlags dst,
+                         VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.srcAccessMask = src;
+        b.dstAccessMask = dst;
+        b.oldLayout = from;
+        b.newLayout = to;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = images.at(index);
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &b);
+      };
+      barrier(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+      VkImageBlit blit{};
+      blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      blit.srcOffsets[1] = {int32_t(extent.width), int32_t(extent.height), 1};
+      blit.dstOffsets[1] = {int32_t(swap_extent.width), int32_t(swap_extent.height), 1};
+      vkCmdBlitImage(cmd, scenes.at(index).image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, images.at(index),
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+      barrier(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    }
     if (!surface) {
       VkBufferImageCopy copy{};
       copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -2138,7 +2489,7 @@ public:
     }
     OK(vkEndCommandBuffer(cmd));
     OK(vkResetFences(device, 1, &fence));
-    VkPipelineStageFlags stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkPipelineStageFlags stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | (scaled ? VK_PIPELINE_STAGE_TRANSFER_BIT : 0);
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &cmd;
@@ -2237,6 +2588,20 @@ bool Renderer::draw(std::span<const DrawCommand> commands) {
   return impl_->draw(commands);
 }
 bool Renderer::needsResize() const { return impl_->dirty; }
+void Renderer::setRenderScale(float scale) {
+  if (!(scale >= 0.25f && scale <= 4.f))
+    scale = 1.f;
+  impl_->setRenderScaleValue(scale);
+}
+void Renderer::setPostProgram(std::span<const uint32_t> vertex, std::span<const uint32_t> fragment) {
+  impl_->setPostShaders(vertex, fragment);
+}
+void Renderer::setPostParams(const std::array<float, 8> &params, bool active) {
+  impl_->setPostValues(params, active);
+}
+void Renderer::renderExtent(uint32_t &width, uint32_t &height) const {
+  impl_->currentExtent(width, height);
+}
 std::vector<uint8_t> Renderer::readPixels(uint32_t attachment) {
   return impl_->readPixels(attachment);
 }

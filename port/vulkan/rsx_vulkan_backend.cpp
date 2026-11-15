@@ -24,6 +24,7 @@
 #include <exception>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -78,6 +79,10 @@ struct State {
 struct Settings {
   bool fullscreen = false; // borderless fullscreen on the current monitor
   bool vsync = true;
+  bool show_fps = false; // FPS counter in the corner of the screen
+  uint32_t scale_pct = 100; // internal resolution: percent of the output size (50..200)
+  // Image filters, each 0 (off) .. 3 (strong).
+  uint32_t sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0;
   uint32_t width = 1280, height = 720; // windowed client size
 };
 Settings g_settings;
@@ -107,6 +112,13 @@ void load_settings() {
         const std::string k = key;
         if (k == "fullscreen") g_settings.fullscreen = value != 0;
         else if (k == "vsync") g_settings.vsync = value != 0;
+        else if (k == "showfps") g_settings.show_fps = value != 0;
+        else if (k == "scale" && value >= 25 && value <= 400) g_settings.scale_pct = value;
+        else if (k == "sharpen" && value <= 3) g_settings.sharpen = value;
+        else if (k == "scanlines" && value <= 3) g_settings.scanlines = value;
+        else if (k == "crtmask" && value <= 3) g_settings.crt_mask = value;
+        else if (k == "vignette" && value <= 3) g_settings.vignette = value;
+        else if (k == "vivid" && value <= 3) g_settings.vivid = value;
         else if (k == "width" && value >= 640 && value <= 16384) g_settings.width = value;
         else if (k == "height" && value >= 360 && value <= 16384) g_settings.height = value;
       }
@@ -125,8 +137,10 @@ void save_settings() {
   const std::string path = settings_file();
   if (path.empty()) return;
   if (std::FILE *f = std::fopen(path.c_str(), "wb")) {
-    std::fprintf(f, "fullscreen=%u\nvsync=%u\nwidth=%u\nheight=%u\n", g_settings.fullscreen ? 1u : 0u,
-                 g_settings.vsync ? 1u : 0u, g_settings.width, g_settings.height);
+    std::fprintf(f, "fullscreen=%u\nvsync=%u\nshowfps=%u\nscale=%u\nsharpen=%u\nscanlines=%u\ncrtmask=%u\nvignette=%u\nvivid=%u\nwidth=%u\nheight=%u\n",
+                 g_settings.fullscreen ? 1u : 0u, g_settings.vsync ? 1u : 0u, g_settings.show_fps ? 1u : 0u, g_settings.scale_pct,
+                 g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid,
+                 g_settings.width, g_settings.height);
     std::fclose(f);
   }
 }
@@ -158,9 +172,113 @@ void set_fullscreen(bool on) {
   save_settings();
 }
 
+// ---- options menu (F1) -------------------------------------------------------
+// Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
+// would also move the game. The layout is produced each frame by build_overlay() (further down); the window
+// thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS };
+constexpr int kMaxHits = 16;
+constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
+constexpr int kResCount = 5;
+constexpr uint32_t kScalePct[] = {50, 75, 100, 150, 200};
+constexpr int kScaleCount = 5;
+struct Menu {
+  std::mutex m;
+  bool open = false;
+  int page = 0;     // 0 video, 1 filters
+  int hover = -1;   // Act under the mouse
+  int nhits = 0;
+  int act[kMaxHits]{};
+  float rx[kMaxHits]{}, ry[kMaxHits]{}, rw[kMaxHits]{}, rh[kMaxHits]{};
+  float px = 0, py = 0, pw = 0, ph = 0; // panel rectangle (0 until the first frame draws it)
+  float sx = 1.f, sy = 1.f; // overlay pixels per window pixel (differs when the game is render-scaled)
+} menu;
+
+bool menu_is_open() {
+  std::lock_guard<std::mutex> lock(menu.m);
+  return menu.open;
+}
+void menu_toggle(bool open) {
+  std::lock_guard<std::mutex> lock(menu.m);
+  menu.open = open;
+  menu.hover = -1;
+}
+int menu_hit(float x, float y) { // returns the Act under the point, or -1
+  std::lock_guard<std::mutex> lock(menu.m);
+  x *= menu.sx;
+  y *= menu.sy;
+  for (int i = 0; i < menu.nhits; i++)
+    if (x >= menu.rx[i] && x < menu.rx[i] + menu.rw[i] && y >= menu.ry[i] && y < menu.ry[i] + menu.rh[i])
+      return menu.act[i];
+  return -1;
+}
+void apply_window_size(uint32_t w, uint32_t h) {
+  g_settings.width = w;
+  g_settings.height = h;
+  if (!g.hwnd || g.fullscreen)
+    return;
+  if (IsZoomed(g.hwnd))
+    ShowWindow(g.hwnd, SW_RESTORE);
+  RECT wr{0, 0, (LONG)w, (LONG)h};
+  AdjustWindowRect(&wr, DWORD(GetWindowLongPtrA(g.hwnd, GWL_STYLE)), FALSE);
+  SetWindowPos(g.hwnd, nullptr, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+uint32_t cycle_level(uint32_t value, int dir) { return uint32_t((int(value) + dir + 4) % 4); }
+void menu_activate(int action, int dir) {
+  switch (action) {
+  case A_MODE: set_fullscreen(!g.fullscreen); break;
+  case A_WINSIZE:
+    if (!g.fullscreen) {
+      int cur = 0;
+      for (int i = 0; i < kResCount; i++)
+        if (kResH[i] <= g_settings.height) cur = i;
+      cur = (cur + dir + kResCount) % kResCount;
+      apply_window_size(kResW[cur], kResH[cur]);
+    }
+    break;
+  case A_SCALE: {
+    int cur = 2;
+    for (int i = 0; i < kScaleCount; i++)
+      if (kScalePct[i] == g_settings.scale_pct) cur = i;
+    g_settings.scale_pct = kScalePct[(cur + dir + kScaleCount) % kScaleCount];
+    break; // the renderer picks it up on the next frame
+  }
+  case A_VSYNC:
+    g.vsync = !g.vsync;
+    g_settings.vsync = g.vsync;
+    g.resized = true; // swapchain is recreated with the new present mode
+    break;
+  case A_FPS: g_settings.show_fps = !g_settings.show_fps; break;
+  case A_SHARPEN: g_settings.sharpen = cycle_level(g_settings.sharpen, dir); break;
+  case A_SCAN: g_settings.scanlines = cycle_level(g_settings.scanlines, dir); break;
+  case A_MASK: g_settings.crt_mask = cycle_level(g_settings.crt_mask, dir); break;
+  case A_VIGNETTE: g_settings.vignette = cycle_level(g_settings.vignette, dir); break;
+  case A_VIVID: g_settings.vivid = cycle_level(g_settings.vivid, dir); break;
+  case A_RESET:
+    g.vsync = g_settings.vsync = true;
+    g_settings.show_fps = false;
+    g_settings.scale_pct = 100;
+    g_settings.sharpen = g_settings.scanlines = g_settings.crt_mask = g_settings.vignette = g_settings.vivid = 0;
+    g.resized = true;
+    if (g.fullscreen) set_fullscreen(false);
+    apply_window_size(1280, 720);
+    break;
+  case A_CLOSE: menu_toggle(false); break;
+  case A_TAB_VIDEO:
+  case A_TAB_FILTERS: {
+    std::lock_guard<std::mutex> lock(menu.m);
+    menu.page = action == A_TAB_FILTERS ? 1 : 0;
+    return; // nothing to save
+  }
+  default: return;
+  }
+  save_settings();
+}
+
 LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
   case WM_CLOSE:
+    save_settings();
     g.closed = true;
     DestroyWindow(hwnd);
     return 0;
@@ -169,9 +287,46 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     return 0;
   case WM_SIZE:
     g.resized = true;
+    // Remember the windowed size (not while borderless fullscreen, maximized or minimized).
+    if (wp == SIZE_RESTORED && (GetWindowLongPtrA(hwnd, GWL_STYLE) & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW &&
+        LOWORD(lp) >= 640 && HIWORD(lp) >= 360) {
+      g_settings.width = LOWORD(lp);
+      g_settings.height = HIWORD(lp);
+    }
     return 0;
+  case WM_EXITSIZEMOVE:
+    save_settings();
+    return 0;
+  case WM_MOUSEMOVE:
+    if (menu_is_open()) {
+      const int hit = menu_hit(float(short(LOWORD(lp))), float(short(HIWORD(lp))));
+      std::lock_guard<std::mutex> lock(menu.m);
+      menu.hover = hit;
+    }
+    return 0;
+  case WM_LBUTTONDOWN:
+  case WM_RBUTTONDOWN:
+    if (menu_is_open()) {
+      const int hit = menu_hit(float(short(LOWORD(lp))), float(short(HIWORD(lp))));
+      if (hit >= 0)
+        menu_activate(hit, msg == WM_LBUTTONDOWN ? 1 : -1);
+      return 0;
+    }
+    break;
+  case WM_MOUSEWHEEL:
+    if (menu_is_open()) {
+      int hit;
+      {
+        std::lock_guard<std::mutex> lock(menu.m);
+        hit = menu.hover;
+      }
+      if (hit >= 0)
+        menu_activate(hit, short(HIWORD(wp)) > 0 ? -1 : 1);
+      return 0;
+    }
+    break;
   case WM_SETCURSOR:
-    if (g.fullscreen && LOWORD(lp) == HTCLIENT) {
+    if (g.fullscreen && LOWORD(lp) == HTCLIENT && !menu_is_open()) {
       SetCursor(nullptr); // no mouse pointer over a fullscreen game
       return TRUE;
     }
@@ -180,6 +335,10 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     // Esc no longer quits: it belongs to the game. Close with Alt+F4 or the window button.
     if (wp == VK_F11)
       set_fullscreen(!g.fullscreen);
+    else if (wp == VK_F1)
+      menu_toggle(!menu_is_open());
+    else if (wp == VK_ESCAPE && menu_is_open())
+      menu_toggle(false);
     return 0;
   case WM_SYSKEYDOWN:
     if (wp == VK_RETURN && (lp & (1 << 29))) { // Alt+Enter
@@ -309,6 +468,166 @@ void dump_pair(const rsx_state *r, uint64_t vh) {
   write_file(name, t.data(), t.size());
 }
 #include "game_translate.inc"
+#ifdef D2_VULKAN_GAME_BACKEND
+// Image filter strengths for the post-processing pass (see tr::post_fragment_hlsl): [0] sharpen, scanlines,
+// CRT mask, vignette; [1] saturation, contrast.
+void apply_filters() {
+  static const float sharpen[4] = {0.f, 0.3f, 0.6f, 1.0f}, scan[4] = {0.f, 0.2f, 0.4f, 0.6f}, mask[4] = {0.f, 0.25f, 0.5f, 0.75f},
+                     vig[4] = {0.f, 0.3f, 0.55f, 0.8f}, sat[4] = {1.f, 1.15f, 1.3f, 1.5f}, con[4] = {1.f, 1.05f, 1.1f, 1.15f};
+  const std::array<float, 8> params{sharpen[g_settings.sharpen], scan[g_settings.scanlines], mask[g_settings.crt_mask],
+                                    vig[g_settings.vignette], sat[g_settings.vivid], con[g_settings.vivid], 0.f, 0.f};
+  const bool active = g_settings.sharpen || g_settings.scanlines || g_settings.crt_mask || g_settings.vignette || g_settings.vivid;
+  g.renderer->setPostParams(params, active);
+}
+
+// Draws the FPS counter and the F1 options menu with the tr::ui_* primitives, once per presented frame.
+// (w, h) is the size of the image being drawn; (cw, ch) the window's client size (the mouse lives there).
+void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
+  using Color = std::array<float, 4>;
+  tr::ui_begin(w, h);
+  const float s = std::max(0.6f, float(h) / 720.f);
+  // Palette: night-sky violet, netherworld magenta and gold trim.
+  const Color white{1.f, 1.f, 1.f, 1.f}, gold{1.f, 0.82f, 0.30f, 1.f}, pink{1.f, 0.28f, 0.58f, 1.f},
+      ink{0.04f, 0.02f, 0.10f, 0.95f}, gray{0.62f, 0.58f, 0.74f, 1.f};
+
+  // Presented frames per second (what the player sees), refreshed twice a second.
+  static auto last = std::chrono::steady_clock::now();
+  static unsigned count = 0, shown = 0;
+  static uint64_t frame_counter = 0;
+  frame_counter++;
+  count++;
+  const auto now = std::chrono::steady_clock::now();
+  const double elapsed = std::chrono::duration<double, std::milli>(now - last).count();
+  if (elapsed >= 500.0) {
+    shown = unsigned(count * 1000.0 / elapsed + 0.5);
+    count = 0;
+    last = now;
+  }
+  const bool open = menu_is_open();
+  if (g_settings.show_fps) {
+    char text[32];
+    std::snprintf(text, sizeof text, "FPS %u", shown);
+    tr::ui_text_outline(14.f * s, 10.f * s, text, 22.f * s, shown >= 55 ? Color{0.55f, 1.f, 0.65f, 1.f} : gold, ink, 1.5f * s);
+  }
+  if (!open) {
+    if (frame_counter < 600) { // first ten seconds: tell the player where the options are
+      const float a = frame_counter < 480 ? 1.f : float(600 - frame_counter) / 120.f;
+      const char *hint = "F1: Op\303\247\303\265es   \302\267   F11: Tela cheia";
+      tr::ui_text_outline(14.f * s, float(h) - 36.f * s, hint, 20.f * s, {1.f, 1.f, 1.f, a}, {0.04f, 0.02f, 0.10f, 0.95f * a}, 1.5f * s);
+    }
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(menu.m);
+  menu.sx = cw ? float(w) / float(cw) : 1.f;
+  menu.sy = ch ? float(h) / float(ch) : 1.f;
+  constexpr int kRows = 7; // five settings + restore + back
+  const float rowh = 44.f * s, head_h = 70.f * s, tab_h = 42.f * s, foot_h = 96.f * s;
+  const float pw = std::min(float(w) - 20.f, 700.f * s), ph = head_h + tab_h + rowh * kRows + foot_h;
+  const float px = std::max(0.f, (float(w) - pw) * 0.5f), py = std::max(0.f, (float(h) - ph) * 0.5f);
+  menu.px = px; menu.py = py; menu.pw = pw; menu.ph = ph;
+  menu.nhits = 0;
+  auto add_hit = [&](int act, float x, float y, float rw, float rh) {
+    if (menu.nhits >= kMaxHits) return;
+    const int k = menu.nhits++;
+    menu.act[k] = act; menu.rx[k] = x; menu.ry[k] = y; menu.rw[k] = rw; menu.rh[k] = rh;
+  };
+
+  // Backdrop and panel (violet gradient, double frame in gold and magenta).
+  tr::ui_rect(0.f, 0.f, float(w), float(h), {0.02f, 0.0f, 0.08f, 0.62f});
+  tr::ui_gradient(px - 7.f * s, py - 7.f * s, pw + 14.f * s, ph + 14.f * s, pink, {0.45f, 0.10f, 0.45f, 1.f});
+  tr::ui_rect(px - 3.f * s, py - 3.f * s, pw + 6.f * s, ph + 6.f * s, gold);
+  tr::ui_gradient(px, py, pw, ph, {0.22f, 0.09f, 0.36f, 0.99f}, {0.06f, 0.04f, 0.16f, 0.99f});
+  // Slanted stripes across the panel for that Netherworld look.
+  for (int k = 0; k < 9; k++) {
+    const float sx0 = px + (k * 90.f - 20.f) * s;
+    if (sx0 < px || sx0 + 26.f * s > px + pw) continue;
+    tr::ui_gradient(sx0, py + head_h, 22.f * s, tab_h + rowh * kRows, {1.f, 1.f, 1.f, 0.025f}, {1.f, 1.f, 1.f, 0.0f}, 70.f * s);
+  }
+  // Title banner.
+  tr::ui_gradient(px, py, pw, head_h, {0.78f, 0.16f, 0.45f, 1.f}, {0.36f, 0.08f, 0.40f, 1.f});
+  tr::ui_rect(px, py + head_h, pw, 3.f * s, gold);
+  tr::ui_diamond(px + 40.f * s, py + head_h * 0.5f, 10.f * s, gold);
+  tr::ui_diamond(px + pw - 40.f * s, py + head_h * 0.5f, 10.f * s, gold);
+  const char *title = "OP\303\207\303\225ES";
+  const float tw = tr::ui_text_width(title, 38.f * s);
+  tr::ui_text_outline(px + (pw - tw) * 0.5f, py + (head_h - tr::ui_line_height(38.f * s)) * 0.5f, title, 38.f * s, white, ink, 2.f * s);
+
+  // Tabs.
+  const char *tab_names[2] = {"V\303\215DEO", "FILTROS"};
+  for (int t = 0; t < 2; t++) {
+    const float tx = px + 24.f * s + t * (pw / 2 - 12.f * s), tww = pw / 2 - 36.f * s, ty = py + head_h + 8.f * s;
+    const bool active = menu.page == t, hot = menu.hover == (t ? A_TAB_FILTERS : A_TAB_VIDEO);
+    add_hit(t ? A_TAB_FILTERS : A_TAB_VIDEO, tx, ty, tww, tab_h - 8.f * s);
+    if (active) {
+      tr::ui_gradient(tx, ty, tww, tab_h - 8.f * s, {1.f, 0.35f, 0.65f, 1.f}, {0.62f, 0.12f, 0.50f, 1.f}, 8.f * s);
+      tr::ui_rect(tx, ty + tab_h - 11.f * s, tww, 3.f * s, gold);
+    } else {
+      tr::ui_gradient(tx, ty, tww, tab_h - 8.f * s, hot ? Color{0.35f, 0.18f, 0.50f, 1.f} : Color{0.16f, 0.08f, 0.26f, 1.f}, {0.10f, 0.05f, 0.18f, 1.f}, 8.f * s);
+    }
+    const float nw = tr::ui_text_width(tab_names[t], 22.f * s);
+    tr::ui_text_outline(tx + (tww - nw) * 0.5f, ty + (tab_h - 8.f * s - tr::ui_line_height(22.f * s)) * 0.5f, tab_names[t], 22.f * s,
+                        active ? white : gray, ink, 1.5f * s);
+  }
+
+  static const char *level_names[4] = {"\302\253 Desligado \302\273", "\302\253 Leve \302\273", "\302\253 M\303\251dio \302\273", "\302\253 Forte \302\273"};
+  char res[48], scale_text[64];
+  std::snprintf(res, sizeof res, "\302\253 %u \303\227 %u \302\273", g_settings.width, g_settings.height);
+  std::snprintf(scale_text, sizeof scale_text, "\302\253 %u%%  (%u \303\227 %u) \302\273", g_settings.scale_pct,
+                unsigned(cw * g_settings.scale_pct / 100.f + 0.5f), unsigned(ch * g_settings.scale_pct / 100.f + 0.5f));
+  struct Row { int act; const char *label; const char *value; bool enabled; bool button; };
+  const Row video[kRows] = {
+      {A_MODE, "Modo de tela", g.fullscreen ? "\302\253 Tela cheia \302\273" : "\302\253 Janela \302\273", true, false},
+      {A_WINSIZE, "Tamanho da janela", g.fullscreen ? "s\303\263 em modo janela" : res, !g.fullscreen, false},
+      {A_SCALE, "Resolu\303\247\303\243o interna", scale_text, true, false},
+      {A_VSYNC, "V-Sync", g.vsync ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", true, false},
+      {A_FPS, "Mostrar FPS", g_settings.show_fps ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", true, false},
+      {A_RESET, "Restaurar padr\303\265es", "", true, true},
+      {A_CLOSE, "Voltar ao jogo", "", true, true},
+  };
+  const Row filters[kRows] = {
+      {A_SHARPEN, "Nitidez", level_names[g_settings.sharpen], true, false},
+      {A_SCAN, "Scanlines", level_names[g_settings.scanlines], true, false},
+      {A_MASK, "M\303\241scara CRT", level_names[g_settings.crt_mask], true, false},
+      {A_VIGNETTE, "Vinheta", level_names[g_settings.vignette], true, false},
+      {A_VIVID, "Cores vivas", level_names[g_settings.vivid], true, false},
+      {A_RESET, "Restaurar padr\303\265es", "", true, true},
+      {A_CLOSE, "Voltar ao jogo", "", true, true},
+  };
+  const Row *rows = menu.page == 0 ? video : filters;
+  const float rows_y = py + head_h + tab_h;
+  for (int i = 0; i < kRows; i++) {
+    const float ry = rows_y + rowh * i;
+    add_hit(rows[i].act, px, ry, pw, rowh);
+    if (i > 0 && !rows[i].button) tr::ui_rect(px + 30.f * s, ry, pw - 60.f * s, 1.f * s, {1.f, 0.82f, 0.3f, 0.18f});
+    const bool hot = rows[i].act == menu.hover && rows[i].enabled;
+    if (hot) {
+      tr::ui_gradient(px + 14.f * s, ry + 3.f * s, pw - 28.f * s, rowh - 6.f * s, {1.f, 0.35f, 0.65f, 0.95f}, {0.62f, 0.12f, 0.50f, 0.95f}, 10.f * s);
+      tr::ui_rect(px + 14.f * s, ry + 3.f * s, 5.f * s, rowh - 6.f * s, gold);
+    }
+    const float ty = ry + (rowh - tr::ui_line_height(24.f * s)) * 0.5f;
+    const Color label_color = rows[i].enabled ? white : gray;
+    if (rows[i].button) {
+      const float bw = tr::ui_text_width(rows[i].label, 24.f * s);
+      tr::ui_text_outline(px + (pw - bw) * 0.5f, ty, rows[i].label, 24.f * s, hot ? gold : label_color, ink, 1.5f * s);
+    } else {
+      tr::ui_text_outline(px + 38.f * s, ty, rows[i].label, 24.f * s, label_color, ink, 1.5f * s);
+      if (rows[i].value[0]) {
+        const float vw = tr::ui_text_width(rows[i].value, 24.f * s);
+        tr::ui_text_outline(px + pw - 38.f * s - vw, ty, rows[i].value, 24.f * s, rows[i].enabled ? (hot ? white : gold) : gray, ink, 1.5f * s);
+      }
+    }
+  }
+  const float fy = rows_y + rowh * kRows + 10.f * s;
+  tr::ui_rect(px + 30.f * s, fy - 4.f * s, pw - 60.f * s, 2.f * s, {1.f, 0.28f, 0.58f, 0.8f});
+  tr::ui_text(px + 30.f * s, fy + 4.f * s, "Clique para avan\303\247ar \302\267 roda do mouse ou bot\303\243o direito: voltar", 17.f * s, gray);
+  tr::ui_text(px + 30.f * s, fy + 28.f * s,
+              menu.page == 0 ? "Resolu\303\247\303\243o interna acima de 100% deixa a imagem mais n\303\255tida, mas exige mais da placa."
+                             : "Os filtros valem para a imagem inteira. \"Desligado\" volta ao original.",
+              17.f * s, gray);
+  tr::ui_text(px + 30.f * s, fy + 52.f * s, "F1 ou Esc fecha \302\267 as op\303\247\303\265es s\303\243o salvas sozinhas.", 17.f * s, gray);
+}
+#endif
 #endif
 
 void note_draw(bool indexed, u32 primitive) {
@@ -579,6 +898,10 @@ void rsx_vulkan_backend_present(void) {
     uint32_t w = 0, h = 0;
     if (!client_size(w, h))
       return; // minimized: skip presentation, keep the guest running
+    g.renderer->setRenderScale(float(g_settings.scale_pct) / 100.f); // internal resolution (marks a resize if changed)
+#ifdef D2_VULKAN_GAME_BACKEND
+    apply_filters();
+#endif
     if (g.resized || g.renderer->needsResize()) {
       if (!g.renderer->resize(w, h, g.vsync))
         return;
@@ -586,7 +909,10 @@ void rsx_vulkan_backend_present(void) {
     }
     bool presented = false;
 #ifdef D2_VULKAN_GAME_BACKEND
-    presented = tr::submit(*g.renderer, w, h, g.clear, tr::guest_w, tr::guest_h);
+    uint32_t rw = w, rh = h; // size of the image the game is drawn into (differs from the window when render-scaled)
+    g.renderer->renderExtent(rw, rh);
+    build_overlay(rw, rh, w, h);
+    presented = tr::submit(*g.renderer, rw, rh, g.clear, tr::guest_w, tr::guest_h);
 #else
     d2::vulkan::DrawParameters params;
     params.clear_color = g.clear;

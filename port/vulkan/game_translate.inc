@@ -660,6 +660,7 @@ void evict_textures(Renderer &r) {
   }
   std::fprintf(stderr, "[vulkan][m2] texture cache pressure: freed %zu of the idle textures, %zu remain\n", freed, tex_cache.size());
 }
+#include "ui_overlay.inc"
 bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &clear,
             uint32_t guest_w, uint32_t guest_h) {
   DrawParameters params;
@@ -703,6 +704,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     d.fp_block = c.fp_block;
     cmds.push_back(d);
   }
+  ui_flush(r, w, h, cmds); // options menu / FPS counter on top of the game
   const auto g0 = Clock::now();
   if (!verts.empty()) r.setRsxGeometry(verts);
   const auto g1 = Clock::now();
@@ -754,6 +756,7 @@ void init(Renderer &r) {
   const auto vs = compile_cached(shader::fixtures::vertex(), shader::Stage::vertex);
   const auto fs = compile_cached(shader::fixtures::fragment(false), shader::Stage::fragment);
   r.setRsxProgram(vs, fs);
+  init_post(r);
   ready = true;
 }
 

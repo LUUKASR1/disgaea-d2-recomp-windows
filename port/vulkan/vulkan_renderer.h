@@ -120,6 +120,16 @@ public:
   void offscreen(uint32_t width, uint32_t height, uint32_t color_targets = 1);
   bool resize(uint32_t width, uint32_t height, bool vsync);
   bool needsResize() const;
+  // Internal resolution: the scene is rendered at window size * scale (0.25..4) and scaled to the window. Takes
+  // effect at the next resize(). renderExtent() is the size draw commands (viewports/scissors) must use.
+  void setRenderScale(float scale);
+  void renderExtent(uint32_t &width, uint32_t &height) const;
+  // Optional post-processing (before the first resize): SPIR-V for a fullscreen-triangle vertex shader and a
+  // fragment shader reading the scene from t0/s0 and constants from b1 (float4[4]: [0] = scene size, output size,
+  // [1..2] = `params`). `active` creates/drops the intermediate scene image on the next resize; the values may
+  // change every frame.
+  void setPostProgram(std::span<const uint32_t> vertex, std::span<const uint32_t> fragment);
+  void setPostParams(const std::array<float, 8> &params, bool active);
   void setGeometry(std::span<const Vertex>,
                    std::span<const uint32_t> indices = {});
   // Trusted SPIR-V from the audited compiler only. Install before creating a
