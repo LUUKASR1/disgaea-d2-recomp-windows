@@ -110,6 +110,9 @@ def generate(source, output):
         '#include "hud_adapter.inc"\n#include "temporal_adapter.inc"\n\nstatic void render_frame(void)\n{')
     text = replace(text, '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);',
         '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);\n                d2_alpha_record_pso(d,dpso);')
+    text = replace(text, '    off = _off0; mapped = _map0;\n    t->up->lpVtbl->Unmap(t->up, 0, NULL);',
+        '    if (!cube) d2_texture_dump(vm_base + off, tl.face_bytes, w, h, fmt & 0xFFu, (int)tl.fmt, mapped, pitch);\n'
+        '    off = _off0; mapped = _map0;\n    t->up->lpVtbl->Unmap(t->up, 0, NULL);')
     text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
         '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',

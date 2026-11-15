@@ -19,6 +19,10 @@ int d2_graphics_present(uint32_t frame, void* scene);
 void* d2_graphics_output(uint32_t frame);
 void d2_graphics_shutdown(void);
 void d2_graphics_set_post(const float* values,int enabled);
+/* Texture pack: dump (PNG per distinct texture) and toggle. kind = RSX_TEXFMT_* of the decoded image. */
+void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,int kind,const void* decoded,uint32_t pitch);
+void d2_texture_set_dump(int on);
+int d2_texture_dump_enabled(void);
 #ifdef __cplusplus
 }
 #endif

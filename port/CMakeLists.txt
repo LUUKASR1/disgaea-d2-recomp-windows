@@ -337,6 +337,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${PS3RECOMP_DIR}/runtime/platform"        # win32_compat.h and friends
     "${PS3RECOMP_DIR}/libs/video"
     "${PS3RECOMP_DIR}/libs/system"
+    "${PS3RECOMP_DIR}/libs/codec"              # stb_image_write (texture dump)
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 

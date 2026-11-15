@@ -17,6 +17,7 @@
 #include "vendor/fsr1/ffx_a.h"
 #include "vendor/fsr1/ffx_fsr1.h"
 #include "fsr_shaders.h"
+#include "texture_pack.h"
 
 namespace {
 template<class T> struct Ref {
@@ -349,3 +350,10 @@ extern "C" void d2_graphics_set_post(const float* values,int enabled){
 }
 extern "C" void* d2_graphics_output(UINT frame){return gpu && frame<2?gpu->output[frame].p:nullptr;}
 extern "C" void d2_graphics_shutdown(){delete gpu;gpu=nullptr;restore_display();}
+
+extern "C" void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,int kind,const void* decoded,uint32_t pitch)
+{
+    d2tex::dump(source,source_bytes,w,h,format,kind,decoded,pitch);
+}
+extern "C" void d2_texture_set_dump(int on) { d2tex::set_dump(on!=0); }
+extern "C" int d2_texture_dump_enabled(void) { return d2tex::dump_enabled()?1:0; }

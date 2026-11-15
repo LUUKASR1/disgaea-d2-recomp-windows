@@ -47,6 +47,7 @@
 #include "fixtures.h"
 #include "rsx_fp_decompiler.h"
 #include "rsx_texture_layout.h"
+#include "../graphics/graphics.h"
 #include "rsx_vertex_fetch.h"
 #include "rsx_vp_decompiler.h"
 extern "C" uint8_t *vm_base;

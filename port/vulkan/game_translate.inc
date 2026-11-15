@@ -348,7 +348,7 @@ uint32_t texture_for(Renderer &r, uint32_t unit, const rsx_texture_state &t) {
   const uint32_t cs = tex_csum(src, tl.face_bytes);
   if (e.handle && cs == e.csum) { e.used_frame = frame_no; f_texup += ms(tup0, Clock::now()); return e.handle; }
   // Decode to a tight RGBA8 (or BC block) image.
-  std::vector<uint8_t> out;
+  std::vector<uint8_t> out, dumpsrc;
   uint32_t bcf = 0;
   if (bc) {
     bcf = tl.fmt == RSX_TEXFMT_BC1 ? 1 : tl.fmt == RSX_TEXFMT_BC2 ? 2 : 3;
@@ -357,6 +357,7 @@ uint32_t texture_for(Renderer &r, uint32_t unit, const rsx_texture_state &t) {
   } else {
     std::vector<uint8_t> tmp(size_t(tl.dst_row_bytes) * h);
     rsx_texture_decode(tmp.data(), tl.dst_row_bytes, src, w, h, &tl, rsx_texture_argb_is_rgba());
+    if (d2_texture_dump_enabled()) dumpsrc = tmp;
     out.resize(size_t(w) * h * 4);
     const uint32_t dbpp = tl.dst_bytes_per_texel;
     for (uint32_t y = 0; y < h; y++)
@@ -368,6 +369,7 @@ uint32_t texture_for(Renderer &r, uint32_t unit, const rsx_texture_state &t) {
         else { d[0] = s[0]; d[1] = 0; d[2] = 0; d[3] = 255; }
       }
   }
+  d2_texture_dump(src, tl.face_bytes, w, h, format & 0xFFu, int(tl.fmt), bc ? static_cast<const void *>(out.data()) : static_cast<const void *>(dumpsrc.data()), bc ? tl.row_bytes : tl.dst_row_bytes);
   uint8_t remap[4];
   rsx_texture_component_remap(t.control1, format & 0x9Fu, remap);
   const uint32_t mapping = (remap[1] | (remap[2] << 3) | (remap[3] << 6) | (remap[0] << 9)) & 0xFFFu;
