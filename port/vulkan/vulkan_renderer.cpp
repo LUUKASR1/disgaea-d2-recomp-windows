@@ -17,6 +17,8 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <unordered_map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -78,7 +80,7 @@ void check(VkResult r, const char *call) {
   X(vkCreateDescriptorPool) X(vkDestroyDescriptorPool)                         \
       X(vkAllocateDescriptorSets) X(vkUpdateDescriptorSets) X(vkCreateSampler) \
           X(vkDestroySampler) X(vkCmdCopyBufferToImage)                        \
-              X(vkCmdBindDescriptorSets) X(vkCmdPushConstants)
+              X(vkCmdBindDescriptorSets) X(vkCmdPushConstants) X(vkResetDescriptorPool)
 #define SURFACE_FUNCTIONS(X)                                                   \
   X(vkGetPhysicalDeviceSurfaceSupportKHR)                                      \
   X(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)                                 \
@@ -152,6 +154,7 @@ class Renderer::Impl {
   };
   std::vector<DepthTarget> depths;
   VkFormat depth_format = VK_FORMAT_UNDEFINED;
+  bool depth_has_stencil = false;
   VkShaderModule vert = VK_NULL_HANDLE, frag = VK_NULL_HANDLE;
   VkBuffer readback = VK_NULL_HANDLE;
   VkDeviceMemory readback_memory = VK_NULL_HANDLE;
@@ -355,6 +358,22 @@ class Renderer::Impl {
     VkPipelineDepthStencilStateCreateInfo ds{
         VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     ds.depthCompareOp = VkCompareOp(raster_state.depth_compare);
+    if (depth_has_stencil && raster_state.stencil_enable) {
+      auto face = [&](uint32_t f) {
+        VkStencilOpState o{};
+        o.compareOp = VkCompareOp(f & 7u);
+        o.failOp = VkStencilOp((f >> 3) & 7u);
+        o.depthFailOp = VkStencilOp((f >> 6) & 7u);
+        o.passOp = VkStencilOp((f >> 9) & 7u);
+        o.compareMask = raster_state.stencil_read_mask & 255u;
+        o.writeMask = raster_state.stencil_write_mask & 255u;
+        o.reference = raster_state.stencil_ref & 255u;
+        return o;
+      };
+      ds.stencilTestEnable = VK_TRUE;
+      ds.front = face(raster_state.stencil_front);
+      ds.back = face(raster_state.stencil_back);
+    }
     pc.pDepthStencilState = &ds;
     auto &destination = program ? program->pipelines : pipelines;
     for (unsigned mode = 0; mode < 3; mode++)
@@ -388,8 +407,8 @@ class Renderer::Impl {
     depth.samples = VK_SAMPLE_COUNT_1_BIT;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.stencilLoadOp = depth_has_stencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth.stencilStoreOp = depth_has_stencil ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     VkAttachmentReference depth_ref{
@@ -438,6 +457,7 @@ class Renderer::Impl {
         attachments[i].initialLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
       }
       depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      if (depth_has_stencil) depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
       depth.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
       OK(vkCreateRenderPass(device, &rp, nullptr, &load_pass));
     }
@@ -473,7 +493,7 @@ class Renderer::Impl {
       dvi.image = target.image;
       dvi.viewType = VK_IMAGE_VIEW_TYPE_2D;
       dvi.format = depth_format;
-      dvi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+      dvi.subresourceRange = {VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT | (depth_has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0)), 0, 1, 0, 1};
       OK(vkCreateImageView(device, &dvi, nullptr, &target.view));
       VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
       vi.image = image;
@@ -584,6 +604,7 @@ public:
           if (u.memory)
             vkFreeMemory(device, u.memory, nullptr);
         }
+      releaseFrameResources();
       for (auto &t : textures)
         releaseTexture(t);
       for (auto s : unit_samplers)
@@ -796,12 +817,13 @@ public:
     if (!physical)
       throw Unavailable("No suitable Vulkan graphics/present queue");
     vkGetPhysicalDeviceMemoryProperties(physical, &memory);
-    for (auto candidate : {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM}) {
+    for (auto candidate : {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM}) {
       VkFormatProperties features{};
       vkGetPhysicalDeviceFormatProperties(physical, candidate, &features);
       if (features.optimalTilingFeatures &
           VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
         depth_format = candidate;
+        depth_has_stencil = candidate == VK_FORMAT_D32_SFLOAT_S8_UINT || candidate == VK_FORMAT_D24_UNORM_S8_UINT;
         break;
       }
     }
@@ -1065,6 +1087,383 @@ public:
       vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
     }
   }
+
+  // ---- Draw-list resources: persistent textures, per-frame constant blocks
+  // and per-draw descriptor sets. Everything per-frame is reset after the
+  // previous submission's fence has signalled (beginFrameResources). ----
+  struct FrameTexture {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    uint32_t width = 0, height = 0, bc_format = 0, sampler_index = 0;
+    VkDeviceSize upload_offset = 0;
+    bool alive = false, pending = false;
+  };
+  struct FrameBlock {
+    VkDeviceSize offset = 0;
+    uint32_t bytes = 0;
+    bool fragment = false;
+  };
+  static constexpr VkDeviceSize kArenaSize = 16u << 20,
+                                kUploadSize = 64u << 20, kVsSlot = 8448,
+                                kFpSlot = 16384;
+  std::vector<FrameTexture> frame_textures;
+  std::vector<uint32_t> free_texture_slots, pending_uploads;
+  std::vector<FrameTexture> dead_textures;
+  std::array<VkSampler, 4> frame_samplers{};
+  VkDescriptorPool frame_pool = VK_NULL_HANDLE;
+  VkBuffer arena = VK_NULL_HANDLE, upload = VK_NULL_HANDLE;
+  VkDeviceMemory arena_memory = VK_NULL_HANDLE, upload_memory = VK_NULL_HANDLE;
+  uint8_t *arena_mapped = nullptr, *upload_mapped = nullptr;
+  std::vector<uint8_t> arena_shadow; // CPU copy: never read back from mapped GPU memory
+  bool arena_coherent = true, upload_coherent = true;
+  VkDeviceSize arena_used = 0, upload_used = 0;
+  std::vector<FrameBlock> frame_blocks;
+  std::unordered_map<uint64_t, std::vector<uint32_t>> frame_block_index;
+  std::map<uint32_t, VkDescriptorSet> frame_vs_sets;
+  std::map<std::array<uint32_t, 17>, VkDescriptorSet> frame_fp_sets;
+  bool frame_open = false;
+  void makeHostBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VkBuffer &buffer, VkDeviceMemory &mem, uint8_t *&mapped,
+                      bool &coherent) {
+    VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bc.size = size;
+    bc.usage = usage;
+    OK(vkCreateBuffer(device, &bc, nullptr, &buffer));
+    VkMemoryRequirements req{};
+    vkGetBufferMemoryRequirements(device, buffer, &req);
+    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    ai.allocationSize = req.size;
+    coherent = true;
+    try {
+      ai.memoryTypeIndex =
+          memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    } catch (const std::runtime_error &) {
+      coherent = false;
+      ai.memoryTypeIndex =
+          memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+    }
+    OK(vkAllocateMemory(device, &ai, nullptr, &mem));
+    OK(vkBindBufferMemory(device, buffer, mem, 0));
+    void *p = nullptr;
+    OK(vkMapMemory(device, mem, 0, VK_WHOLE_SIZE, 0, &p));
+    mapped = static_cast<uint8_t *>(p);
+  }
+  void flushHost(VkDeviceMemory m, bool coherent, VkDeviceSize used) {
+    if (coherent || !used)
+      return;
+    VkMappedMemoryRange r{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+    r.memory = m;
+    r.size = VK_WHOLE_SIZE;
+    check(vkFlushMappedMemoryRanges(device, 1, &r), "Frame resource flush");
+  }
+  void createFrameResources() {
+    if (frame_pool)
+      return;
+    makeHostBuffer(kArenaSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, arena,
+                   arena_memory, arena_mapped, arena_coherent);
+    makeHostBuffer(kUploadSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, upload,
+                   upload_memory, upload_mapped, upload_coherent);
+    VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8192},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 16 * 4096},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLER, 16 * 4096}};
+    VkDescriptorPoolCreateInfo dp{
+        VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dp.maxSets = 8192;
+    dp.poolSizeCount = 3;
+    dp.pPoolSizes = sizes;
+    OK(vkCreateDescriptorPool(device, &dp, nullptr, &frame_pool));
+    for (unsigned i = 0; i < 4; i++) {
+      VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+      si.magFilter = si.minFilter =
+          (i & 1) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+      si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+      si.addressModeU = si.addressModeV = si.addressModeW =
+          (i & 2) ? VK_SAMPLER_ADDRESS_MODE_REPEAT
+                  : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+      OK(vkCreateSampler(device, &si, nullptr, &frame_samplers[i]));
+    }
+  }
+  void releaseFrameTexture(FrameTexture &t) {
+    if (t.view)
+      vkDestroyImageView(device, t.view, nullptr);
+    if (t.image)
+      vkDestroyImage(device, t.image, nullptr);
+    if (t.memory)
+      vkFreeMemory(device, t.memory, nullptr);
+    t = {};
+  }
+  void releaseFrameResources() {
+    for (auto &t : frame_textures)
+      releaseFrameTexture(t);
+    for (auto &t : dead_textures)
+      releaseFrameTexture(t);
+    frame_textures.clear();
+    dead_textures.clear();
+    for (auto s : frame_samplers)
+      if (s)
+        vkDestroySampler(device, s, nullptr);
+    if (frame_pool)
+      vkDestroyDescriptorPool(device, frame_pool, nullptr);
+    if (arena)
+      vkDestroyBuffer(device, arena, nullptr);
+    if (arena_memory)
+      vkFreeMemory(device, arena_memory, nullptr);
+    if (upload)
+      vkDestroyBuffer(device, upload, nullptr);
+    if (upload_memory)
+      vkFreeMemory(device, upload_memory, nullptr);
+    frame_samplers = {};
+    frame_pool = VK_NULL_HANDLE;
+    arena = upload = VK_NULL_HANDLE;
+    arena_memory = upload_memory = VK_NULL_HANDLE;
+  }
+  // Waits for the previous submission, then recycles all per-frame resources.
+  void beginFrameResources() {
+    if (!device || !rsxMode() || !pass)
+      throw std::runtime_error("Draw-list resources require an RSX target");
+    if (frame_open)
+      return;
+    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    createFrameResources();
+    OK(vkResetDescriptorPool(device, frame_pool, 0));
+    arena_used = upload_used = 0;
+    frame_blocks.clear();
+    frame_block_index.clear();
+    frame_vs_sets.clear();
+    frame_fp_sets.clear();
+    for (auto &t : dead_textures)
+      releaseFrameTexture(t);
+    dead_textures.clear();
+    frame_open = true;
+  }
+  uint32_t frameBlock(std::span<const std::array<float, 4>> rows,
+                      bool fragment) {
+    if (fragment ? (rows.empty() || rows.size() > 1024) : rows.size() != 514)
+      throw std::runtime_error("Invalid RSX constant buffer sizes");
+    for (auto &row : rows)
+      for (float v : row)
+        if (!std::isfinite(v))
+          throw std::runtime_error("Nonfinite RSX constant");
+    beginFrameResources();
+    uint64_t hash = 1469598103934665603ull ^ (fragment ? 0x9e3779b97f4a7c15ull : 0);
+    auto bytes = std::as_bytes(rows);
+    {
+      // 8 bytes per step; block sizes are multiples of 16.
+      const auto *w = reinterpret_cast<const unsigned char *>(bytes.data());
+      size_t i = 0;
+      for (; i + 8 <= bytes.size(); i += 8) {
+        uint64_t x;
+        std::memcpy(&x, w + i, 8);
+        hash = (hash ^ x) * 1099511628211ull;
+        hash ^= hash >> 29;
+      }
+      for (; i < bytes.size(); i++)
+        hash = (hash ^ w[i]) * 1099511628211ull;
+    }
+    auto &bucket = frame_block_index[hash];
+    for (auto id : bucket) {
+      auto &b = frame_blocks[id];
+      if (b.fragment == fragment && b.bytes == bytes.size() &&
+          !std::memcmp(arena_shadow.data() + b.offset, bytes.data(), bytes.size()))
+        return id;
+    }
+    VkDeviceSize slot = fragment ? kFpSlot : kVsSlot;
+    if (arena_used + slot > kArenaSize)
+      throw std::runtime_error("RSX frame constant arena exhausted");
+    if (arena_shadow.size() < kArenaSize) arena_shadow.assign(size_t(kArenaSize), 0);
+    std::memset(arena_mapped + arena_used, 0, slot);
+    std::memset(arena_shadow.data() + arena_used, 0, slot);
+    std::memcpy(arena_shadow.data() + arena_used, bytes.data(), bytes.size());
+    std::memcpy(arena_mapped + arena_used, bytes.data(), bytes.size());
+    frame_blocks.push_back({arena_used, uint32_t(bytes.size()), fragment});
+    arena_used += slot;
+    bucket.push_back(uint32_t(frame_blocks.size() - 1));
+    return uint32_t(frame_blocks.size() - 1);
+  }
+  uint32_t createTexture(uint32_t w, uint32_t h, uint32_t bc_format,
+                         uint32_t mapping, std::span<const uint8_t> data,
+                         bool linear, bool wrap) {
+    size_t expected = bc_format ? size_t((w + 3) / 4) * ((h + 3) / 4) *
+                                      (bc_format == 1 ? 8 : 16)
+                                : size_t(w) * h * 4;
+    if (bc_format > 3 || (bc_format && !bc_supported))
+      throw std::runtime_error("BC texture compression unavailable");
+    for (unsigned k = 0; k < 4; ++k)
+      if (((mapping >> (3 * k)) & 7) > 5)
+        throw std::runtime_error("Invalid texture component mapping");
+    if (mapping & ~0xfffu)
+      throw std::runtime_error("Unknown texture mapping bits");
+    if (!w || !h || w > 4096 || h > 4096 || data.size() != expected)
+      throw std::runtime_error("Invalid or oversized texture payload");
+    beginFrameResources();
+    VkDeviceSize offset = (upload_used + 15) & ~VkDeviceSize(15);
+    if (offset + data.size() > kUploadSize)
+      throw std::runtime_error("RSX texture upload arena exhausted");
+    FrameTexture t;
+    VkImageCreateInfo ic{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ic.imageType = VK_IMAGE_TYPE_2D;
+    ic.format = bc_format == 1   ? VK_FORMAT_BC1_RGBA_UNORM_BLOCK
+                : bc_format == 2 ? VK_FORMAT_BC2_UNORM_BLOCK
+                : bc_format == 3 ? VK_FORMAT_BC3_UNORM_BLOCK
+                                 : VK_FORMAT_R8G8B8A8_UNORM;
+    ic.extent = {w, h, 1};
+    ic.mipLevels = ic.arrayLayers = 1;
+    ic.samples = VK_SAMPLE_COUNT_1_BIT;
+    ic.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ic.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    OK(vkCreateImage(device, &ic, nullptr, &t.image));
+    try {
+      VkMemoryRequirements req{};
+      vkGetImageMemoryRequirements(device, t.image, &req);
+      VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+      ai.allocationSize = req.size;
+      ai.memoryTypeIndex =
+          memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      OK(vkAllocateMemory(device, &ai, nullptr, &t.memory));
+      OK(vkBindImageMemory(device, t.image, t.memory, 0));
+      VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+      vi.image = t.image;
+      vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      vi.format = ic.format;
+      const VkComponentSwizzle selectors[] = {
+          VK_COMPONENT_SWIZZLE_R,    VK_COMPONENT_SWIZZLE_G,
+          VK_COMPONENT_SWIZZLE_B,    VK_COMPONENT_SWIZZLE_A,
+          VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE};
+      vi.components = {selectors[mapping & 7], selectors[(mapping >> 3) & 7],
+                       selectors[(mapping >> 6) & 7],
+                       selectors[(mapping >> 9) & 7]};
+      vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+      OK(vkCreateImageView(device, &vi, nullptr, &t.view));
+    } catch (...) {
+      releaseFrameTexture(t);
+      throw;
+    }
+    std::memcpy(upload_mapped + offset, data.data(), data.size());
+    upload_used = offset + data.size();
+    t.width = w;
+    t.height = h;
+    t.bc_format = bc_format;
+    t.upload_offset = offset;
+    t.sampler_index = (linear ? 1u : 0u) | (wrap ? 2u : 0u);
+    t.alive = t.pending = true;
+    uint32_t slot;
+    if (!free_texture_slots.empty()) {
+      slot = free_texture_slots.back();
+      free_texture_slots.pop_back();
+      frame_textures[slot] = t;
+    } else {
+      slot = uint32_t(frame_textures.size());
+      frame_textures.push_back(t);
+    }
+    pending_uploads.push_back(slot + 1);
+    return slot + 1;
+  }
+  void destroyTexture(uint32_t handle) {
+    if (!handle || handle > frame_textures.size() ||
+        !frame_textures[handle - 1].alive)
+      throw std::runtime_error("Unknown RSX frame texture");
+    auto &t = frame_textures[handle - 1];
+    pending_uploads.erase(
+        std::remove(pending_uploads.begin(), pending_uploads.end(), handle),
+        pending_uploads.end());
+    dead_textures.push_back(t);
+    t = {};
+    free_texture_slots.push_back(handle - 1);
+  }
+  void recordUploads() {
+    for (auto handle : pending_uploads) {
+      auto &t = frame_textures[handle - 1];
+      VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+      barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex =
+          VK_QUEUE_FAMILY_IGNORED;
+      barrier.image = t.image;
+      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                           nullptr, 1, &barrier);
+      VkBufferImageCopy copy{};
+      copy.bufferOffset = t.upload_offset;
+      copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      copy.imageExtent = {t.width, t.height, 1};
+      vkCmdCopyBufferToImage(cmd, upload, t.image,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+      barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                           0, nullptr, 1, &barrier);
+    }
+  }
+  VkDescriptorSet allocFrameSet(VkDescriptorSetLayout layout) {
+    VkDescriptorSetAllocateInfo da{
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    da.descriptorPool = frame_pool;
+    da.descriptorSetCount = 1;
+    da.pSetLayouts = &layout;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    OK(vkAllocateDescriptorSets(device, &da, &set));
+    return set;
+  }
+  std::array<VkDescriptorSet, 2> acquireFrameSets(const DrawCommand &c) {
+    VkDescriptorSet &vs = frame_vs_sets[c.vs_block];
+    if (!vs) {
+      vs = allocFrameSet(rsx_layouts[0]);
+      VkDescriptorBufferInfo bi{arena, frame_blocks[c.vs_block].offset, 8224};
+      VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      w.dstSet = vs;
+      w.dstBinding = 0;
+      w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      w.descriptorCount = 1;
+      w.pBufferInfo = &bi;
+      vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+    }
+    std::array<uint32_t, 17> key{};
+    key[0] = c.fp_block;
+    std::copy(c.textures.begin(), c.textures.end(), key.begin() + 1);
+    VkDescriptorSet &fp = frame_fp_sets[key];
+    if (!fp) {
+      fp = allocFrameSet(rsx_layouts[1]);
+      VkDescriptorBufferInfo bi{arena, frame_blocks[c.fp_block].offset, 16384};
+      std::array<VkDescriptorImageInfo, 16> images{}, samplers{};
+      for (size_t i = 0; i < 16; i++) {
+        auto handle = c.textures[i];
+        images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // Same fixed per-unit samplers as the D3D12 backend's static
+        // samplers: s0 point/clamp (font atlases), s1..s3 linear/wrap.
+        samplers[i].sampler = i == 0   ? frame_samplers[0]
+                              : i < 4  ? frame_samplers[3]
+                                       : sampler;
+        images[i].imageView =
+            handle ? frame_textures[handle - 1].view : textures[16].view;
+      }
+      VkWriteDescriptorSet writes[3]{};
+      for (auto &w : writes) {
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = fp;
+      }
+      writes[0].dstBinding = 1;
+      writes[0].descriptorCount = 1;
+      writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      writes[0].pBufferInfo = &bi;
+      writes[1].dstBinding = 32;
+      writes[1].descriptorCount = 16;
+      writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      writes[1].pImageInfo = images.data();
+      writes[2].dstBinding = 64;
+      writes[2].descriptorCount = 16;
+      writes[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+      writes[2].pImageInfo = samplers.data();
+      vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+    }
+    return {vs, fp};
+  }
   void setRsxProgram(std::span<const uint32_t> v, std::span<const uint32_t> f) {
     if (!device || pass || geometry || rsx_pool)
       throw std::runtime_error(
@@ -1263,7 +1662,7 @@ public:
   }
   void validateRasterState(const RasterState &state) {
     if (!device || state.cull > 2 || state.color_mask > 15 ||
-        state.depth_compare > 7 || uint32_t(state.src_color) > 10 ||
+        state.depth_compare > 7 || (state.stencil_front >> 12) || (state.stencil_back >> 12) || uint32_t(state.src_color) > 10 ||
         uint32_t(state.dst_color) > 10 || uint32_t(state.src_alpha) > 10 ||
         uint32_t(state.dst_alpha) > 10 || uint32_t(state.color_op) > 4 ||
         uint32_t(state.alpha_op) > 4 ||
@@ -1600,21 +1999,45 @@ public:
           (rsxMode() && c.alpha_cutoff != -1))
         throw std::runtime_error("Invalid draw command range/state");
       if (rsxMode()) {
-        if (c.rsx_program >= programs.size() ||
-            c.rsx_constants >= constant_states.size())
-          throw std::runtime_error("Unknown RSX draw handle");
-        auto &state = constant_states[c.rsx_constants];
-        if (!state.ready ||
-            state.fragment_bytes <
-                programs[c.rsx_program].fp_contract.uniform_bytes)
-          throw std::runtime_error(
-              "RSX draw constants unavailable or too short");
+        if (c.vs_block != UINT32_MAX || c.fp_block != UINT32_MAX) {
+          if (c.rsx_program >= programs.size() || c.rsx_constants ||
+              !frame_open || c.vs_block >= frame_blocks.size() ||
+              c.fp_block >= frame_blocks.size() ||
+              frame_blocks[c.vs_block].fragment ||
+              !frame_blocks[c.fp_block].fragment ||
+              frame_blocks[c.fp_block].bytes <
+                  programs[c.rsx_program].fp_contract.uniform_bytes)
+            throw std::runtime_error("Invalid RSX frame draw blocks");
+          for (auto handle : c.textures)
+            if (handle && (handle > frame_textures.size() ||
+                           !frame_textures[handle - 1].alive))
+              throw std::runtime_error("Unknown RSX frame texture");
+        } else {
+          if (c.rsx_program >= programs.size() ||
+              c.rsx_constants >= constant_states.size())
+            throw std::runtime_error("Unknown RSX draw handle");
+          auto &state = constant_states[c.rsx_constants];
+          if (!state.ready ||
+              state.fragment_bytes <
+                  programs[c.rsx_program].fp_contract.uniform_bytes)
+            throw std::runtime_error(
+                "RSX draw constants unavailable or too short");
+        }
       } else if (c.rsx_program || c.rsx_constants)
         throw std::runtime_error("RSX handles in legacy draw");
       rect(c.viewport);
       rect(c.scissor);
     }
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    // Descriptor sets for the draw-list path are allocated before acquiring a
+    // swapchain image so a failure cannot leave the acquire semaphore pending.
+    std::vector<std::array<VkDescriptorSet, 2>> frame_sets(commands.size());
+    bool frame_used = !pending_uploads.empty();
+    for (size_t i = 0; i < commands.size(); ++i)
+      if (rsxMode() && commands[i].vs_block != UINT32_MAX) {
+        frame_sets[i] = acquireFrameSets(commands[i]);
+        frame_used = true;
+      }
     uint32_t index = 0;
     if (surface) {
       VkResult r = vkAcquireNextImageKHR(device, swapchain, 1000000000ull,
@@ -1634,6 +2057,12 @@ public:
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     OK(vkBeginCommandBuffer(cmd, &begin));
+    if (!pending_uploads.empty())
+      recordUploads();
+    if (frame_used && frame_pool) {
+      flushHost(arena_memory, arena_coherent, arena_used);
+      flushHost(upload_memory, upload_coherent, upload_used);
+    }
     std::vector<VkClearValue> clear(color_count + 1);
     for (uint32_t i = 0; i < color_count; i++)
       std::copy(parameters.clear_color.begin(), parameters.clear_color.end(),
@@ -1657,10 +2086,14 @@ public:
       vkCmdBindPipeline(
           cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
           draw_pipelines[uint32_t(c.depth) * 2 + unsigned(c.blend)]);
-      if (rsxMode())
+      if (rsxMode()) {
+        const VkDescriptorSet *sets =
+            c.vs_block != UINT32_MAX
+                ? frame_sets[size_t(&c - commands.data())].data()
+                : constant_states[c.rsx_constants].sets.data();
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0,
-                                2, constant_states[c.rsx_constants].sets.data(),
-                                0, nullptr);
+                                2, sets, 0, nullptr);
+      }
       if (!rsxMode())
         vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(float), &c.alpha_cutoff);
@@ -1717,6 +2150,10 @@ public:
       submit.pSignalSemaphores = &finished[index];
     }
     OK(vkQueueSubmit(queue, 1, &submit, fence));
+    for (auto handle : pending_uploads)
+      frame_textures[handle - 1].pending = false;
+    pending_uploads.clear();
+    frame_open = false;
     if (surface) {
       VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
       present.waitSemaphoreCount = 1;
@@ -1830,6 +2267,23 @@ void Renderer::setRsxGeometry(std::span<const RsxVertex> v,
 void Renderer::setRsxConstants(std::span<const std::array<float, 4>> v,
                                std::span<const std::array<float, 4>> f) {
   impl_->setRsxConstants(v, f);
+}
+uint32_t Renderer::createTexture(uint32_t w, uint32_t h, uint32_t bc,
+                                 uint32_t mapping,
+                                 std::span<const uint8_t> data, bool linear,
+                                 bool wrap) {
+  return impl_->createTexture(w, h, bc, mapping, data, linear, wrap);
+}
+void Renderer::destroyTexture(uint32_t handle) {
+  impl_->destroyTexture(handle);
+}
+uint32_t
+Renderer::frameVsConstants(std::span<const std::array<float, 4>> rows) {
+  return impl_->frameBlock(rows, false);
+}
+uint32_t
+Renderer::frameFpConstants(std::span<const std::array<float, 4>> rows) {
+  return impl_->frameBlock(rows, true);
 }
 uint32_t Renderer::addRsxProgram(std::span<const uint32_t> v,
                                  std::span<const uint32_t> f) {

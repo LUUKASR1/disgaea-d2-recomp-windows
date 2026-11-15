@@ -173,6 +173,10 @@ endif()
 add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
 include(graphics/integrate.cmake)
+option(D2_VULKAN_GAME_BACKEND "Build the experimental Vulkan RSX backend (M1: presentation only)" OFF)
+if(WIN32 AND D2_VULKAN_GAME_BACKEND)
+    include(vulkan/integrate.cmake)
+endif()
 
 # ---------------------------------------------------------------------------
 # The HLE NID table
@@ -339,6 +343,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ps3recomp_runtime
 )
+if(TARGET d2_vulkan_game)
+    target_link_libraries(${PROJECT_NAME} PRIVATE d2_vulkan_game)
+    if(D2_VULKAN_DXC_RC)
+        target_sources(${PROJECT_NAME} PRIVATE "${D2_VULKAN_DXC_RC}")
+    endif()
+endif()
 
 # The runtime is C++, and on Apple also Objective-C. Letting CMake infer the
 # link language from the generated C would leave the C++ standard library out.

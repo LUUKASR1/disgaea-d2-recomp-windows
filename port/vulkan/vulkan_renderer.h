@@ -45,6 +45,12 @@ struct DrawCommand {
   // Renderer-local immutable program/constant snapshot handles; zero is
   // default.
   uint32_t rsx_program = 0, rsx_constants = 0;
+  // Draw-list path: when vs_block/fp_block are not UINT32_MAX, the draw uses
+  // blocks returned by frameVsConstants()/frameFpConstants() for the CURRENT
+  // frame and the persistent texture objects in `textures` (0 = white) instead
+  // of the renderer-global units. rsx_constants must stay 0.
+  std::array<uint32_t, 16> textures{};
+  uint32_t vs_block = UINT32_MAX, fp_block = UINT32_MAX;
 };
 struct Info {
   std::string adapter;
@@ -87,6 +93,12 @@ struct RasterState {
   BlendFactor src_alpha = BlendFactor::one,
               dst_alpha = BlendFactor::inv_src_alpha;
   BlendOperation color_op = BlendOperation::add, alpha_op = BlendOperation::add;
+  // Stencil (ignored when the depth format has no stencil aspect). Faces are
+  // packed as compare(3 bits) | fail<<3 | zfail<<6 | zpass<<9 using Vulkan
+  // VkCompareOp / VkStencilOp numbering.
+  bool stencil_enable = false;
+  uint32_t stencil_front = 0, stencil_back = 0;
+  uint32_t stencil_read_mask = 255, stencil_write_mask = 255, stencil_ref = 0;
   bool operator==(const RasterState &) const = default;
 };
 class Renderer {
@@ -155,6 +167,19 @@ public:
   void replaceReplayPipeline(std::span<const uint32_t> vertex,
                              std::span<const uint32_t> fragment,
                              const RasterState &state);
+  // ---- Draw-list path (RSX program installed, offscreen/window target) ----
+  // Persistent texture object (1-based handle, 0 is reserved for white).
+  // Linear RGBA8 (bc_format 0) or BC1/2/3 blocks (1..3); one mip. Data is
+  // copied immediately and uploaded inside the next draw() submission.
+  uint32_t createTexture(uint32_t width, uint32_t height, uint32_t bc_format,
+                         uint32_t mapping, std::span<const uint8_t> data,
+                         bool linear, bool wrap);
+  // Resources are released after the in-flight frame completes.
+  void destroyTexture(uint32_t handle);
+  // Per-frame constant blocks (deduplicated by content). Ids are valid only
+  // until the next draw() submission. VS needs exactly 514 rows.
+  uint32_t frameVsConstants(std::span<const std::array<float, 4>> rows);
+  uint32_t frameFpConstants(std::span<const std::array<float, 4>> rows);
   bool draw();
   bool draw(std::span<const DrawCommand> commands);
   // Offscreen only. Append after a completed draw, retaining color and depth.

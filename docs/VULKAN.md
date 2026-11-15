@@ -161,3 +161,31 @@ O formato de sequência v2 amplia o limite para oito IDs (64 bytes); v1 com quat
 No replay offscreen de programa único, shaders/estado podem ser substituídos após aguardar o fence anterior. A ferramenta compila/valida o novo pipeline antes de substituir o anterior, retém os mesmos attachments e atualiza recursos por desenho. Falha de criação limpa módulos/PSOs parciais e preserva o programa anterior. `pipeline_switches` informa mudanças, e `coverage_scope` passa a `selected-mixed-pipeline-subset-only`. Trata-se de diagnóstico sincronizado sem cache de desempenho, não do backend de jogo.
 
 Testes próprios cobrem troca de fragment shader, máscara de cor, blend e comparação de profundidade com cor/depth retidos, além de oito draws e compatibilidade v1. O teste D3D12 usa dois PSOs diferentes no mesmo alvo, com depth/blend/write mask diferentes. Ainda faltam estado RSX completo, clears intermediários, stencil, render-to-texture, seleção mais ampla e validação do frame completo. SDK/lock e gameplay D3D12 permanecem preservados.
+
+## Marco M1 do backend do jogo: apresentação apenas (experimental)
+
+`port/vulkan/rsx_vulkan_backend.cpp` registra um `rsx_backend` Vulkan com a mesma interface do D3D12
+(`rsx_vulkan_backend_init/pump_messages/present/shutdown`). Cria a janela Win32, apresenta pelo `d2_vulkan` e usa a
+cor de clear do jogo. **Draws, shaders e texturas do jogo ainda não são traduzidos**: os callbacks são contados e
+ignorados (log `[vulkan] M1: ...`). A tela mostra só a cor de clear. Plano completo: `VULKAN-BACKEND-PLAN.md`.
+
+- Só entra no build com `-DD2_VULKAN_GAME_BACKEND=ON` (Windows). Opcional: `-DD2_VULKAN_HEADERS_DIR=<Vulkan-Headers>`.
+- Execução opt-in: `D2_GRAPHICS_API=vulkan` **e** `D2_VULKAN_EXPERIMENTAL=1`. Sem isso o jogo recusa Vulkan com mensagem
+  explícita; D3D12 continua padrão e nunca há troca silenciosa. `D2_VSYNC=0` desliga VSync; `D2_VULKAN_VALIDATION=1` liga a camada Khronos.
+- O seletor do launcher continua desabilitado. Saves e perfil não são alterados.
+- Verificado neste ambiente: sintaxe de `rsx_vulkan_backend.cpp` (com stubs de Win32) e testes de seleção de backend, com e sem o define.
+  **Não** compilado com MSVC/clang-cl nem executado: precisa de build e teste no PC do usuário (esperado: janela com cor de clear, fechar com Alt+F4/Esc sem travar, log com o adaptador).
+
+### Teste rápido do M1 sem o jogo: `Testar-Vulkan-M1.bat`
+
+Na raiz do projeto. Dá dois cliques (precisa de Visual Studio com C++ e internet). Baixa os headers do SDK (`a679051`) e do
+Vulkan-Headers, compila `port/vulkan/m1_probe` (backend Vulkan + renderer, sem o jogo, sem ELF) e executa por ~10 s fazendo o papel
+do frame clock: clear animado, draws ignorados, present e fechamento. Grava tudo em `vulkan-m1-log.txt`; termina com `[m1] PASS`
+se a janela/swapchain/present funcionaram nesta GPU. Não valida nenhum desenho do jogo.
+
+### M1 verificado no jogo; coletor de estatísticas (M2, passo 1)
+
+Rodado a partir da build local (llvm-mingw): adaptador RTX 5070, 1.140 frames apresentados pelo Vulkan, encerramento limpo.
+O backend agora também registra, sem desenhar, o que o jogo pede: draws por frame, primitivas, programas de vértice/fragmento
+distintos, formatos de textura, blend/depth/stencil/cull e alvos de render. Imprime `[vulkan][stats]` nos frames 300/1200/3000 e no
+encerramento; `D2_VULKAN_STATS=0` desliga. Serve para dimensionar a tradução (M2) com dados reais.

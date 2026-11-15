@@ -18,6 +18,21 @@
 #include <regex>
 #include <stdexcept>
 #include <utility>
+#if defined(__MINGW32__) && defined(__clang__)
+// llvm-mingw builds: dxcapi.h declares interface IIDs without a
+// __declspec(uuid), so __uuidof falls back to __mingw_uuidof<T>() which has no
+// definition. Provide the pinned DXC IIDs explicitly.
+#define D2_UUID(T, a, b, c, d0, d1, d2, d3, d4, d5, d6, d7)                    \
+  template <> const GUID &__mingw_uuidof<T>() {                                \
+    static const GUID g = {a, b, c, {d0, d1, d2, d3, d4, d5, d6, d7}};         \
+    return g;                                                                  \
+  }
+D2_UUID(IDxcCompiler3, 0x228B4687, 0x5A6A, 0x4730, 0x90, 0x0C, 0x97, 0x02, 0xB2, 0x20, 0x3F, 0x54)
+D2_UUID(IDxcResult, 0x58346CDA, 0xDDE7, 0x4497, 0x94, 0x61, 0x6F, 0x87, 0xAF, 0x5E, 0x06, 0x59)
+D2_UUID(IDxcBlobUtf8, 0x3DA636C9, 0xBA71, 0x4024, 0xA3, 0x01, 0x30, 0xCB, 0xF1, 0x25, 0x30, 0x5B)
+D2_UUID(IDxcBlob, 0x8BA5FB08, 0x5195, 0x40E2, 0xAC, 0x58, 0x0D, 0x98, 0x9C, 0x3A, 0x01, 0x02)
+#undef D2_UUID
+#endif
 namespace d2::vulkan::shader {
 namespace {
 template <class T> struct Com {

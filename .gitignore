@@ -184,3 +184,18 @@
 !/windows/locales/
 /windows/locales/*
 !/windows/locales/en.json
+
+# Vulkan M1 probe
+build-vulkan-m1/
+vulkan-m1-log.txt
+
+.venv/
+ps3recomp/
+compilar-vulkan-log.txt
+ultimo-log-vulkan.txt
+port-140-windows-generated/
+port/build-windows-140.falhou/
+vulkan-dump/
+vulkan-shader-cache/
+build-vulkan-m2/
+vulkan-m2-log.txt
