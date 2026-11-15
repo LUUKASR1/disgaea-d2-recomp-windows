@@ -669,12 +669,18 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
   r.setParameters(params);
   std::vector<DrawCommand> cmds;
   cmds.reserve(recs.size());
-  const float sx = guest_w ? float(w) / guest_w : 1.f, sy = guest_h ? float(h) / guest_h : 1.f;
+  // Keep the game's aspect ratio: scale uniformly and centre it (black bars on ultrawide / odd window sizes).
+  const float fit = (guest_w && guest_h) ? std::min(float(w) / guest_w, float(h) / guest_h) : 1.f;
+  const float sx = fit, sy = fit;
+  const float ox = (guest_w ? (float(w) - guest_w * fit) * 0.5f : 0.f);
+  const float oy = (guest_h ? (float(h) - guest_h * fit) * 0.5f : 0.f);
+  const Rect whole{uint32_t(std::max(0.f, ox) + .5f), uint32_t(std::max(0.f, oy) + .5f),
+                   std::max(1u, std::min(w, uint32_t(guest_w * fit + .5f))), std::max(1u, std::min(h, uint32_t(guest_h * fit + .5f)))};
   auto scale = [&](Rect g) {
-    if (g.width < 1 || g.height < 1 || (guest_w && g.x + g.width > guest_w + 1) ||
-        (guest_h && g.y + g.height > guest_h + 1))
-      return Rect{0, 0, w, h};
-    Rect o{uint32_t(g.x * sx), uint32_t(g.y * sy), std::max(1u, uint32_t(g.width * sx + .5f)),
+    if (!guest_w || !guest_h) return Rect{0, 0, w, h};
+    if (g.width < 1 || g.height < 1 || g.x + g.width > guest_w + 1 || g.y + g.height > guest_h + 1)
+      return whole;
+    Rect o{uint32_t(g.x * sx + ox), uint32_t(g.y * sy + oy), std::max(1u, uint32_t(g.width * sx + .5f)),
            std::max(1u, uint32_t(g.height * sy + .5f))};
     if (o.x >= w) o.x = w - 1;
     if (o.y >= h) o.y = h - 1;

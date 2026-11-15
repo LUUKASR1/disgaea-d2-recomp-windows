@@ -66,10 +66,97 @@ struct State {
   bool closed = false;
   bool resized = false;
   bool vsync = true;
+  bool fullscreen = false;
   bool initialized = false;
   uint64_t frames = 0, ignored_draws = 0, ignored_textures = 0;
   bool logged_draw = false;
 } g;
+
+// ---- player settings (saved between runs, like a PC game) ----------------
+// Stored in %LOCALAPPDATA%\\DisgaeaD2Recomp\\settings.ini (or D2_SETTINGS_DIR). Environment variables set by the
+// launcher (D2_VSYNC, D2_OUTPUT_WIDTH/HEIGHT) still win over the file.
+struct Settings {
+  bool fullscreen = false; // borderless fullscreen on the current monitor
+  bool vsync = true;
+  uint32_t width = 1280, height = 720; // windowed client size
+};
+Settings g_settings;
+
+std::string settings_file() {
+  std::string dir;
+  if (const char *e = std::getenv("D2_SETTINGS_DIR"); e && *e)
+    dir = e;
+  else if (const char *l = std::getenv("LOCALAPPDATA"); l && *l)
+    dir = std::string(l) + "\\DisgaeaD2Recomp";
+  else
+    return {};
+  CreateDirectoryA(dir.c_str(), nullptr);
+  return dir + "\\settings.ini";
+}
+
+void load_settings() {
+  const std::string path = settings_file();
+  if (!path.empty()) {
+    if (std::FILE *f = std::fopen(path.c_str(), "rb")) {
+      char line[256];
+      while (std::fgets(line, sizeof line, f)) {
+        char key[64] = {};
+        unsigned value = 0;
+        if (std::sscanf(line, "%63[^=]=%u", key, &value) != 2)
+          continue;
+        const std::string k = key;
+        if (k == "fullscreen") g_settings.fullscreen = value != 0;
+        else if (k == "vsync") g_settings.vsync = value != 0;
+        else if (k == "width" && value >= 640 && value <= 16384) g_settings.width = value;
+        else if (k == "height" && value >= 360 && value <= 16384) g_settings.height = value;
+      }
+      std::fclose(f);
+    }
+  }
+  const auto env_u = [](const char *name) -> unsigned { const char *e = std::getenv(name); return e && *e ? unsigned(std::atoi(e)) : 0u; };
+  if (const char *vs = std::getenv("D2_VSYNC"); vs && *vs) g_settings.vsync = vs[0] != '0';
+  if (env_u("D2_OUTPUT_WIDTH") >= 640 && env_u("D2_OUTPUT_HEIGHT") >= 360) {
+    g_settings.width = env_u("D2_OUTPUT_WIDTH");
+    g_settings.height = env_u("D2_OUTPUT_HEIGHT");
+  }
+}
+
+void save_settings() {
+  const std::string path = settings_file();
+  if (path.empty()) return;
+  if (std::FILE *f = std::fopen(path.c_str(), "wb")) {
+    std::fprintf(f, "fullscreen=%u\nvsync=%u\nwidth=%u\nheight=%u\n", g_settings.fullscreen ? 1u : 0u,
+                 g_settings.vsync ? 1u : 0u, g_settings.width, g_settings.height);
+    std::fclose(f);
+  }
+}
+
+// Borderless fullscreen: no mode switch, fast alt-tab, and the window keeps its normal size when restored.
+void set_fullscreen(bool on) {
+  static WINDOWPLACEMENT previous{sizeof(WINDOWPLACEMENT)};
+  static LONG_PTR previous_style = 0;
+  if (!g.hwnd || on == g.fullscreen)
+    return;
+  if (on) {
+    MONITORINFO mi{sizeof(mi)};
+    if (!GetWindowPlacement(g.hwnd, &previous) ||
+        !GetMonitorInfoA(MonitorFromWindow(g.hwnd, MONITOR_DEFAULTTONEAREST), &mi))
+      return;
+    previous_style = GetWindowLongPtrA(g.hwnd, GWL_STYLE);
+    SetWindowLongPtrA(g.hwnd, GWL_STYLE, previous_style & ~LONG_PTR(WS_OVERLAPPEDWINDOW));
+    SetWindowPos(g.hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                 mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+  } else {
+    SetWindowLongPtrA(g.hwnd, GWL_STYLE, previous_style ? previous_style : LONG_PTR(WS_OVERLAPPEDWINDOW | WS_VISIBLE));
+    SetWindowPlacement(g.hwnd, &previous);
+    SetWindowPos(g.hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+  }
+  g.fullscreen = on;
+  g_settings.fullscreen = on;
+  g.resized = true;
+  save_settings();
+}
 
 LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
@@ -83,12 +170,23 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   case WM_SIZE:
     g.resized = true;
     return 0;
-  case WM_KEYDOWN:
-    if (wp == VK_ESCAPE) {
-      g.closed = true;
-      DestroyWindow(hwnd);
+  case WM_SETCURSOR:
+    if (g.fullscreen && LOWORD(lp) == HTCLIENT) {
+      SetCursor(nullptr); // no mouse pointer over a fullscreen game
+      return TRUE;
     }
+    break;
+  case WM_KEYDOWN:
+    // Esc no longer quits: it belongs to the game. Close with Alt+F4 or the window button.
+    if (wp == VK_F11)
+      set_fullscreen(!g.fullscreen);
     return 0;
+  case WM_SYSKEYDOWN:
+    if (wp == VK_RETURN && (lp & (1 << 29))) { // Alt+Enter
+      set_fullscreen(!g.fullscreen);
+      return 0;
+    }
+    break;
   }
   return DefWindowProcA(hwnd, msg, wp, lp);
 }
@@ -373,10 +471,10 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height,
 #else
   st.enabled = !(sv && sv[0] == '0');
 #endif
-  const char *vs = std::getenv("D2_VSYNC");
-  g.vsync = !(vs && vs[0] == '0');
+  load_settings();
+  g.vsync = g_settings.vsync;
   try {
-    g.hwnd = create_window(width, height, title);
+    g.hwnd = create_window(g_settings.width, g_settings.height, title);
     if (!g.hwnd) {
       std::fprintf(stderr, "[vulkan] window creation failed\n");
       return -1;
@@ -396,6 +494,8 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height,
         d2::vulkan::Vertex{zero, zero, {}}};
     g.renderer->setGeometry(tri);
 #endif
+    if (g_settings.fullscreen)
+      set_fullscreen(true);
     uint32_t w = width, h = height;
     client_size(w, h);
     if (!g.renderer->resize(w, h, g.vsync))
