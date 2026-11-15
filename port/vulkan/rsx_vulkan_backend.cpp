@@ -83,6 +83,8 @@ struct Settings {
   uint32_t scale_pct = 100; // internal resolution: percent of the output size (50..200)
   // Image filters, each 0 (off) .. 3 (strong).
   uint32_t sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0;
+  uint32_t aa = 0;       // 0 off, 1 FXAA
+  uint32_t upscaler = 0; // 0 bilinear, 1 AMD FSR 1.0 (EASU + RCAS)
   uint32_t width = 1280, height = 720; // windowed client size
 };
 Settings g_settings;
@@ -119,6 +121,8 @@ void load_settings() {
         else if (k == "crtmask" && value <= 3) g_settings.crt_mask = value;
         else if (k == "vignette" && value <= 3) g_settings.vignette = value;
         else if (k == "vivid" && value <= 3) g_settings.vivid = value;
+        else if (k == "aa" && value <= 1) g_settings.aa = value;
+        else if (k == "upscaler" && value <= 1) g_settings.upscaler = value;
         else if (k == "width" && value >= 640 && value <= 16384) g_settings.width = value;
         else if (k == "height" && value >= 360 && value <= 16384) g_settings.height = value;
       }
@@ -137,9 +141,9 @@ void save_settings() {
   const std::string path = settings_file();
   if (path.empty()) return;
   if (std::FILE *f = std::fopen(path.c_str(), "wb")) {
-    std::fprintf(f, "fullscreen=%u\nvsync=%u\nshowfps=%u\nscale=%u\nsharpen=%u\nscanlines=%u\ncrtmask=%u\nvignette=%u\nvivid=%u\nwidth=%u\nheight=%u\n",
+    std::fprintf(f, "fullscreen=%u\nvsync=%u\nshowfps=%u\nscale=%u\nsharpen=%u\nscanlines=%u\ncrtmask=%u\nvignette=%u\nvivid=%u\naa=%u\nupscaler=%u\nwidth=%u\nheight=%u\n",
                  g_settings.fullscreen ? 1u : 0u, g_settings.vsync ? 1u : 0u, g_settings.show_fps ? 1u : 0u, g_settings.scale_pct,
-                 g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid,
+                 g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid, g_settings.aa, g_settings.upscaler,
                  g_settings.width, g_settings.height);
     std::fclose(f);
   }
@@ -176,7 +180,7 @@ void set_fullscreen(bool on) {
 // Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
 // would also move the game. The layout is produced each frame by build_overlay() (further down); the window
 // thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
-enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS };
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS };
 constexpr int kMaxHits = 16;
 constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
 constexpr int kResCount = 5;
@@ -254,11 +258,14 @@ void menu_activate(int action, int dir) {
   case A_MASK: g_settings.crt_mask = cycle_level(g_settings.crt_mask, dir); break;
   case A_VIGNETTE: g_settings.vignette = cycle_level(g_settings.vignette, dir); break;
   case A_VIVID: g_settings.vivid = cycle_level(g_settings.vivid, dir); break;
+  case A_AA: if (g_settings.upscaler) return; g_settings.aa = g_settings.aa ? 0u : 1u; break;
+  case A_UPSCALER: g_settings.upscaler = g_settings.upscaler ? 0u : 1u; break;
   case A_RESET:
     g.vsync = g_settings.vsync = true;
     g_settings.show_fps = false;
     g_settings.scale_pct = 100;
     g_settings.sharpen = g_settings.scanlines = g_settings.crt_mask = g_settings.vignette = g_settings.vivid = 0;
+    g_settings.aa = g_settings.upscaler = 0;
     g.resized = true;
     if (g.fullscreen) set_fullscreen(false);
     apply_window_size(1280, 720);
@@ -473,10 +480,13 @@ void dump_pair(const rsx_state *r, uint64_t vh) {
 // CRT mask, vignette; [1] saturation, contrast.
 void apply_filters() {
   static const float sharpen[4] = {0.f, 0.3f, 0.6f, 1.0f}, scan[4] = {0.f, 0.2f, 0.4f, 0.6f}, mask[4] = {0.f, 0.25f, 0.5f, 0.75f},
-                     vig[4] = {0.f, 0.3f, 0.55f, 0.8f}, sat[4] = {1.f, 1.15f, 1.3f, 1.5f}, con[4] = {1.f, 1.05f, 1.1f, 1.15f};
+                     vig[4] = {0.f, 0.3f, 0.55f, 0.8f}, sat[4] = {1.f, 1.15f, 1.3f, 1.5f}, con[4] = {1.f, 1.05f, 1.1f, 1.15f},
+                     rcas[4] = {0.5f, 0.7f, 0.87f, 1.0f}; // FSR RCAS amount (2^-stops), driven by "Nitidez"
   const std::array<float, 8> params{sharpen[g_settings.sharpen], scan[g_settings.scanlines], mask[g_settings.crt_mask],
-                                    vig[g_settings.vignette], sat[g_settings.vivid], con[g_settings.vivid], 0.f, 0.f};
-  const bool active = g_settings.sharpen || g_settings.scanlines || g_settings.crt_mask || g_settings.vignette || g_settings.vivid;
+                                    vig[g_settings.vignette], sat[g_settings.vivid], con[g_settings.vivid], g_settings.aa ? 1.f : 0.f,
+                                    g_settings.upscaler ? rcas[g_settings.sharpen] : 0.f};
+  const bool active = g_settings.sharpen || g_settings.scanlines || g_settings.crt_mask || g_settings.vignette || g_settings.vivid || g_settings.aa ||
+                      g_settings.upscaler;
   g.renderer->setPostParams(params, active);
 }
 
@@ -521,7 +531,7 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   std::lock_guard<std::mutex> lock(menu.m);
   menu.sx = cw ? float(w) / float(cw) : 1.f;
   menu.sy = ch ? float(h) / float(ch) : 1.f;
-  constexpr int kRows = 7; // five settings + restore + back
+  constexpr int kRows = 9; // settings + restore + back (pages with fewer rows are padded)
   const float rowh = 44.f * s, head_h = 70.f * s, tab_h = 42.f * s, foot_h = 96.f * s;
   const float pw = std::min(float(w) - 20.f, 700.f * s), ph = head_h + tab_h + rowh * kRows + foot_h;
   const float px = std::max(0.f, (float(w) - pw) * 0.5f), py = std::max(0.f, (float(h) - ph) * 0.5f);
@@ -582,6 +592,8 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
       {A_SCALE, "Resolu\303\247\303\243o interna", scale_text, true, false},
       {A_VSYNC, "V-Sync", g.vsync ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", true, false},
       {A_FPS, "Mostrar FPS", g_settings.show_fps ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", true, false},
+      {A_AA, "Suaviza\303\247\303\243o (FXAA)", g_settings.aa ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", !g_settings.upscaler, false},
+      {A_UPSCALER, "Upscaler", g_settings.upscaler ? "\302\253 AMD FSR 1.0 \302\273" : "\302\253 Bilinear \302\273", true, false},
       {A_RESET, "Restaurar padr\303\265es", "", true, true},
       {A_CLOSE, "Voltar ao jogo", "", true, true},
   };
@@ -591,6 +603,8 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
       {A_MASK, "M\303\241scara CRT", level_names[g_settings.crt_mask], true, false},
       {A_VIGNETTE, "Vinheta", level_names[g_settings.vignette], true, false},
       {A_VIVID, "Cores vivas", level_names[g_settings.vivid], true, false},
+      {-1, "", "", false, false},
+      {-1, "", "", false, false},
       {A_RESET, "Restaurar padr\303\265es", "", true, true},
       {A_CLOSE, "Voltar ao jogo", "", true, true},
   };
@@ -622,7 +636,7 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   tr::ui_rect(px + 30.f * s, fy - 4.f * s, pw - 60.f * s, 2.f * s, {1.f, 0.28f, 0.58f, 0.8f});
   tr::ui_text(px + 30.f * s, fy + 4.f * s, "Clique para avan\303\247ar \302\267 roda do mouse ou bot\303\243o direito: voltar", 17.f * s, gray);
   tr::ui_text(px + 30.f * s, fy + 28.f * s,
-              menu.page == 0 ? "Resolu\303\247\303\243o interna acima de 100% deixa a imagem mais n\303\255tida, mas exige mais da placa."
+              menu.page == 0 ? "AMD FSR 1.0 rende melhor com resolu\303\247\303\243o interna abaixo de 100%. Com FSR ligado, a Nitidez ajusta o RCAS."
                              : "Os filtros valem para a imagem inteira. \"Desligado\" volta ao original.",
               17.f * s, gray);
   tr::ui_text(px + 30.f * s, fy + 52.f * s, "F1 ou Esc fecha \302\267 as op\303\247\303\265es s\303\243o salvas sozinhas.", 17.f * s, gray);
