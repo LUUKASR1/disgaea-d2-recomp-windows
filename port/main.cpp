@@ -322,6 +322,7 @@ static void d2_runtime_cpu(double elapsed)
 #ifdef _WIN32
 #include "d2_loop_frame.h"
 #include "d2_windows_shutdown.h" /* D2_WINDOWS_SHUTDOWN_V1 */
+#include "d2_d3d12_options.inc" /* D2_D3D12_OPTIONS_V1: F1 panel of the DirectX 12 window */
 #endif
 static DWORD WINAPI frame_clock(LPVOID)
 {
@@ -330,6 +331,15 @@ static DWORD WINAPI frame_clock(LPVOID)
     const char* title = getenv("PS3_TITLE");
     if (!title || !*title) title = "ps3recomp";
 
+#ifdef _WIN32
+    /* DirectX 12: turn the options saved in the F1 panel (output size, internal resolution, upscaler) into the
+     * renderer's environment before it starts. */
+#  ifdef D2_VULKAN_GAME_BACKEND
+    if (!d2_use_vulkan()) d2opt::prepare();
+#  else
+    d2opt::prepare();
+#  endif
+#endif
     int rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
 #if defined(_WIN32) && defined(D2_VULKAN_GAME_BACKEND)
     // Explicit (never silent) fallback: Vulkan could not start and the launcher asked for DirectX 12 instead.
@@ -342,6 +352,7 @@ static DWORD WINAPI frame_clock(LPVOID)
                 "Vulkan nao iniciou neste computador.\nO jogo vai usar DirectX 12.\n\n"
                 "Vulkan failed to start on this computer.\nThe game will use DirectX 12.",
                 "Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+            d2opt::prepare();
             rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
         }
     }
@@ -349,6 +360,14 @@ static DWORD WINAPI frame_clock(LPVOID)
         s_backend_present = rsx_vulkan_backend_present;
         s_backend_pump = rsx_vulkan_backend_pump_messages;
     }
+#endif
+#ifdef _WIN32
+    /* DirectX 12 has no panel of its own: attach the F1 options panel to its window. */
+#  ifdef D2_VULKAN_GAME_BACKEND
+    if (rsx_ok && !d2_use_vulkan()) d2opt::attach();
+#  else
+    if (rsx_ok) d2opt::attach();
+#  endif
 #endif
     fprintf(stderr, "[rsx] %s backend init %s\n", RSX_BACKEND_NAME,
             rsx_ok ? "OK -- window open" : "FAILED");
@@ -693,11 +712,129 @@ static bool d2_standalone_start(std::string& eboot_ansi)
 }
 #endif
 
+
+/* ---- Graphics API chosen inside the game ---------------------------------------------------------------------
+ * The Vulkan options panel (SYSTEM tab) and F1 in the DirectX 12 window store "api=0|1" (0 DirectX 12, 1 Vulkan)
+ * in settings.ini and restart the game. The next start applies it here, before the backend is picked, so it wins
+ * over the launcher's D2_GRAPHICS_API. A restarted game waits for the previous process (D2_RESTART_WAIT_PID). */
+static std::wstring d2_settings_ini_path()
+{
+    std::wstring dir;
+    wchar_t* value = nullptr;
+    size_t length = 0;
+    if (_wdupenv_s(&value, &length, L"D2_SETTINGS_DIR") == 0 && value && *value) dir = value;
+    free(value);
+    if (dir.empty()) {
+        value = nullptr;
+        if (_wdupenv_s(&value, &length, L"LOCALAPPDATA") == 0 && value && *value) dir = std::wstring(value) + L"\\DisgaeaD2Recomp";
+        free(value);
+    }
+    if (dir.empty()) return std::wstring();
+    CreateDirectoryW(dir.c_str(), nullptr);
+    return dir + L"\\settings.ini";
+}
+
+static int d2_saved_api(void)
+{
+    const std::wstring path = d2_settings_ini_path();
+    if (path.empty()) return -1;
+    std::ifstream in(std::filesystem::path(path), std::ios::binary);
+    std::string line;
+    int api = -1;
+    while (std::getline(in, line)) {
+        if (line.rfind("api=", 0) == 0 && line.size() >= 5 && (line[4] == '0' || line[4] == '1')) api = line[4] - '0';
+    }
+    return api;
+}
+
+static void d2_write_saved_api(int api)
+{
+    const std::wstring path = d2_settings_ini_path();
+    if (path.empty()) return;
+    std::string text, line;
+    {
+        std::ifstream in(std::filesystem::path(path), std::ios::binary);
+        while (std::getline(in, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+            if (line.rfind("api=", 0) != 0 && !line.empty()) text += line + "\n";
+        }
+    }
+    text += "api=" + std::to_string(api) + "\n";
+    std::ofstream out(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
+    out << text;
+}
+
+#ifdef D2_VULKAN_GAME_BACKEND
+static void d2_apply_saved_api(void)
+{
+    const int api = d2_saved_api();
+    if (api == 0) {
+        _putenv_s("D2_GRAPHICS_API", "d3d12");
+    } else if (api == 1) {
+        _putenv_s("D2_GRAPHICS_API", "vulkan");
+        _putenv_s("D2_VULKAN_EXPERIMENTAL", "1");
+        _putenv_s("D2_VULKAN_FALLBACK", "d3d12");
+    }
+}
+#else
+static void d2_apply_saved_api(void) {}
+#endif
+
+/* Starts this program again with the same command line and closes this one through the normal shutdown (which
+ * waits for a save in progress). The new copy waits for this process to be gone. Unsaved progress is lost. */
+static void d2_restart_process(void)
+{
+    wchar_t exe[MAX_PATH * 2];
+    DWORD n = GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof exe / sizeof exe[0]));
+    if (n == 0 || n >= sizeof exe / sizeof exe[0]) return;
+    wchar_t pid[32];
+    swprintf(pid, sizeof pid / sizeof pid[0], L"%lu", (unsigned long)GetCurrentProcessId());
+    _wputenv_s(L"D2_RESTART_WAIT_PID", pid);
+    std::wstring command = GetCommandLineW();
+    STARTUPINFOW startup;
+    ZeroMemory(&startup, sizeof startup);
+    startup.cb = sizeof startup;
+    PROCESS_INFORMATION info;
+    ZeroMemory(&info, sizeof info);
+    fflush(nullptr);
+    if (!CreateProcessW(exe, &command[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &info)) {
+        _putenv_s("D2_RESTART_WAIT_PID", "");
+        fprintf(stderr, "[graphics] restart failed (error %lu)\n", (unsigned long)GetLastError());
+        return;
+    }
+    CloseHandle(info.hThread);
+    CloseHandle(info.hProcess);
+    ps3_host_request_stop(); /* the normal close path: waits for any save in progress, then ends the process */
+}
+
+extern "C" void d2_restart_with_api(int api)
+{
+    if (api >= 0) d2_write_saved_api(api); /* api < 0: restart with the same API (options that apply at start) */
+    d2_restart_process();
+}
+
+static void d2_wait_for_previous_instance(void)
+{
+    wchar_t* value = nullptr;
+    size_t length = 0;
+    if (_wdupenv_s(&value, &length, L"D2_RESTART_WAIT_PID") != 0 || !value) return;
+    const unsigned long pid = wcstoul(value, nullptr, 10);
+    free(value);
+    _putenv_s("D2_RESTART_WAIT_PID", "");
+    if (!pid) return;
+    HANDLE previous = OpenProcess(SYNCHRONIZE, FALSE, (DWORD)pid);
+    if (!previous) return;
+    WaitForSingleObject(previous, 30000);
+    CloseHandle(previous);
+}
+
+
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
     static std::string standalone_eboot;
     static char* standalone_argv[2];
+    d2_wait_for_previous_instance();
     if (argc == 2 && strcmp(argv[1], "--create-shortcut") == 0) return d2_create_shortcut();
     if (argc < 2) {
         if (!d2_standalone_start(standalone_eboot)) return 2;
@@ -706,6 +843,7 @@ int main(int argc, char** argv)
         argv = standalone_argv;
         argc = 2;
     }
+    d2_apply_saved_api();
     if (const char* error = d2::graphics::unavailable_reason(
             d2::graphics::requested_api(getenv("D2_GRAPHICS_API")),
             getenv("D2_VULKAN_EXPERIMENTAL"))) {

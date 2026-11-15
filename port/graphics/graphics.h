@@ -18,6 +18,7 @@ int d2_graphics_scene(uint32_t frame, void** resource);
 int d2_graphics_present(uint32_t frame, void* scene);
 void* d2_graphics_output(uint32_t frame);
 void d2_graphics_shutdown(void);
+void d2_graphics_set_post(const float* values,int enabled);
 #ifdef __cplusplus
 }
 #endif

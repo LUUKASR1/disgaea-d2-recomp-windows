@@ -88,6 +88,7 @@ struct Settings {
   uint32_t sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0;
   uint32_t aa = 0;       // 0 off, 1 FXAA
   uint32_t lang = 0;     // menu language: 0 Portugues, 1 English
+  int api = -1;          // graphics API for the next start: 0 DirectX 12, 1 Vulkan, -1 not chosen in the game
   // Keyboard bindings (Windows virtual-key codes) for the pad buttons, in the order of kKeyActions below.
   int keys[14] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
   uint32_t upscaler = 0; // 0 bilinear, 1 AMD FSR 1.0 (EASU + RCAS)
@@ -135,6 +136,7 @@ void load_settings() {
         else if (k == "aa" && value <= 1) g_settings.aa = value;
         else if (k == "upscaler" && value <= 1) g_settings.upscaler = value;
         else if (k == "lang" && value <= 1) g_settings.lang = value;
+        else if (k == "api" && value <= 1) g_settings.api = int(value);
         else if (k.rfind("key", 0) == 0 && k.size() > 3 && value >= 1 && value <= 254) {
           const int idx = std::atoi(k.c_str() + 3);
           if (idx >= 0 && idx < 14) g_settings.keys[idx] = int(value);
@@ -162,6 +164,7 @@ void save_settings() {
                  g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid, g_settings.aa, g_settings.upscaler, g_settings.lang,
                  g_settings.width, g_settings.height);
     for (int i = 0; i < 14; i++) std::fprintf(f, "key%d=%d\n", i, g_settings.keys[i]);
+    if (g_settings.api >= 0) std::fprintf(f, "api=%d\n", g_settings.api);
     std::fclose(f);
   }
 }
@@ -197,7 +200,7 @@ void set_fullscreen(bool on) {
 // Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
 // would also move the game. The layout is produced each frame by build_overlay() (further down); the window
 // thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
-enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET };
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET, A_API, A_TAB_SYSTEM };
 constexpr int A_KEY0 = 200; // A_KEY0 + i: rebind pad action i
 constexpr int kMaxHits = 32;
 constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
@@ -245,6 +248,29 @@ void apply_window_size(uint32_t w, uint32_t h) {
   RECT wr{0, 0, (LONG)w, (LONG)h};
   AdjustWindowRect(&wr, DWORD(GetWindowLongPtrA(g.hwnd, GWL_STYLE)), FALSE);
   SetWindowPos(g.hwnd, nullptr, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// ---- Graphics API switch ------------------------------------------------------------------------------------
+// The API is chosen before the window exists, so the switch saves the choice (api= in settings.ini) and restarts
+// the game; main.cpp reads it at the next start. The first click only arms the row, a second click within a few
+// seconds restarts (unsaved game progress is lost, exactly like closing the window).
+#ifdef D2_VULKAN_GAME_BACKEND
+extern "C" void d2_restart_with_api(int api);
+#endif
+std::atomic<ULONGLONG> g_api_armed_until{0};
+bool api_is_armed() { return GetTickCount64() < g_api_armed_until.load(); }
+void request_api_switch() {
+  if (!api_is_armed()) {
+    g_api_armed_until = GetTickCount64() + 6000;
+    return;
+  }
+  g_api_armed_until = 0;
+  g_settings.api = 0; // this backend is Vulkan: the only other choice is DirectX 12
+  save_settings();
+  std::fprintf(stderr, "[vulkan] graphics API switch requested: restarting with DirectX 12\n");
+#ifdef D2_VULKAN_GAME_BACKEND
+  d2_restart_with_api(0);
+#endif
 }
 
 // ---- Keyboard bindings ------------------------------------------------------------------------------------------
@@ -305,6 +331,7 @@ void menu_activate(int action, int dir) {
     return;
   }
   g_listen = -1;
+  if (action != A_API) g_api_armed_until = 0;
   switch (action) {
   case A_MODE: set_fullscreen(!g.fullscreen); break;
   case A_WINSIZE:
@@ -337,6 +364,10 @@ void menu_activate(int action, int dir) {
   case A_AA: if (g_settings.upscaler) return; g_settings.aa = g_settings.aa ? 0u : 1u; break;
   case A_UPSCALER: g_settings.upscaler = g_settings.upscaler ? 0u : 1u; break;
   case A_LANG: g_settings.lang = g_settings.lang ? 0u : 1u; break;
+  case A_API:
+    if (dir != 1) { g_api_armed_until = 0; return; }
+    request_api_switch();
+    return;
   case A_RESET:
     g.vsync = g_settings.vsync = true;
     g_settings.show_fps = false;
@@ -350,9 +381,10 @@ void menu_activate(int action, int dir) {
   case A_CLOSE: menu_toggle(false); break;
   case A_TAB_VIDEO:
   case A_TAB_FILTERS:
-  case A_TAB_CONTROLS: {
+  case A_TAB_CONTROLS:
+  case A_TAB_SYSTEM: {
     std::lock_guard<std::mutex> lock(menu.m);
-    menu.page = action == A_TAB_CONTROLS ? 2 : action == A_TAB_FILTERS ? 1 : 0;
+    menu.page = action == A_TAB_SYSTEM ? 3 : action == A_TAB_CONTROLS ? 2 : action == A_TAB_FILTERS ? 1 : 0;
     return; // nothing to save
   }
   case A_KEYS_RESET:
@@ -470,7 +502,7 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         std::lock_guard<std::mutex> lock(menu.m);
         hit = menu.hover;
       }
-      if (hit >= 0 && hit < A_KEY0)
+      if (hit >= 0 && hit < A_KEY0 && hit != A_API)
         menu_activate(hit, short(HIWORD(wp)) > 0 ? -1 : 1);
       return 0;
     }
@@ -885,7 +917,9 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   const std::string hint_texts[3] = {
       L("Clique para avan\303\247ar \302\267 roda do mouse ou bot\303\243o direito: voltar",
         "Click to advance \302\267 mouse wheel or right click: go back"),
-      menu.page == 2 ? L("Clique em uma a\303\247\303\243o e aperte a nova tecla (Esc cancela). Vale quando n\303\243o h\303\241 controle conectado.",
+      menu.page == 3 ? L("Trocar a API reinicia o jogo (o progresso n\303\243o salvo \303\251 perdido). Para voltar ao Vulkan, aperte F1 na janela do DirectX 12.",
+                         "Switching the API restarts the game (unsaved progress is lost). To return to Vulkan, press F1 in the DirectX 12 window.")
+      : menu.page == 2 ? L("Clique em uma a\303\247\303\243o e aperte a nova tecla (Esc cancela). Vale quando n\303\243o h\303\241 controle conectado.",
                          "Click an action and press the new key (Esc cancels). Applies when no controller is connected.")
       : menu.page == 0 ? L("AMD FSR 1.0 rende melhor com resolu\303\247\303\243o interna abaixo de 100%. Com FSR ligado, a Nitidez ajusta o RCAS.",
                          "AMD FSR 1.0 works best with an internal resolution below 100%. With FSR on, Sharpness drives RCAS.")
@@ -928,10 +962,10 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   tr::ui_text_outline(px + (pw - tw) * 0.5f, py + (head_h - tr::ui_line_height(40.f * s)) * 0.5f, title, 40.f * s, white, ink, 2.8f * s);
 
   // Tabs.
-  const char *tab_names[3] = {L("V\303\215DEO", "VIDEO"), L("FILTROS", "FILTERS"), L("CONTROLES", "CONTROLS")};
-  const int tab_acts[3] = {A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS};
-  const float tab_gap = 10.f * s, tab_w = (pw - 48.f * s - 2.f * tab_gap) / 3.f;
-  for (int t = 0; t < 3; t++) {
+  const char *tab_names[4] = {L("V\303\215DEO", "VIDEO"), L("FILTROS", "FILTERS"), L("CONTROLES", "CONTROLS"), L("SISTEMA", "SYSTEM")};
+  const int tab_acts[4] = {A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_TAB_SYSTEM};
+  const float tab_gap = 10.f * s, tab_w = (pw - 48.f * s - 3.f * tab_gap) / 4.f;
+  for (int t = 0; t < 4; t++) {
     const float tx = px + 24.f * s + t * (tab_w + tab_gap), tww = tab_w, ty = py + head_h + 8.f * s;
     const bool active = menu.page == t, hot = menu.hover == tab_acts[t];
     add_hit(tab_acts[t], tx, ty, tww, tab_h - 8.f * s);
@@ -962,8 +996,16 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
       {A_FPS, L("Mostrar FPS", "Show FPS"), on_off[g_settings.show_fps ? 1 : 0], true, false},
       {A_AA, L("Suaviza\303\247\303\243o (FXAA)", "Anti-aliasing (FXAA)"), on_off[g_settings.aa ? 1 : 0], !g_settings.upscaler, false},
       {A_UPSCALER, "Upscaler", g_settings.upscaler ? "\302\253 AMD FSR 1.0 \302\273" : "\302\253 Bilinear \302\273", true, false},
-      {A_LANG, L("Idioma", "Language"), g_settings.lang ? "\302\253 English \302\273" : "\302\253 Portugu\303\252s \302\273", true, false},
+      {-1, "", "", false, false},
       {A_RESET, L("Restaurar padr\303\265es", "Restore defaults"), "", true, true},
+      {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
+  };
+  const Row sys_rows[kRows] = {
+      {A_LANG, L("Idioma", "Language"), g_settings.lang ? "\302\253 English \302\273" : "\302\253 Portugu\303\252s \302\273", true, false},
+      {A_API, L("API gr\303\241fica", "Graphics API"), api_is_armed() ? L("\302\253 Clique: reiniciar em DirectX 12 \302\273", "\302\253 Click: restart in DirectX 12 \302\273") : "\302\253 Vulkan \302\273", true, false},
+      {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
+      {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
+      {-1, "", "", false, false},
       {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
   };
   const Row filters[kRows] = {
@@ -984,7 +1026,7 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
       {A_KEYS_RESET, L("Restaurar teclas", "Restore keys"), "", true, true},
       {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
   };
-  const Row *rows = menu.page == 0 ? video : menu.page == 1 ? filters : controls;
+  const Row *rows = menu.page == 0 ? video : menu.page == 1 ? filters : menu.page == 3 ? sys_rows : controls;
   const float rows_y = py + head_h + tab_h;
   if (menu.page == 2) { // two columns of pad actions, each a button showing its current key
     const char *names[kKeyActionCount] = {

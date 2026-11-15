@@ -4,6 +4,7 @@
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
 #include <array>
+#include <atomic>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -25,16 +26,18 @@ template<class T> struct Ref {
     T** put(){if(p)p->Release();p=nullptr;return &p;}
     T* operator->()const{return p;}
 };
-struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=false,fsr=false;float sharpness=0.2f;} cfg;
+struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=false,fsr=false,post=false;float sharpness=0.2f;} cfg;
+// Image filters of the in-game options panel (FXAA, sharpen, scanlines, CRT mask, vignette, vivid colours), set from the UI thread.
+float post_values[8]={};std::atomic<int> post_enabled{0};
 struct State {
     ID3D12Device* device=nullptr; ID3D12CommandQueue* queue=nullptr;
     std::array<Ref<ID3D12Resource>,2> output;
     std::array<Ref<ID3D12CommandAllocator>,2> allocator;
     Ref<ID3D12GraphicsCommandList> commands;
-    Ref<ID3D12Resource> middle,final;
+    Ref<ID3D12Resource> middle,final,post;
     Ref<ID3D12DescriptorHeap> heap;
     Ref<ID3D12RootSignature> root;
-    Ref<ID3D12PipelineState> easu,rcas,bilinear;
+    Ref<ID3D12PipelineState> easu,rcas,bilinear,filters;
     UINT stride=0;
 };
 State* gpu=nullptr;
@@ -68,10 +71,88 @@ void descriptors(UINT index,ID3D12Resource* input,ID3D12Resource* output){
     D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.Format=DXGI_FORMAT_R8G8B8A8_UNORM;uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2D;
     gpu->device->CreateUnorderedAccessView(output,nullptr,&uav,cpu);
 }
+// Full-screen filters (same maths as the Vulkan post pass, without FSR). Reads t0, writes u0, 20 root constants:
+// pp[0] = (width, height, width, height), pp[1] = (sharpen, scanlines, CRT mask, vignette), pp[2] = (saturation, contrast, fxaa, 0).
+const char* d2_post_cs = R"HLSL(
+cbuffer PostParams : register(b0) { float4 pp[5]; };
+Texture2D<float4> scene : register(t0);
+RWTexture2D<float4> result : register(u0);
+SamplerState smp : register(s0);
+float3 fxaa(float2 uv, float2 texel) {
+    float3 lw = float3(0.299, 0.587, 0.114);
+    float3 rgbNW = scene.SampleLevel(smp, uv + float2(-1.0, -1.0) * texel, 0).rgb;
+    float3 rgbNE = scene.SampleLevel(smp, uv + float2( 1.0, -1.0) * texel, 0).rgb;
+    float3 rgbSW = scene.SampleLevel(smp, uv + float2(-1.0,  1.0) * texel, 0).rgb;
+    float3 rgbSE = scene.SampleLevel(smp, uv + float2( 1.0,  1.0) * texel, 0).rgb;
+    float3 rgbM = scene.SampleLevel(smp, uv, 0).rgb;
+    float lNW = dot(rgbNW, lw), lNE = dot(rgbNE, lw), lSW = dot(rgbSW, lw), lSE = dot(rgbSE, lw), lM = dot(rgbM, lw);
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    float2 dir = float2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+    float dirReduce = max((lNW + lNE + lSW + lSE) * (0.25 * (1.0 / 8.0)), 1.0 / 128.0);
+    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = clamp(dir * rcpDirMin, -8.0, 8.0) * texel;
+    float3 rgbA = 0.5 * (scene.SampleLevel(smp, uv + dir * (1.0 / 3.0 - 0.5), 0).rgb + scene.SampleLevel(smp, uv + dir * (2.0 / 3.0 - 0.5), 0).rgb);
+    float3 rgbB = rgbA * 0.5 + 0.25 * (scene.SampleLevel(smp, uv + dir * -0.5, 0).rgb + scene.SampleLevel(smp, uv + dir * 0.5, 0).rgb);
+    float lB = dot(rgbB, lw);
+    return (lB < lMin || lB > lMax) ? rgbA : rgbB;
+}
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)pp[0].z || id.y >= (uint)pp[0].w) return;
+    float2 uv = (float2(id.xy) + 0.5) / pp[0].zw;
+    float2 texel = 1.0 / pp[0].xy;
+    float sharpen = pp[1].x, scan = pp[1].y, crt = pp[1].z, vig = pp[1].w, sat = pp[2].x, con = pp[2].y, aa = pp[2].z;
+    float3 c = (aa > 0.0) ? fxaa(uv, texel) : scene.SampleLevel(smp, uv, 0).rgb;
+    if (sharpen > 0.0) {
+        float3 n = scene.SampleLevel(smp, uv + float2(0.0, -texel.y), 0).rgb;
+        float3 s = scene.SampleLevel(smp, uv + float2(0.0, texel.y), 0).rgb;
+        float3 e = scene.SampleLevel(smp, uv + float2(texel.x, 0.0), 0).rgb;
+        float3 w = scene.SampleLevel(smp, uv + float2(-texel.x, 0.0), 0).rgb;
+        float3 blur = (n + s + e + w) * 0.25;
+        c = saturate(c + (c - blur) * (sharpen * 2.0));
+    }
+    if (sat != 1.0 || con != 1.0) {
+        float l = dot(c, float3(0.299, 0.587, 0.114));
+        c = lerp(float3(l, l, l), c, sat);
+        c = saturate((c - 0.5) * con + 0.5);
+    }
+    float2 px = uv * pp[0].zw;
+    if (scan > 0.0) {
+        float period = max(2.0, pp[0].w / 360.0);
+        float lw = 0.5 + 0.5 * cos(6.2831853 * px.y / period);
+        c = c * (1.0 - scan * lw) * (1.0 + scan * 0.3);
+    }
+    if (crt > 0.0) {
+        float m = fmod(floor(px.x), 3.0);
+        float3 tri = float3(m < 0.5 ? 1.0 : 0.0, (m > 0.5 && m < 1.5) ? 1.0 : 0.0, m > 1.5 ? 1.0 : 0.0);
+        c = c * (float3(1.0, 1.0, 1.0) - crt * (float3(1.0, 1.0, 1.0) - tri)) * (1.0 + crt * 0.6);
+    }
+    if (vig > 0.0) {
+        float2 d = (uv - 0.5) * float2(1.2, 1.0);
+        c = c * (1.0 - vig * smoothstep(0.25, 0.85, length(d) * 1.6));
+    }
+    result[id.xy] = float4(saturate(c), 1.0);
+}
+)HLSL";
 void dispatch(ID3D12PipelineState* p,UINT index,const UINT constants[20]){
     auto h=gpu->heap->GetGPUDescriptorHandleForHeapStart();h.ptr+=static_cast<UINT64>(index)*gpu->stride;
     gpu->commands->SetPipelineState(p);gpu->commands->SetComputeRoot32BitConstants(0,20,constants,0);
     gpu->commands->SetComputeRootDescriptorTable(1,h);gpu->commands->Dispatch((cfg.ow+7)/8,(cfg.oh+7)/8,1);
+}
+// Runs the filters: source (any state given by `source_state`) -> gpu->post, ready to be copied to the swap buffer.
+void run_filters(UINT frame,ID3D12Resource* source,D3D12_RESOURCE_STATES source_state){
+    float values[20]{};values[0]=values[2]=static_cast<float>(cfg.ow);values[1]=values[3]=static_cast<float>(cfg.oh);
+    for(int i=0;i<8;++i)values[4+i]=post_values[i];
+    UINT constants[20];std::memcpy(constants,values,sizeof constants);
+    const UINT slot=12+frame*2;
+    descriptors(slot,source,gpu->post.p);
+    ID3D12DescriptorHeap* heaps[]={gpu->heap.p};gpu->commands->SetDescriptorHeaps(1,heaps);gpu->commands->SetComputeRootSignature(gpu->root.p);
+    transition(source,source_state,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    transition(gpu->post.p,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    dispatch(gpu->filters.p,slot,constants);
+    transition(source,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,source_state);
+    transition(gpu->post.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
 }
 }
 
@@ -165,9 +246,10 @@ extern "C" int d2_graphics_configure(UINT w,UINT h){
         const char* sharp=std::getenv("D2_FSR_SHARPNESS");
         if(sharp){char* end=nullptr;cfg.sharpness=std::strtof(sharp,&end);if(*end||!std::isfinite(cfg.sharpness)||cfg.sharpness<0||cfg.sharpness>1)throw std::runtime_error("Invalid FSR sharpness");}
         const char* hud=std::getenv("D2_HUD_AFTER_UPSCALE");
-        cfg.active=cfg.fsr||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h||(hud && !std::strcmp(hud,"1"));
+        cfg.post=flag("D2_POST_FILTERS");
+        cfg.active=cfg.fsr||cfg.post||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h||(hud && !std::strcmp(hud,"1"));
         if(cfg.active&&(std::getenv("GCM_GUEST_FB")||std::getenv("SUBVP_RTT")||std::getenv("GCM_COMPOSITE_RT")))throw std::runtime_error("Experimental framebuffer override incompatible with graphics scaling");
-        std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s DLSS=unavailable FG=unavailable\n",cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native");
+        std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s filters=%s DLSS=unavailable FG=unavailable\n",cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native",cfg.post?"available":"off");
         return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] %s\n",e.what());return -1;}
 }
@@ -182,10 +264,12 @@ extern "C" int d2_graphics_start(void* device,void* queue,void* swapchain){
         }
         checked(gpu->device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,gpu->allocator[0].p,nullptr,IID_ID3D12GraphicsCommandList,reinterpret_cast<void**>(gpu->commands.put())),"Graphics command list");
         checked(gpu->commands->Close(),"Close graphics command list");
-        if(!cfg.fsr&&cfg.rw==cfg.ow&&cfg.rh==cfg.oh)return 0;
-        texture(gpu->final.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        const bool scaling=cfg.fsr||cfg.rw!=cfg.ow||cfg.rh!=cfg.oh;
+        if(!scaling&&!cfg.post)return 0;
+        if(scaling)texture(gpu->final.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         if(cfg.fsr)texture(gpu->middle.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-        D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.NumDescriptors=12;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        if(cfg.post)texture(gpu->post.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.NumDescriptors=16;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         checked(gpu->device->CreateDescriptorHeap(&hd,IID_ID3D12DescriptorHeap,reinterpret_cast<void**>(gpu->heap.put())),"Graphics descriptor heap");
         gpu->stride=gpu->device->GetDescriptorHandleIncrementSize(hd.Type);
         D3D12_DESCRIPTOR_RANGE ranges[2]{};
@@ -198,7 +282,8 @@ extern "C" int d2_graphics_start(void* device,void* queue,void* swapchain){
         D3D12_ROOT_SIGNATURE_DESC rd{};rd.NumParameters=2;rd.pParameters=params;rd.NumStaticSamplers=1;rd.pStaticSamplers=&sampler;
         Ref<ID3DBlob> blob,error;checked(D3D12SerializeRootSignature(&rd,D3D_ROOT_SIGNATURE_VERSION_1,blob.put(),error.put()),"Graphics root signature");
         checked(gpu->device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(),IID_ID3D12RootSignature,reinterpret_cast<void**>(gpu->root.put())),"Graphics root signature object");
-        if(cfg.fsr){pipeline(d2_easu,gpu->easu);pipeline(d2_rcas,gpu->rcas);}else pipeline(d2_bilinear,gpu->bilinear);
+        if(cfg.fsr){pipeline(d2_easu,gpu->easu);pipeline(d2_rcas,gpu->rcas);}else if(scaling)pipeline(d2_bilinear,gpu->bilinear);
+        if(cfg.post)pipeline(d2_post_cs,gpu->filters);
         return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] start: %s\n",e.what());delete gpu;gpu=nullptr;return -1;}
 }
@@ -206,7 +291,7 @@ extern "C" int d2_graphics_scene(UINT frame,void** resource){
     if(!cfg.active)return 0;
     try{if(!gpu||frame>=2||!resource)throw std::runtime_error("Invalid graphics scene");
         auto** out=reinterpret_cast<ID3D12Resource**>(resource);texture(out,cfg.rw,cfg.rh,D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-        if(gpu->heap.p){if(cfg.fsr){descriptors(frame*6,*out,gpu->middle.p);descriptors(frame*6+2,gpu->middle.p,gpu->final.p);}else descriptors(frame*6+4,*out,gpu->final.p);}
+        if(gpu->heap.p){if(cfg.fsr){descriptors(frame*6,*out,gpu->middle.p);descriptors(frame*6+2,gpu->middle.p,gpu->final.p);}else if(gpu->final.p)descriptors(frame*6+4,*out,gpu->final.p);}
         return 1;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] scene: %s\n",e.what());return -1;}
 }
@@ -214,13 +299,20 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
     if(!cfg.active)return 0;
     try{if(!gpu||frame>=2)throw std::runtime_error("Invalid graphics present");
         auto* input=static_cast<ID3D12Resource*>(scene);auto* output=gpu->output[frame].p;
-        if(gpu->heap.p){if(cfg.fsr)descriptors(frame*6,input,gpu->middle.p);else descriptors(frame*6+4,input,gpu->final.p);}
+        if(gpu->heap.p){if(cfg.fsr)descriptors(frame*6,input,gpu->middle.p);else if(gpu->final.p)descriptors(frame*6+4,input,gpu->final.p);}
+        const bool scaling=cfg.fsr||cfg.rw!=cfg.ow||cfg.rh!=cfg.oh;
+        const bool filters=cfg.post&&gpu->filters.p&&post_enabled.load()!=0;
         checked(gpu->allocator[frame]->Reset(),"Graphics allocator reset");
         checked(gpu->commands->Reset(gpu->allocator[frame].p,nullptr),"Graphics list reset");
         transition(output,D3D12_RESOURCE_STATE_PRESENT,D3D12_RESOURCE_STATE_COPY_DEST);
-        if(!cfg.fsr&&cfg.rw==cfg.ow&&cfg.rh==cfg.oh){
+        if(!scaling&&!filters){
             transition(input,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_COPY_SOURCE);gpu->commands->CopyResource(output,input);
             transition(input,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
+        }else if(!scaling){
+            // Native size with image filters: scene -> filters -> swap buffer.
+            run_filters(frame,input,D3D12_RESOURCE_STATE_COMMON);
+            gpu->commands->CopyResource(output,gpu->post.p);
+            transition(gpu->post.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
         }else{
             UINT constants[20]{};constants[16]=cfg.ow;constants[17]=cfg.oh;
             ID3D12DescriptorHeap* heaps[]={gpu->heap.p};gpu->commands->SetDescriptorHeaps(1,heaps);gpu->commands->SetComputeRootSignature(gpu->root.p);
@@ -235,13 +327,25 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
                 transition(gpu->middle.p,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COMMON);
             }else dispatch(gpu->bilinear.p,frame*6+4,constants);
             transition(input,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_COMMON);
+            if(filters){
+                // Upscaled image -> filters -> swap buffer.
+                run_filters(frame,gpu->final.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                transition(gpu->final.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COMMON);
+                gpu->commands->CopyResource(output,gpu->post.p);
+                transition(gpu->post.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
+            }else{
             transition(gpu->final.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
             gpu->commands->CopyResource(output,gpu->final.p);
             transition(gpu->final.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
+            }
         }
         transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PRESENT);
         checked(gpu->commands->Close(),"Graphics close");ID3D12CommandList* lists[]={gpu->commands.p};gpu->queue->ExecuteCommandLists(1,lists);return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] present: %s\n",e.what());return -1;}
+}
+extern "C" void d2_graphics_set_post(const float* values,int enabled){
+    if(values)for(int i=0;i<8;++i)post_values[i]=values[i];
+    post_enabled.store(enabled?1:0);
 }
 extern "C" void* d2_graphics_output(UINT frame){return gpu && frame<2?gpu->output[frame].p:nullptr;}
 extern "C" void d2_graphics_shutdown(){delete gpu;gpu=nullptr;restore_display();}
