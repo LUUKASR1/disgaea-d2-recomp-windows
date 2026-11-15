@@ -47,6 +47,16 @@
 #include <atomic>
 #ifdef _WIN32
 #include "graphics/backend_choice.h"
+#include <shlobj.h>
+#include <fcntl.h>
+#include <io.h>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <algorithm>
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shell32.lib")
 #endif
 #ifdef D2_ENABLE_ISO_VFS
 #include "iso_runtime.h"
@@ -542,9 +552,160 @@ extern "C" void d2_settings_init(void);
 extern "C" int d2_settings_self_test(void);
 #endif
 
+/* ---------------------------------------------------------------------------
+ * Standalone start (Windows): double-click the .exe like any PC game.
+ *
+ * The launcher writes DisgaeaD2.ini next to this executable every time it runs the game (paths of the prepared
+ * data plus the environment it uses). With no command-line arguments the .exe reads that file, applies it and
+ * starts by itself: no launcher window, no console, log in %LOCALAPPDATA%\DisgaeaD2Recomp\logs. Format, one
+ * entry per line (UTF-8): eboot=<path>, cwd=<path>, iso=<path>, env.<NAME>=<value>, unset.<NAME>.
+ * --------------------------------------------------------------------------*/
+#ifdef _WIN32
+static std::wstring d2_widen(const std::string& s)
+{
+    if (s.empty()) return std::wstring();
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
+    std::wstring w((size_t)(n > 0 ? n : 0), L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n);
+    return w;
+}
+
+/* What the C runtime would have put into argv for a path (the ELF loader opens it with narrow fopen). */
+static std::string d2_ansi(const std::wstring& w)
+{
+    if (w.empty()) return std::string();
+    int n = WideCharToMultiByte(CP_ACP, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s((size_t)(n > 0 ? n : 0), '\0');
+    if (n > 0) WideCharToMultiByte(CP_ACP, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+
+static void d2_message(const wchar_t* text)
+{
+    MessageBoxW(nullptr, text, L"Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+}
+
+static std::filesystem::path d2_exe_path()
+{
+    wchar_t module[MAX_PATH * 2] = {};
+    GetModuleFileNameW(nullptr, module, (DWORD)(sizeof module / sizeof module[0]));
+    return std::filesystem::path(module);
+}
+
+/* "DisgaeaD2Recomp.exe --create-shortcut": puts a "Disgaea D2" shortcut on the desktop. */
+static int d2_create_shortcut()
+{
+    const std::filesystem::path exe = d2_exe_path();
+    int rc = 1;
+    if (SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
+        IShellLinkW* link = nullptr;
+        if (SUCCEEDED(CoCreateInstance(__uuidof(ShellLink), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IShellLinkW),
+                                       (void**)&link)) && link) {
+            link->SetPath(exe.c_str());
+            link->SetWorkingDirectory(exe.parent_path().c_str());
+            link->SetDescription(L"Disgaea D2");
+            link->SetIconLocation(exe.c_str(), 0);
+            IPersistFile* file = nullptr;
+            if (SUCCEEDED(link->QueryInterface(__uuidof(IPersistFile), (void**)&file)) && file) {
+                wchar_t desktop[MAX_PATH] = {};
+                if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_DESKTOPDIRECTORY, nullptr, 0, desktop))) {
+                    const std::wstring target = std::wstring(desktop) + L"\\Disgaea D2.lnk";
+                    if (SUCCEEDED(file->Save(target.c_str(), TRUE))) rc = 0;
+                }
+                file->Release();
+            }
+            link->Release();
+        }
+        CoUninitialize();
+    }
+    d2_message(rc == 0 ? L"Atalho \"Disgaea D2\" criado na Área de Trabalho.\n\nShortcut \"Disgaea D2\" created on the desktop."
+                       : L"Não foi possível criar o atalho.\n\nCould not create the shortcut.");
+    return rc;
+}
+
+/* Keep the log folder small: the newest 20 standalone logs stay. */
+static void d2_prune_logs(const std::filesystem::path& dir)
+{
+    std::error_code ec;
+    std::vector<std::filesystem::path> logs;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        const std::wstring name = entry.path().filename().wstring();
+        if (name.rfind(L"jogo-", 0) == 0 && entry.path().extension() == L".log") logs.push_back(entry.path());
+    }
+    std::sort(logs.begin(), logs.end());
+    for (size_t i = 0; i + 20 < logs.size(); i++) std::filesystem::remove(logs[i], ec);
+}
+
+/* Applies DisgaeaD2.ini and silences the console. Returns false (after telling the player) when it cannot start. */
+static bool d2_standalone_start(std::string& eboot_ansi)
+{
+    const std::filesystem::path exe = d2_exe_path();
+    std::ifstream in(exe.parent_path() / L"DisgaeaD2.ini", std::ios::binary);
+    if (!in) {
+        d2_message(L"O Disgaea D2 ainda não foi preparado neste computador.\n\n"
+                   L"Abra o launcher uma vez e jogue por ele. Depois disso este programa abre direto, sem o launcher.\n\n"
+                   L"Disgaea D2 has not been prepared on this computer yet. Start it once from the launcher; "
+                   L"after that this program opens on its own.");
+        return false;
+    }
+    std::wstring eboot, cwd;
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (line.empty() || line[0] == '#') continue;
+        const size_t eq = line.find('=');
+        const std::string key = eq == std::string::npos ? line : line.substr(0, eq);
+        const std::string value = eq == std::string::npos ? std::string() : line.substr(eq + 1);
+        if (key == "eboot") eboot = d2_widen(value);
+        else if (key == "cwd") cwd = d2_widen(value);
+        else if (key == "iso") _wputenv_s(L"D2_GAME_ISO", d2_widen(value).c_str());
+        else if (key.rfind("env.", 0) == 0 && key.size() > 4) _wputenv_s(d2_widen(key.substr(4)).c_str(), d2_widen(value).c_str());
+        else if (key.rfind("unset.", 0) == 0 && key.size() > 6) _wputenv_s(d2_widen(key.substr(6)).c_str(), L"");
+    }
+    std::error_code ec;
+    if (eboot.empty() || !std::filesystem::exists(std::filesystem::path(eboot), ec)) {
+        d2_message(L"Os arquivos preparados do jogo não foram encontrados (a pasta foi movida ou apagada?).\n\n"
+                   L"Abra o launcher e prepare o jogo de novo.\n\n"
+                   L"The prepared game files were not found. Open the launcher and prepare the game again.");
+        return false;
+    }
+    if (!cwd.empty()) SetCurrentDirectoryW(cwd.c_str());
+    if (!getenv("D2_CONSOLE")) { /* D2_CONSOLE=1 keeps the console for debugging */
+        wchar_t* local = nullptr;
+        size_t length = 0;
+        if (_wdupenv_s(&local, &length, L"LOCALAPPDATA") == 0 && local) {
+            const std::filesystem::path logs = std::filesystem::path(local) / L"DisgaeaD2Recomp" / L"logs";
+            free(local);
+            std::filesystem::create_directories(logs, ec);
+            SYSTEMTIME t;
+            GetLocalTime(&t);
+            wchar_t name[64];
+            swprintf(name, sizeof name / sizeof name[0], L"jogo-%04d%02d%02d-%02d%02d%02d.log", t.wYear, t.wMonth,
+                     t.wDay, t.wHour, t.wMinute, t.wSecond);
+            d2_prune_logs(logs);
+            FILE* out = nullptr;
+            if (_wfreopen_s(&out, (logs / name).c_str(), L"ab", stdout) == 0 && out) _dup2(_fileno(stdout), _fileno(stderr));
+        }
+        FreeConsole();
+    }
+    eboot_ansi = d2_ansi(eboot);
+    return true;
+}
+#endif
+
 int main(int argc, char** argv)
 {
 #ifdef _WIN32
+    static std::string standalone_eboot;
+    static char* standalone_argv[2];
+    if (argc == 2 && strcmp(argv[1], "--create-shortcut") == 0) return d2_create_shortcut();
+    if (argc < 2) {
+        if (!d2_standalone_start(standalone_eboot)) return 2;
+        standalone_argv[0] = argv[0];
+        standalone_argv[1] = &standalone_eboot[0];
+        argv = standalone_argv;
+        argc = 2;
+    }
     if (const char* error = d2::graphics::unavailable_reason(
             d2::graphics::requested_api(getenv("D2_GRAPHICS_API")),
             getenv("D2_VULKAN_EXPERIMENTAL"))) {

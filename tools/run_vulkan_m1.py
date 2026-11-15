@@ -48,6 +48,12 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == '--d3d12':
         env['D2_GRAPHICS_API'] = 'd3d12'
         env.pop('D2_VULKAN_EXPERIMENTAL', None)
+    if len(sys.argv) < 2 or sys.argv[1] not in ('--teste-fallback', '--d3d12'):
+        # After this run the executable can be opened directly (double-click / shortcut): see windows/player_config.py.
+        from player_config import write_player_config
+        written = write_player_config(exe, elf, workspace, iso, env, os.environ, profile['clear'])
+        if written:
+            print('Config para abrir o jogo direto: ' + str(written))
     logs = home / 'logs'
     logs.mkdir(parents=True, exist_ok=True)
     log = logs / ('jogo-vulkan-m1-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')

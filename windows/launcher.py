@@ -658,6 +658,14 @@ class Backend:
         env = display_environment(launch_environment(profile, config, os.environ), settings, home=self.home)
         from frame_capture import CaptureSession, clean_capture_environment
         env = clean_capture_environment(env)
+        # Let the executable start by itself later (double-click / desktop shortcut) with these same settings.
+        from player_config import write_player_config
+        player_env = env.copy()
+        player_env.pop('D2_GAME_ISO', None)
+        if iso_root is not None:
+            player_env['PS3_VFS_ROOT'] = str(iso_root)
+        write_player_config(iso_executable or repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf',
+                            repo, iso_path, player_env, os.environ, profile['clear'])
         session = None
         self.last_capture_report = None
         if not OFFICIAL_RELEASE and self.capture_enabled and self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
