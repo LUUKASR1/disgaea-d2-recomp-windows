@@ -17,6 +17,7 @@
 #include <windows.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -87,10 +88,13 @@ struct Settings {
   uint32_t sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0;
   uint32_t aa = 0;       // 0 off, 1 FXAA
   uint32_t lang = 0;     // menu language: 0 Portugues, 1 English
+  // Keyboard bindings (Windows virtual-key codes) for the pad buttons, in the order of kKeyActions below.
+  int keys[14] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
   uint32_t upscaler = 0; // 0 bilinear, 1 AMD FSR 1.0 (EASU + RCAS)
   uint32_t width = 1280, height = 720; // windowed client size
 };
 Settings g_settings;
+std::atomic<int> g_listen{-1}; // pad action waiting for a key press in the controls tab, or -1
 // UTF-8 text in the menu language: L(portuguese, english).
 inline const char *L(const char *pt, const char *en) { return g_settings.lang ? en : pt; }
 
@@ -131,6 +135,10 @@ void load_settings() {
         else if (k == "aa" && value <= 1) g_settings.aa = value;
         else if (k == "upscaler" && value <= 1) g_settings.upscaler = value;
         else if (k == "lang" && value <= 1) g_settings.lang = value;
+        else if (k.rfind("key", 0) == 0 && k.size() > 3 && value >= 1 && value <= 254) {
+          const int idx = std::atoi(k.c_str() + 3);
+          if (idx >= 0 && idx < 14) g_settings.keys[idx] = int(value);
+        }
         else if (k == "width" && value >= 640 && value <= 16384) g_settings.width = value;
         else if (k == "height" && value >= 360 && value <= 16384) g_settings.height = value;
       }
@@ -153,6 +161,7 @@ void save_settings() {
                  g_settings.fullscreen ? 1u : 0u, g_settings.vsync ? 1u : 0u, g_settings.show_fps ? 1u : 0u, g_settings.scale_pct,
                  g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid, g_settings.aa, g_settings.upscaler, g_settings.lang,
                  g_settings.width, g_settings.height);
+    for (int i = 0; i < 14; i++) std::fprintf(f, "key%d=%d\n", i, g_settings.keys[i]);
     std::fclose(f);
   }
 }
@@ -188,8 +197,9 @@ void set_fullscreen(bool on) {
 // Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
 // would also move the game. The layout is produced each frame by build_overlay() (further down); the window
 // thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
-enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS };
-constexpr int kMaxHits = 16;
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET };
+constexpr int A_KEY0 = 200; // A_KEY0 + i: rebind pad action i
+constexpr int kMaxHits = 32;
 constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
 constexpr int kResCount = 5;
 constexpr uint32_t kScalePct[] = {50, 75, 100, 150, 200};
@@ -211,6 +221,7 @@ bool menu_is_open() {
   return menu.open;
 }
 void menu_toggle(bool open) {
+  g_listen = -1;
   std::lock_guard<std::mutex> lock(menu.m);
   menu.open = open;
   menu.hover = -1;
@@ -235,8 +246,65 @@ void apply_window_size(uint32_t w, uint32_t h) {
   AdjustWindowRect(&wr, DWORD(GetWindowLongPtrA(g.hwnd, GWL_STYLE)), FALSE);
   SetWindowPos(g.hwnd, nullptr, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
+
+// ---- Keyboard bindings ------------------------------------------------------------------------------------------
+// The SDK pad backend reads these keys when no XInput controller is connected (ps3_pad_set_keyboard_map).
+constexpr int kKeyActionCount = 14;
+constexpr int kDefaultKeys[kKeyActionCount] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
+#ifdef D2_VULKAN_GAME_BACKEND
+extern "C" void ps3_pad_set_keyboard_map(const int *vk, int count);
+void apply_keymap() { ps3_pad_set_keyboard_map(g_settings.keys, kKeyActionCount); }
+#else
+void apply_keymap() {}
+#endif
+std::string vk_name(int vk) {
+  switch (vk) {
+  case VK_UP: return L("Seta cima", "Up");
+  case VK_DOWN: return L("Seta baixo", "Down");
+  case VK_LEFT: return L("Seta esq.", "Left");
+  case VK_RIGHT: return L("Seta dir.", "Right");
+  case VK_RETURN: return "Enter";
+  case VK_TAB: return "Tab";
+  case VK_SPACE: return L("Espa\303\247o", "Space");
+  case VK_BACK: return "Backspace";
+  case VK_SHIFT: return "Shift";
+  case VK_CONTROL: return "Ctrl";
+  case VK_MENU: return "Alt";
+  case VK_CAPITAL: return "Caps";
+  case VK_DELETE: return "Del";
+  case VK_INSERT: return "Ins";
+  case VK_HOME: return "Home";
+  case VK_END: return "End";
+  case VK_PRIOR: return "PgUp";
+  case VK_NEXT: return "PgDn";
+  default: break;
+  }
+  if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) return std::string(1, char(vk));
+  if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) return "Num" + std::string(1, char('0' + (vk - VK_NUMPAD0)));
+  if (vk >= VK_F1 && vk <= VK_F12) return "F" + std::to_string(vk - VK_F1 + 1);
+  char name[64] = {};
+  if (GetKeyNameTextA(LONG(MapVirtualKeyA(UINT(vk), MAPVK_VK_TO_VSC)) << 16, name, int(sizeof name)) > 0) return name;
+  return "VK" + std::to_string(vk);
+}
+// Binds `vk` to action `index`; a key already used by another action is swapped over to it.
+void assign_key(int index, int vk) {
+  if (index < 0 || index >= kKeyActionCount) return;
+  for (int i = 0; i < kKeyActionCount; i++)
+    if (i != index && g_settings.keys[i] == vk) g_settings.keys[i] = g_settings.keys[index];
+  g_settings.keys[index] = vk;
+  std::fprintf(stderr, "[vulkan][keys] action %d -> VK %d\n", index, vk);
+  apply_keymap();
+}
+bool key_is_bindable(int vk) {
+  return vk > 0 && vk < 255 && vk != VK_F1 && vk != VK_F11 && vk != VK_ESCAPE && vk != VK_LWIN && vk != VK_RWIN && vk != VK_APPS;
+}
 uint32_t cycle_level(uint32_t value, int dir) { return uint32_t((int(value) + dir + 4) % 4); }
 void menu_activate(int action, int dir) {
+  if (action >= A_KEY0 && action < A_KEY0 + kKeyActionCount) { // click on a key cell: wait for the new key
+    g_listen = action - A_KEY0;
+    return;
+  }
+  g_listen = -1;
   switch (action) {
   case A_MODE: set_fullscreen(!g.fullscreen); break;
   case A_WINSIZE:
@@ -281,11 +349,16 @@ void menu_activate(int action, int dir) {
     break;
   case A_CLOSE: menu_toggle(false); break;
   case A_TAB_VIDEO:
-  case A_TAB_FILTERS: {
+  case A_TAB_FILTERS:
+  case A_TAB_CONTROLS: {
     std::lock_guard<std::mutex> lock(menu.m);
-    menu.page = action == A_TAB_FILTERS ? 1 : 0;
+    menu.page = action == A_TAB_CONTROLS ? 2 : action == A_TAB_FILTERS ? 1 : 0;
     return; // nothing to save
   }
+  case A_KEYS_RESET:
+    for (int i = 0; i < kKeyActionCount; i++) g_settings.keys[i] = kDefaultKeys[i];
+    apply_keymap();
+    break;
   default: return;
   }
   save_settings();
@@ -378,7 +451,10 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     if (menu_is_open()) {
       const int hit = menu_hit(float(short(LOWORD(lp))), float(short(HIWORD(lp))));
-      if (hit >= 0)
+      if (hit >= A_KEY0) {
+        if (msg == WM_LBUTTONDOWN) menu_activate(hit, 1);
+        else g_listen = -1; // right click on a key cell cancels the rebinding
+      } else if (hit >= 0)
         menu_activate(hit, msg == WM_LBUTTONDOWN ? 1 : -1);
       return 0;
     }
@@ -394,7 +470,7 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         std::lock_guard<std::mutex> lock(menu.m);
         hit = menu.hover;
       }
-      if (hit >= 0)
+      if (hit >= 0 && hit < A_KEY0)
         menu_activate(hit, short(HIWORD(wp)) > 0 ? -1 : 1);
       return 0;
     }
@@ -406,6 +482,15 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     break;
   case WM_KEYDOWN:
+    if (g_listen.load() >= 0 && menu_is_open()) { // rebinding: the next key becomes the binding
+      if (wp == VK_ESCAPE) g_listen = -1;
+      else if (key_is_bindable(int(wp))) {
+        assign_key(g_listen.load(), int(wp));
+        g_listen = -1;
+        save_settings();
+      }
+      return 0;
+    }
     // Esc no longer quits: it belongs to the game. Close with Alt+F4 or the window button.
     if (wp == VK_F11)
       set_fullscreen(!g.fullscreen);
@@ -800,7 +885,9 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   const std::string hint_texts[3] = {
       L("Clique para avan\303\247ar \302\267 roda do mouse ou bot\303\243o direito: voltar",
         "Click to advance \302\267 mouse wheel or right click: go back"),
-      menu.page == 0 ? L("AMD FSR 1.0 rende melhor com resolu\303\247\303\243o interna abaixo de 100%. Com FSR ligado, a Nitidez ajusta o RCAS.",
+      menu.page == 2 ? L("Clique em uma a\303\247\303\243o e aperte a nova tecla (Esc cancela). Vale quando n\303\243o h\303\241 controle conectado.",
+                         "Click an action and press the new key (Esc cancels). Applies when no controller is connected.")
+      : menu.page == 0 ? L("AMD FSR 1.0 rende melhor com resolu\303\247\303\243o interna abaixo de 100%. Com FSR ligado, a Nitidez ajusta o RCAS.",
                          "AMD FSR 1.0 works best with an internal resolution below 100%. With FSR on, Sharpness drives RCAS.")
                      : L("Os filtros valem para a imagem inteira. \"Desligado\" volta ao original.",
                          "Filters apply to the whole image. \"Off\" restores the original."),
@@ -841,11 +928,13 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   tr::ui_text_outline(px + (pw - tw) * 0.5f, py + (head_h - tr::ui_line_height(40.f * s)) * 0.5f, title, 40.f * s, white, ink, 2.8f * s);
 
   // Tabs.
-  const char *tab_names[2] = {L("V\303\215DEO", "VIDEO"), L("FILTROS", "FILTERS")};
-  for (int t = 0; t < 2; t++) {
-    const float tx = px + 24.f * s + t * (pw / 2 - 12.f * s), tww = pw / 2 - 36.f * s, ty = py + head_h + 8.f * s;
-    const bool active = menu.page == t, hot = menu.hover == (t ? A_TAB_FILTERS : A_TAB_VIDEO);
-    add_hit(t ? A_TAB_FILTERS : A_TAB_VIDEO, tx, ty, tww, tab_h - 8.f * s);
+  const char *tab_names[3] = {L("V\303\215DEO", "VIDEO"), L("FILTROS", "FILTERS"), L("CONTROLES", "CONTROLS")};
+  const int tab_acts[3] = {A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS};
+  const float tab_gap = 10.f * s, tab_w = (pw - 48.f * s - 2.f * tab_gap) / 3.f;
+  for (int t = 0; t < 3; t++) {
+    const float tx = px + 24.f * s + t * (tab_w + tab_gap), tww = tab_w, ty = py + head_h + 8.f * s;
+    const bool active = menu.page == t, hot = menu.hover == tab_acts[t];
+    add_hit(tab_acts[t], tx, ty, tww, tab_h - 8.f * s);
     if (active) {
       tr::ui_gradient(tx, ty, tww, tab_h - 8.f * s, {1.f, 0.35f, 0.65f, 1.f}, {0.62f, 0.12f, 0.50f, 1.f}, 8.f * s);
       tr::ui_rect(tx, ty + tab_h - 11.f * s, tww, 3.f * s, gold);
@@ -889,9 +978,37 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
       {A_RESET, L("Restaurar padr\303\265es", "Restore defaults"), "", true, true},
       {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
   };
-  const Row *rows = menu.page == 0 ? video : filters;
+  const Row controls[kRows] = {
+      {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
+      {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
+      {A_KEYS_RESET, L("Restaurar teclas", "Restore keys"), "", true, true},
+      {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
+  };
+  const Row *rows = menu.page == 0 ? video : menu.page == 1 ? filters : controls;
   const float rows_y = py + head_h + tab_h;
+  if (menu.page == 2) { // two columns of pad actions, each a button showing its current key
+    const char *names[kKeyActionCount] = {
+        L("Cima", "Up"), L("Baixo", "Down"), L("Esquerda", "Left"), L("Direita", "Right"), L("Cruz", "Cross"), L("C\303\255rculo", "Circle"),
+        L("Quadrado", "Square"), L("Tri\303\242ngulo", "Triangle"), "L1", "R1", "L2", "R2", "Start", "Select"};
+    const float col_w = (pw - 60.f * s) * 0.5f, cfs = 23.f * s;
+    for (int i = 0; i < kKeyActionCount; i++) {
+      const int col = i / 7, row = i % 7;
+      const float cx = px + 22.f * s + col * (col_w + 16.f * s), cy = rows_y + rowh * row;
+      add_hit(A_KEY0 + i, cx, cy, col_w, rowh);
+      const bool listening = g_listen.load() == i, hot = menu.hover == A_KEY0 + i;
+      tr::ui_gradient(cx, cy + 3.f * s, col_w, rowh - 6.f * s,
+                      listening ? Color{1.f, 0.55f, 0.20f, 0.95f} : hot ? Color{1.f, 0.35f, 0.65f, 0.95f} : Color{0.18f, 0.09f, 0.30f, 0.9f},
+                      listening ? Color{0.75f, 0.25f, 0.10f, 0.95f} : hot ? Color{0.62f, 0.12f, 0.50f, 0.95f} : Color{0.10f, 0.05f, 0.20f, 0.9f}, 8.f * s);
+      if (listening || hot) tr::ui_rect(cx, cy + 3.f * s, 5.f * s, rowh - 6.f * s, gold);
+      const float ty = cy + (rowh - tr::ui_line_height(cfs)) * 0.5f;
+      tr::ui_text_outline(cx + 16.f * s, ty, names[i], cfs, white, ink, 2.f * s);
+      const std::string key = listening ? std::string(L("Pressione\342\200\246", "Press a key\342\200\246")) : vk_name(g_settings.keys[i]);
+      const float kw = tr::ui_text_width(key.c_str(), cfs);
+      tr::ui_text_outline(cx + col_w - 16.f * s - kw, ty, key.c_str(), cfs, gold, ink, 2.f * s);
+    }
+  }
   for (int i = 0; i < kRows; i++) {
+    if (menu.page == 2 && i < 8) continue; // the key grid above replaced these rows
     const float ry = rows_y + rowh * i;
     add_hit(rows[i].act, px, ry, pw, rowh);
     if (i > 0 && !rows[i].button) tr::ui_rect(px + 30.f * s, ry, pw - 60.f * s, 1.f * s, {1.f, 0.82f, 0.3f, 0.18f});
@@ -1086,6 +1203,7 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height,
   st.enabled = !(sv && sv[0] == '0');
 #endif
   load_settings();
+  apply_keymap(); // keyboard bindings chosen in the controls tab
   g.vsync = g_settings.vsync;
   try {
     g.hwnd = create_window(g_settings.width, g_settings.height, title);

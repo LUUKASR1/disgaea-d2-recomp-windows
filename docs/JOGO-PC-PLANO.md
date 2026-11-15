@@ -33,7 +33,7 @@ localmente a partir do ISO do próprio usuário e não pode ser distribuído pro
 
 ## Fora de alcance (por enquanto)
 
-Trocar DirectX 12 ↔ Vulkan com o jogo aberto (a API é escolhida antes de abrir), DLSS e geração de quadros.
+Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca com reinício automático), DLSS e geração de quadros.
 
 ## Lista de desejos (pedidos do usuário) e viabilidade
 
@@ -47,5 +47,8 @@ Trocar DirectX 12 ↔ Vulkan com o jogo aberto (a API é escolhida antes de abri
 | Contorno nos personagens | Baixa/Média | Um contorno por detecção de bordas na imagem toda é fácil; só nos personagens exige separar os desenhos deles. |
 | HDR | Média | Swapchain HDR10 + tone mapping; depende do monitor/Windows. |
 | Vídeos em HD | Baixa | Os vídeos são os do disco; só melhora trocando por arquivos em maior qualidade. |
-| Jogar com mouse e teclado | Média | Teclado já funciona como controle (fixo). Falta remapear teclas na interface; mouse como "mão" do jogo exige o jogo aceitar ponteiro. |
-| Slots de saves e load | Média | Gerenciador de saves (backup, importar/exportar, vários perfis) em cima das pastas de save atuais. |
+| Jogar com mouse e teclado | Média | Teclado já funciona como controle e as teclas são remapeáveis na aba CONTROLES do F1 (feito, testado). Mouse como "mão" dentro do jogo exige o jogo aceitar ponteiro (estruturas do jogo ainda não mapeadas). |
+| Slots de saves e load | Feito | Gerenciador de backups no launcher e diálogo de slots dentro do jogo (salvar/carregar). |
+| Trocar a API gráfica (D3D12 ↔ Vulkan) pelo overlay dentro do jogo | Média | Hoje a API é escolhida antes de abrir. Troca com o jogo aberto exige recriar o backend de vídeo em tempo de execução. Caminho realista: o overlay grava a escolha em `settings.ini` e reinicia o jogo sozinho já com a API nova (mantendo o `.exe` independente). |
+| Multithreading x86/x64 | Média/Baixa | Investigar: threads separadas para o processamento de comandos do RSX/pós-processamento e para o áudio, e opções de quantidade de threads no overlay. O alvo continua sendo 64 bits (x64); 32 bits (x86) não está previsto, pois o recomp e os backends gráficos são 64 bits. |
+| Código compilado direto | Alta (já é o modelo) | O jogo já é recompilação estática: o PPU é traduzido para C/C++ e compilado, sem interpretador. Dá para expor no overlay o estado e opções de build (por exemplo perfis de otimização, LTO/PGO e SIMD) e acelerar mais as funções críticas. |
