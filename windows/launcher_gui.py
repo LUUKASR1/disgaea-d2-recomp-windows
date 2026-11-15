@@ -229,7 +229,15 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
                 events.put(('done', ''))
         threading.Thread(target=execute, daemon=False).start()
 
+    def auto_backup_saves():
+        try:
+            import save_slots
+            save_slots.auto_backup(home)
+        except (OSError, ValueError):
+            pass  # a failed safety copy must never stop the game from opening
+
     def play():
+        auto_backup_saves()
         if ready and config.get('iso_path') and not packages and not firmware.get():
             try: save_settings(home, get_settings())
             except (OSError, ValueError) as error:
@@ -261,6 +269,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         selected = filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
             filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
         if not selected: return
+        auto_backup_saves()
         try:
             save_settings(home, get_settings())
         except (OSError, ValueError) as error:
@@ -282,6 +291,76 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         except OSError as error:
             messagebox.showerror('Meus saves', str(error))
 
+    def manage_saves():
+        import save_slots
+        win = tk.Toplevel(app)
+        win.title(translate('Backups de saves'))
+        win.configure(bg=BG)
+        win.geometry('640x430')
+        win.transient(app)
+        tk.Label(win, text=translate('Backups de saves'), bg=BG, fg=GOLD, font=('Segoe UI', 14, 'bold')).pack(anchor='w', padx=16, pady=(14, 2))
+        tk.Label(win, text=translate('Uma cópia automática é feita ao abrir o jogo (as 5 últimas ficam guardadas). Restaurar guarda antes os saves atuais.'),
+                 bg=BG, fg=MUTED, wraplength=600, justify='left').pack(anchor='w', padx=16)
+        frame = tk.Frame(win, bg=BG); frame.pack(fill='both', expand=True, padx=16, pady=10)
+        listbox = tk.Listbox(frame, bg=CARD, fg=TEXT, selectbackground=RED, activestyle='none', borderwidth=0, highlightthickness=0, font=('Consolas', 10))
+        listbox.pack(side='left', fill='both', expand=True)
+        bar = tk.Scrollbar(frame, command=listbox.yview); bar.pack(side='right', fill='y')
+        listbox.configure(yscrollcommand=bar.set)
+        entries_ = []
+
+        def refresh():
+            entries_[:] = save_slots.list_backups(home)
+            listbox.delete(0, 'end')
+            for _path, name, count in entries_:
+                listbox.insert('end', f'{name}   ({count} save{"s" if count != 1 else ""})')
+
+        def selected_backup():
+            sel = listbox.curselection()
+            if not sel:
+                messagebox.showinfo(translate('Backups de saves'), translate('Selecione um backup na lista.'), parent=win)
+                return None
+            return entries_[sel[0]][0]
+
+        def do_create():
+            try:
+                target = save_slots.create_backup(home, 'manual')
+            except OSError as error:
+                messagebox.showerror(translate('Backups de saves'), str(error), parent=win); return
+            if target is None:
+                messagebox.showinfo(translate('Backups de saves'), translate('Ainda não há saves para copiar.'), parent=win)
+            refresh()
+
+        def do_restore():
+            target = selected_backup()
+            if not target: return
+            if not messagebox.askyesno(translate('Restaurar backup'),
+                    translate('Substituir os saves atuais por este backup? Os saves atuais serão guardados em um novo backup antes.'), parent=win):
+                return
+            try:
+                save_slots.restore_backup(home, target)
+            except (OSError, ValueError) as error:
+                messagebox.showerror(translate('Backups de saves'), str(error), parent=win); return
+            refresh()
+            messagebox.showinfo(translate('Backups de saves'), translate('Backup restaurado.'), parent=win)
+
+        def do_delete():
+            target = selected_backup()
+            if not target: return
+            if not messagebox.askyesno(translate('Apagar backup'), translate('Apagar este backup definitivamente?'), parent=win):
+                return
+            try:
+                save_slots.delete_backup(home, target)
+            except (OSError, ValueError) as error:
+                messagebox.showerror(translate('Backups de saves'), str(error), parent=win); return
+            refresh()
+
+        row = tk.Frame(win, bg=BG); row.pack(fill='x', padx=16, pady=(0, 14))
+        for text, command in (('Criar backup agora', do_create), ('Restaurar selecionado', do_restore), ('Apagar selecionado', do_delete),
+                              ('Abrir pasta', lambda: open_path(save_slots.backups_directory(home)))):
+            tk.Button(row, text=translate(text), command=command, bg=PANEL, fg=TEXT, activebackground=RED, activeforeground=TEXT,
+                      relief='flat', padx=10, pady=6).pack(side='left', padx=(0, 8))
+        refresh()
+
     def save_help():
         from save_access import save_directory, SAVE_HELP
         messagebox.showinfo('Como usar meu save', translate(SAVE_HELP).format(path=save_directory(home)))
@@ -297,6 +376,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(page, 'Selecionar ISO e jogar' if clean else 'Jogar pela ISO (experimental)', play_iso)
     button(page, 'Meus saves — abrir pasta', open_saves)
     button(page, 'Como usar meu save', save_help)
+    button(page, 'Backups de saves', manage_saves)
     info = card(page)
     label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
@@ -438,6 +518,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         os.startfile(path)
     button(page, 'Abrir pasta de saves', open_saves)
     button(page, 'Como usar meu save', save_help)
+    button(page, 'Backups de saves', manage_saves)
     button(page, 'Abrir pasta local do aplicativo', lambda: open_path(home))
     button(page, 'Abrir logs do jogo', lambda: open_path(home / 'logs'))
     capture_button = None

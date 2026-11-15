@@ -276,5 +276,18 @@
   "No launcher: clique nos botões e nas opções normalmente.": "In the launcher: click buttons and options normally.",
   "Dentro do jogo: seleção direta de menus, personagens e casas pelo ponteiro ainda não está disponível. Use o teclado ou um controle.": "In the game: direct pointer selection of menus, characters and tiles is not available yet. Use the keyboard or a controller.",
   "DICA DO PRINNY": "PRINNY TIP",
-  "O teclado não respondeu? Desconecte o controle e clique na janela do jogo para devolver o foco a ela. Ao trocar de janela, o jogo deixa de receber as teclas.": "Keyboard not responding? Disconnect the controller and click the game window to restore focus. When you switch windows, the game stops receiving key input."
+  "O teclado não respondeu? Desconecte o controle e clique na janela do jogo para devolver o foco a ela. Ao trocar de janela, o jogo deixa de receber as teclas.": "Keyboard not responding? Disconnect the controller and click the game window to restore focus. When you switch windows, the game stops receiving key input.",
+  "Backups de saves": "Save backups",
+  "Uma cópia automática é feita ao abrir o jogo (as 5 últimas ficam guardadas). Restaurar guarda antes os saves atuais.": "An automatic copy is made whenever the game opens (the last 5 are kept). Restoring first backs up your current saves.",
+  "Selecione um backup na lista.": "Select a backup from the list.",
+  "Ainda não há saves para copiar.": "There are no saves to copy yet.",
+  "Restaurar backup": "Restore backup",
+  "Substituir os saves atuais por este backup? Os saves atuais serão guardados em um novo backup antes.": "Replace the current saves with this backup? Your current saves will be kept in a new backup first.",
+  "Backup restaurado.": "Backup restored.",
+  "Apagar backup": "Delete backup",
+  "Apagar este backup definitivamente?": "Permanently delete this backup?",
+  "Criar backup agora": "Create backup now",
+  "Restaurar selecionado": "Restore selected",
+  "Apagar selecionado": "Delete selected",
+  "Abrir pasta": "Open folder"
 }
