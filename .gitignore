@@ -33,6 +33,7 @@
 !/port/vulkan/
 !/port/CMakeLists.txt
 !/port/main.cpp
+!/port/d2_d3d12_options.inc
 !/port/stubs.cpp
 !/port/config.toml
 !/port/run.sh
