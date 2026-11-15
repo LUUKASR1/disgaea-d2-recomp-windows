@@ -238,7 +238,7 @@ inline std::unordered_map<uint64_t, std::string>& pack_index() {
         FindClose(h);
       }
     }
-    if (!idx.empty()) std::fprintf(stderr, "[textures] texture pack: %zu replacement(s) in %s\n", idx.size(), dir.c_str());
+    std::fprintf(stderr, "[textures] texture pack: %zu replacement(s) in %s\n", idx.size(), dir.c_str());
   }
   return idx;
 }
