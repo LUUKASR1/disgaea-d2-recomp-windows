@@ -23,6 +23,10 @@ void d2_graphics_set_post(const float* values,int enabled);
 void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,int kind,const void* decoded,uint32_t pitch);
 void d2_texture_set_dump(int on);
 int d2_texture_dump_enabled(void);
+int d2_texture_pack_enabled(void);
+/* RGBA8 replacement for the texture (malloc'd, free with d2_texture_free) or NULL. */
+uint8_t* d2_texture_replacement(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,uint32_t* out_w,uint32_t* out_h);
+void d2_texture_free(void* p);
 #ifdef __cplusplus
 }
 #endif

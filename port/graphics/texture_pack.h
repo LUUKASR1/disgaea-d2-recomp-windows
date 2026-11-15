@@ -24,6 +24,11 @@
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include "stb_image.h"
+#include <unordered_map>
 
 namespace d2tex {
 
@@ -206,6 +211,60 @@ inline void dump(const uint8_t *source, uint32_t source_bytes, uint32_t w, uint3
     std::lock_guard<std::mutex> g(lock);
     if (++written == 1) std::fprintf(stderr, "[textures] saving textures to %s\n", dir.c_str());
   }
+}
+
+// ---- replacement ------------------------------------------------------------------------------------------------
+// Any PNG in texture-pack\ (not in dump\) whose name starts with the 16 hex digit hash replaces that texture, so
+// files copied from dump\ keep working after being edited or upscaled. The replacement may have any size.
+inline std::unordered_map<uint64_t, std::string>& pack_index() {
+  static std::unordered_map<uint64_t, std::string> idx;
+  static bool loaded = false;
+  if (!loaded) {
+    loaded = true;
+    const std::string dir = pack_dir();
+    if (!dir.empty()) {
+      WIN32_FIND_DATAA fd;
+      HANDLE h = FindFirstFileA((dir + "\\*.png").c_str(), &fd);
+      if (h != INVALID_HANDLE_VALUE) {
+        do {
+          if (std::strlen(fd.cFileName) >= 16) {
+            char hex[17] = {};
+            std::memcpy(hex, fd.cFileName, 16);
+            char *end = nullptr;
+            const uint64_t v = std::strtoull(hex, &end, 16);
+            if (end == hex + 16) idx[v] = dir + "\\" + fd.cFileName;
+          }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+      }
+    }
+    if (!idx.empty()) std::fprintf(stderr, "[textures] texture pack: %zu replacement(s) in %s\n", idx.size(), dir.c_str());
+  }
+  return idx;
+}
+
+inline bool pack_enabled() {
+  static const bool on = [] {
+    const char *e = std::getenv("D2_TEXTURE_PACK");
+    if (e && *e) return e[0] != '0';
+    return !pack_index().empty();
+  }();
+  return on && !pack_index().empty();
+}
+
+// Returns a malloc'd RGBA8 image (free with std::free) or nullptr.
+inline uint8_t *replacement(const uint8_t *source, uint32_t source_bytes, uint32_t w, uint32_t h, uint32_t format,
+                            uint32_t *ow, uint32_t *oh) {
+  if (!pack_enabled() || !source || !source_bytes) return nullptr;
+  auto &idx = pack_index();
+  const auto it = idx.find(hash_bytes(source, source_bytes, w, h, format));
+  if (it == idx.end()) return nullptr;
+  int x = 0, y = 0, n = 0;
+  uint8_t *px = stbi_load(it->second.c_str(), &x, &y, &n, 4);
+  if (!px || x <= 0 || y <= 0) return nullptr;
+  *ow = uint32_t(x);
+  *oh = uint32_t(y);
+  return px; // stbi allocates with malloc
 }
 
 } // namespace d2tex

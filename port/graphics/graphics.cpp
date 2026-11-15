@@ -357,3 +357,9 @@ extern "C" void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint
 }
 extern "C" void d2_texture_set_dump(int on) { d2tex::set_dump(on!=0); }
 extern "C" int d2_texture_dump_enabled(void) { return d2tex::dump_enabled()?1:0; }
+extern "C" int d2_texture_pack_enabled(void) { return d2tex::pack_enabled()?1:0; }
+extern "C" uint8_t* d2_texture_replacement(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,uint32_t* out_w,uint32_t* out_h)
+{
+    return d2tex::replacement(source,source_bytes,w,h,format,out_w,out_h);
+}
+extern "C" void d2_texture_free(void* p) { std::free(p); }

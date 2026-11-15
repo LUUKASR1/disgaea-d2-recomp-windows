@@ -370,11 +370,20 @@ uint32_t texture_for(Renderer &r, uint32_t unit, const rsx_texture_state &t) {
       }
   }
   d2_texture_dump(src, tl.face_bytes, w, h, format & 0xFFu, int(tl.fmt), bc ? static_cast<const void *>(out.data()) : static_cast<const void *>(dumpsrc.data()), bc ? tl.row_bytes : tl.dst_row_bytes);
+  uint32_t cw = w, ch = h;
+  if (d2_texture_pack_enabled()) {
+    uint32_t rw = 0, rh = 0;
+    if (uint8_t *rp = d2_texture_replacement(src, tl.face_bytes, w, h, format & 0xFFu, &rw, &rh)) {
+      out.assign(rp, rp + size_t(rw) * rh * 4);
+      d2_texture_free(rp);
+      bcf = 0; cw = rw; ch = rh;
+    }
+  }
   uint8_t remap[4];
   rsx_texture_component_remap(t.control1, format & 0x9Fu, remap);
   const uint32_t mapping = (remap[1] | (remap[2] << 3) | (remap[3] << 6) | (remap[0] << 9)) & 0xFFFu;
   if (e.handle) { r.destroyTexture(e.handle); e.handle = 0; }
-  e.handle = r.createTexture(w, h, bcf, mapping, out, unit != 0, unit != 0);
+  e.handle = r.createTexture(cw, ch, bcf, mapping, out, unit != 0, unit != 0);
   e.csum = cs;
   e.used_frame = frame_no;
   e.face_bytes = tl.face_bytes;
