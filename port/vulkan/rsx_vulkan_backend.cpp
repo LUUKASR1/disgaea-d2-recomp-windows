@@ -34,6 +34,8 @@
 
 #include "rsx_commands.h"
 #ifdef D2_VULKAN_GAME_BACKEND
+#include "sys_overlay.h" // SDK system dialogs (save/load lists, confirmations)
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
@@ -84,10 +86,13 @@ struct Settings {
   // Image filters, each 0 (off) .. 3 (strong).
   uint32_t sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0;
   uint32_t aa = 0;       // 0 off, 1 FXAA
+  uint32_t lang = 0;     // menu language: 0 Portugues, 1 English
   uint32_t upscaler = 0; // 0 bilinear, 1 AMD FSR 1.0 (EASU + RCAS)
   uint32_t width = 1280, height = 720; // windowed client size
 };
 Settings g_settings;
+// UTF-8 text in the menu language: L(portuguese, english).
+inline const char *L(const char *pt, const char *en) { return g_settings.lang ? en : pt; }
 
 std::string settings_file() {
   std::string dir;
@@ -102,6 +107,8 @@ std::string settings_file() {
 }
 
 void load_settings() {
+  // First run: follow the Windows display language (Portuguese keeps Portuguese, everything else gets English).
+  g_settings.lang = (PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_PORTUGUESE) ? 0u : 1u;
   const std::string path = settings_file();
   if (!path.empty()) {
     if (std::FILE *f = std::fopen(path.c_str(), "rb")) {
@@ -123,6 +130,7 @@ void load_settings() {
         else if (k == "vivid" && value <= 3) g_settings.vivid = value;
         else if (k == "aa" && value <= 1) g_settings.aa = value;
         else if (k == "upscaler" && value <= 1) g_settings.upscaler = value;
+        else if (k == "lang" && value <= 1) g_settings.lang = value;
         else if (k == "width" && value >= 640 && value <= 16384) g_settings.width = value;
         else if (k == "height" && value >= 360 && value <= 16384) g_settings.height = value;
       }
@@ -141,9 +149,9 @@ void save_settings() {
   const std::string path = settings_file();
   if (path.empty()) return;
   if (std::FILE *f = std::fopen(path.c_str(), "wb")) {
-    std::fprintf(f, "fullscreen=%u\nvsync=%u\nshowfps=%u\nscale=%u\nsharpen=%u\nscanlines=%u\ncrtmask=%u\nvignette=%u\nvivid=%u\naa=%u\nupscaler=%u\nwidth=%u\nheight=%u\n",
+    std::fprintf(f, "fullscreen=%u\nvsync=%u\nshowfps=%u\nscale=%u\nsharpen=%u\nscanlines=%u\ncrtmask=%u\nvignette=%u\nvivid=%u\naa=%u\nupscaler=%u\nlang=%u\nwidth=%u\nheight=%u\n",
                  g_settings.fullscreen ? 1u : 0u, g_settings.vsync ? 1u : 0u, g_settings.show_fps ? 1u : 0u, g_settings.scale_pct,
-                 g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid, g_settings.aa, g_settings.upscaler,
+                 g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid, g_settings.aa, g_settings.upscaler, g_settings.lang,
                  g_settings.width, g_settings.height);
     std::fclose(f);
   }
@@ -180,7 +188,7 @@ void set_fullscreen(bool on) {
 // Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
 // would also move the game. The layout is produced each frame by build_overlay() (further down); the window
 // thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
-enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS };
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS };
 constexpr int kMaxHits = 16;
 constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
 constexpr int kResCount = 5;
@@ -260,6 +268,7 @@ void menu_activate(int action, int dir) {
   case A_VIVID: g_settings.vivid = cycle_level(g_settings.vivid, dir); break;
   case A_AA: if (g_settings.upscaler) return; g_settings.aa = g_settings.aa ? 0u : 1u; break;
   case A_UPSCALER: g_settings.upscaler = g_settings.upscaler ? 0u : 1u; break;
+  case A_LANG: g_settings.lang = g_settings.lang ? 0u : 1u; break;
   case A_RESET:
     g.vsync = g_settings.vsync = true;
     g_settings.show_fps = false;
@@ -281,6 +290,54 @@ void menu_activate(int action, int dir) {
   }
   save_settings();
 }
+
+// ---- System dialogs (save / load slot lists, confirmations) --------------------------------------------------
+// The SDK keeps the dialog state (ps3_overlay_*); the game thread blocks inside cellSaveData until it ends. We
+// draw it (build_overlay) and translate mouse clicks into the same results the keyboard/pad produce.
+constexpr int D_ROW = 1000, D_OK = 1100, D_BACK = 1101, D_YES = 1102, D_NO = 1103;
+constexpr int kDlgRows = 8;
+#ifdef D2_VULKAN_GAME_BACKEND
+std::atomic<bool> g_dialog{false};
+std::atomic<int> g_dlg_top{0};
+bool dialog_active() { return g_dialog.load(); }
+void dialog_activate(int act, int dir) {
+  if (act < 0) return;
+  auto snap = std::make_unique<SysOverlaySnapshot>();
+  ps3_overlay_snapshot(snap.get());
+  if (!snap->active) return;
+  const uint64_t token = snap->token;
+  auto pulse = [](uint16_t b) { ps3_overlay_input(0); ps3_overlay_input(b); };
+  if (act >= D_ROW && act < D_ROW + kDlgRows) {
+    const int target = g_dlg_top.load() + (act - D_ROW);
+    if (target < 0 || target >= snap->count) return;
+    int cur = snap->selected;
+    while (cur < target) { pulse(0x40); cur++; }
+    while (cur > target) { pulse(0x10); cur--; }
+    ps3_overlay_input(0);
+    if (dir > 0) ps3_overlay_finish(token, SYS_OVERLAY_OK);
+    else if (!snap->cancel_disabled) ps3_overlay_finish(token, SYS_OVERLAY_BACK);
+  } else if (act == D_OK || act == D_YES) {
+    ps3_overlay_finish(token, SYS_OVERLAY_OK);
+  } else if (act == D_NO) {
+    ps3_overlay_finish(token, SYS_OVERLAY_NO);
+  } else if (act == D_BACK) {
+    if (!snap->cancel_disabled) ps3_overlay_finish(token, SYS_OVERLAY_BACK);
+  }
+}
+void dialog_wheel(int dir) { // list dialogs: move the selection one step
+  auto snap = std::make_unique<SysOverlaySnapshot>();
+  ps3_overlay_snapshot(snap.get());
+  if (snap->active && snap->kind == SYS_OVERLAY_LIST && snap->count) {
+    ps3_overlay_input(0);
+    ps3_overlay_input(dir > 0 ? 0x40 : 0x10);
+    ps3_overlay_input(0);
+  }
+}
+#else
+bool dialog_active() { return false; }
+void dialog_activate(int, int) {}
+void dialog_wheel(int) {}
+#endif
 
 LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
@@ -305,7 +362,7 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     save_settings();
     return 0;
   case WM_MOUSEMOVE:
-    if (menu_is_open()) {
+    if (dialog_active() || menu_is_open()) {
       const int hit = menu_hit(float(short(LOWORD(lp))), float(short(HIWORD(lp))));
       std::lock_guard<std::mutex> lock(menu.m);
       menu.hover = hit;
@@ -313,6 +370,12 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     return 0;
   case WM_LBUTTONDOWN:
   case WM_RBUTTONDOWN:
+    if (dialog_active()) {
+      int hit = menu_hit(float(short(LOWORD(lp))), float(short(HIWORD(lp))));
+      if (hit < 0 && msg == WM_RBUTTONDOWN) hit = D_BACK;
+      if (hit >= 0) dialog_activate(hit, msg == WM_LBUTTONDOWN ? 1 : -1);
+      return 0;
+    }
     if (menu_is_open()) {
       const int hit = menu_hit(float(short(LOWORD(lp))), float(short(HIWORD(lp))));
       if (hit >= 0)
@@ -321,6 +384,10 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     break;
   case WM_MOUSEWHEEL:
+    if (dialog_active()) {
+      dialog_wheel(short(HIWORD(wp)) > 0 ? -1 : 1);
+      return 0;
+    }
     if (menu_is_open()) {
       int hit;
       {
@@ -490,6 +557,198 @@ void apply_filters() {
   g.renderer->setPostParams(params, active);
 }
 
+// Text helpers for the system dialogs: the SDK strings are English; show them in the menu language.
+std::string dlg_tr(const char *text) {
+  struct Tr { const char *raw, *pt, *en; };
+  static const Tr exact[] = {
+      {"Save saved data", "SALVAR JOGO", "SAVE GAME"}, {"Load saved data", "CARREGAR JOGO", "LOAD GAME"},
+      {"Delete saved data", "APAGAR SAVE", "DELETE SAVE"}, {"Overwrite saved data", "SOBRESCREVER SAVE", "OVERWRITE SAVE"},
+      {"Choose a save slot.", "Escolha um slot de save.", "Choose a save slot."},
+      {"There is no saved data.", "N\303\243o h\303\241 saves.", "There is no saved data."},
+      {"The existing saved data will be replaced.", "O save existente ser\303\241 substitu\303\255do.", "The existing saved data will be replaced."},
+      {"Your current progress will be saved to this slot.", "Seu progresso ser\303\241 salvo neste slot.", "Your current progress will be saved to this slot."},
+      {"This saved data will be deleted.", "Este save ser\303\241 apagado.", "This saved data will be deleted."}};
+  for (const Tr &p : exact)
+    if (!std::strcmp(text, p.raw)) return g_settings.lang ? p.en : p.pt;
+  static const Tr prefixes[] = {{"New saved data: ", "Novo save: ", "New save: "}, {"Overwrite ", "Sobrescrever ", "Overwrite "},
+                                {"Load ", "Carregar ", "Load "}, {"Save ", "Salvar ", "Save "}, {"Delete ", "Apagar ", "Delete "}};
+  for (const Tr &p : prefixes) {
+    const size_t n = std::strlen(p.raw);
+    if (!std::strncmp(text, p.raw, n)) return std::string(g_settings.lang ? p.en : p.pt) + (text + n);
+  }
+  return text;
+}
+std::string dlg_fit(const std::string &text, float size, float max_w) { // shorten with an ellipsis (UTF-8 safe)
+  if (tr::ui_text_width(text.c_str(), size) <= max_w) return text;
+  std::string t = text;
+  while (!t.empty()) {
+    do t.pop_back(); while (!t.empty() && (static_cast<unsigned char>(t.back()) & 0xC0) == 0x80);
+    if (tr::ui_text_width((t + "\342\200\246").c_str(), size) <= max_w) break;
+  }
+  return t + "\342\200\246";
+}
+// Word wrap: breaks `text` at spaces so every line fits `max_w` (a single very long word is kept whole).
+std::vector<std::string> wrap_text(const std::string &text, float size, float max_w) {
+  std::vector<std::string> lines;
+  std::string cur, word;
+  auto flush_word = [&]() {
+    if (word.empty()) return;
+    const std::string candidate = cur.empty() ? word : cur + " " + word;
+    if (!cur.empty() && tr::ui_text_width(candidate.c_str(), size) > max_w) {
+      lines.push_back(cur);
+      cur = word;
+    } else {
+      cur = candidate;
+    }
+    word.clear();
+  };
+  for (char c : text) {
+    if (c == '\n') { flush_word(); lines.push_back(cur); cur.clear(); }
+    else if (c == ' ') flush_word();
+    else word += c;
+  }
+  flush_word();
+  if (!cur.empty() || lines.empty()) lines.push_back(cur);
+  return lines;
+}
+
+// Draws the SDK system dialog in the same Netherworld style as the F1 menu. Returns true when one is active.
+bool draw_system_dialog(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, float s) {
+  using Color = std::array<float, 4>;
+  static std::unique_ptr<SysOverlaySnapshot> snap = std::make_unique<SysOverlaySnapshot>();
+  ps3_overlay_snapshot(snap.get());
+  const bool active = snap->active;
+  g_dialog = active;
+  if (!active) return false;
+  const Color white{1.f, 1.f, 1.f, 1.f}, gold{1.f, 0.86f, 0.35f, 1.f}, pink{1.f, 0.28f, 0.58f, 1.f},
+      ink{0.03f, 0.01f, 0.09f, 1.f}, soft{0.90f, 0.86f, 1.f, 1.f};
+  const bool list = (snap->kind == SYS_OVERLAY_LIST || snap->kind == SYS_OVERLAY_EDITOR) && snap->count > 0;
+  const bool yesno = snap->kind == SYS_OVERLAY_YESNO;
+  const bool progress = snap->kind == SYS_OVERLAY_PROGRESS;
+  const int rows = list ? std::min(snap->count, kDlgRows) : 0;
+  int top = g_dlg_top.load();
+  if (list) {
+    top = std::clamp(snap->selected - kDlgRows / 2, 0, std::max(0, snap->count - kDlgRows));
+    g_dlg_top = top;
+  }
+  const float rowh = 44.f * s, head_h = 68.f * s, line_h = 32.f * s, fs = 25.f * s, hint_fs = 19.f * s;
+  const float pw = std::min(float(w) - 20.f, 720.f * s);
+  const float text_w = pw - 70.f * s;
+  // Message and footer hint, word-wrapped to the panel.
+  std::vector<std::string> lines;
+  {
+    std::string msg = snap->message, cur;
+    for (char c : msg) {
+      if (c == '\n') { lines.push_back(cur); cur.clear(); }
+      else cur += c;
+    }
+    if (!cur.empty()) lines.push_back(cur);
+  }
+  std::vector<std::string> shown;
+  for (const std::string &line : lines)
+    for (const std::string &part : wrap_text(dlg_tr(line.c_str()), fs, text_w)) shown.push_back(part);
+  const std::string hint = progress ? L("Aguarde\342\200\246", "Please wait\342\200\246")
+      : snap->cancel_disabled ? L("Clique ou Z / Enter: confirmar \302\267 Setas: mover", "Click or Z / Enter: confirm \302\267 Arrows: move")
+                              : L("Clique ou Z: confirmar \302\267 X ou bot\303\243o direito: voltar \302\267 Setas: mover",
+                                  "Click or Z: confirm \302\267 X or right click: back \302\267 Arrows: move");
+  const std::vector<std::string> hint_lines = wrap_text(hint, hint_fs, text_w);
+  const float hint_line_h = 25.f * s;
+  const float foot_h = 22.f * s + hint_line_h * float(hint_lines.size());
+  const float body_h = (list ? rowh * rows + 22.f * s : 0.f) + line_h * float(shown.size()) +
+                       (progress ? 40.f * s * float(std::max(1, snap->progress_count)) : 0.f) +
+                       ((yesno || (!list && !progress && snap->buttons)) ? 66.f * s : 0.f) + 24.f * s;
+  const float ph = head_h + body_h + foot_h;
+  const float px = std::max(0.f, (float(w) - pw) * 0.5f), py = std::max(0.f, (float(h) - ph) * 0.5f);
+  std::lock_guard<std::mutex> lock(menu.m);
+  menu.sx = cw ? float(w) / float(cw) : 1.f;
+  menu.sy = ch ? float(h) / float(ch) : 1.f;
+  menu.nhits = 0;
+  auto add_hit = [&](int act, float x, float y, float rw, float rh) {
+    if (menu.nhits >= kMaxHits) return;
+    const int k = menu.nhits++;
+    menu.act[k] = act; menu.rx[k] = x; menu.ry[k] = y; menu.rw[k] = rw; menu.rh[k] = rh;
+  };
+  tr::ui_rect(0.f, 0.f, float(w), float(h), {0.02f, 0.0f, 0.08f, 0.68f});
+  tr::ui_gradient(px - 7.f * s, py - 7.f * s, pw + 14.f * s, ph + 14.f * s, pink, {0.45f, 0.10f, 0.45f, 1.f});
+  tr::ui_rect(px - 3.f * s, py - 3.f * s, pw + 6.f * s, ph + 6.f * s, gold);
+  tr::ui_gradient(px, py, pw, ph, {0.22f, 0.09f, 0.36f, 1.f}, {0.06f, 0.04f, 0.16f, 1.f});
+  tr::ui_gradient(px, py, pw, head_h, {0.78f, 0.16f, 0.45f, 1.f}, {0.36f, 0.08f, 0.40f, 1.f});
+  tr::ui_rect(px, py + head_h, pw, 3.f * s, gold);
+  tr::ui_diamond(px + 36.f * s, py + head_h * 0.5f, 9.f * s, gold);
+  tr::ui_diamond(px + pw - 36.f * s, py + head_h * 0.5f, 9.f * s, gold);
+  const std::string title = dlg_fit(dlg_tr(snap->title), 36.f * s, pw - 120.f * s);
+  const float tw = tr::ui_text_width(title.c_str(), 36.f * s);
+  tr::ui_text_outline(px + (pw - tw) * 0.5f, py + (head_h - tr::ui_line_height(36.f * s)) * 0.5f, title.c_str(), 36.f * s, white, ink, 2.6f * s);
+
+  float y = py + head_h + 14.f * s;
+  for (const std::string &line : shown) {
+    tr::ui_text_outline(px + 35.f * s, y, line.c_str(), fs, white, ink, 2.2f * s);
+    y += line_h;
+  }
+  if (list) {
+    y += 6.f * s;
+    for (int i = 0; i < rows; i++) {
+      const int idx = top + i;
+      const float ry = y + rowh * i;
+      add_hit(D_ROW + i, px, ry, pw, rowh);
+      const bool sel = idx == snap->selected, hot = menu.hover == D_ROW + i;
+      if (sel || hot) {
+        tr::ui_gradient(px + 14.f * s, ry + 3.f * s, pw - 28.f * s, rowh - 6.f * s,
+                        sel ? Color{1.f, 0.35f, 0.65f, 0.95f} : Color{0.45f, 0.20f, 0.60f, 0.85f},
+                        sel ? Color{0.62f, 0.12f, 0.50f, 0.95f} : Color{0.30f, 0.12f, 0.45f, 0.85f}, 10.f * s);
+        if (sel) tr::ui_rect(px + 14.f * s, ry + 3.f * s, 5.f * s, rowh - 6.f * s, gold);
+      }
+      const std::string label = dlg_fit(dlg_tr(snap->items[idx].label), fs, pw - 90.f * s);
+      tr::ui_text_outline(px + 38.f * s, ry + (rowh - tr::ui_line_height(fs)) * 0.5f, label.c_str(), fs, sel ? gold : white, ink, 2.2f * s);
+    }
+    if (snap->count > kDlgRows) {
+      char more[48];
+      std::snprintf(more, sizeof more, "%d / %d", snap->selected + 1, snap->count);
+      const float mw = tr::ui_text_width(more, 19.f * s);
+      tr::ui_text_outline(px + pw - 30.f * s - mw, y + rowh * rows + 2.f * s, more, 19.f * s, soft, ink, 1.6f * s);
+    }
+    y += rowh * rows + 16.f * s;
+  }
+  if (progress) {
+    for (int i = 0; i < std::max(1, snap->progress_count); i++) {
+      const float bw = pw - 80.f * s;
+      tr::ui_rect(px + 40.f * s, y + 8.f * s, bw, 14.f * s, {0.10f, 0.05f, 0.20f, 1.f});
+      tr::ui_rect(px + 40.f * s, y + 8.f * s, bw * float(std::min(100u, snap->progress[i])) / 100.f, 14.f * s, {1.f, 0.35f, 0.65f, 1.f});
+      y += 40.f * s;
+    }
+  }
+  if (yesno) {
+    const char *names[2] = {L("Sim", "Yes"), L("N\303\243o", "No")};
+    const float bw = 170.f * s, bh = 46.f * s, gap = 24.f * s, bx = px + (pw - bw * 2 - gap) * 0.5f;
+    for (int i = 0; i < 2; i++) {
+      const float x = bx + (bw + gap) * i;
+      const bool sel = snap->selected == i, hot = menu.hover == (i ? D_NO : D_YES);
+      add_hit(i ? D_NO : D_YES, x, y + 6.f * s, bw, bh);
+      tr::ui_gradient(x, y + 6.f * s, bw, bh, sel || hot ? Color{1.f, 0.35f, 0.65f, 1.f} : Color{0.20f, 0.10f, 0.32f, 1.f},
+                      sel || hot ? Color{0.62f, 0.12f, 0.50f, 1.f} : Color{0.10f, 0.05f, 0.20f, 1.f}, 8.f * s);
+      if (sel) tr::ui_rect(x, y + 6.f * s + bh - 4.f * s, bw, 3.f * s, gold);
+      const float nw = tr::ui_text_width(names[i], fs);
+      tr::ui_text_outline(x + (bw - nw) * 0.5f, y + 6.f * s + (bh - tr::ui_line_height(fs)) * 0.5f, names[i], fs, sel ? gold : white, ink, 2.2f * s);
+    }
+  } else if (!list && !progress && snap->buttons) {
+    const float bw = 190.f * s, bh = 46.f * s, x = px + (pw - bw) * 0.5f;
+    add_hit(D_OK, x, y + 6.f * s, bw, bh);
+    const bool hot = menu.hover == D_OK;
+    tr::ui_gradient(x, y + 6.f * s, bw, bh, {1.f, 0.35f, 0.65f, hot ? 1.f : 0.9f}, {0.62f, 0.12f, 0.50f, hot ? 1.f : 0.9f}, 8.f * s);
+    tr::ui_rect(x, y + 6.f * s + bh - 4.f * s, bw, 3.f * s, gold);
+    const float nw = tr::ui_text_width("OK", fs);
+    tr::ui_text_outline(x + (bw - nw) * 0.5f, y + 6.f * s + (bh - tr::ui_line_height(fs)) * 0.5f, "OK", fs, gold, ink, 2.2f * s);
+  }
+  float fy = py + ph - foot_h + 8.f * s;
+  tr::ui_rect(px + 30.f * s, fy - 6.f * s, pw - 60.f * s, 2.f * s, {1.f, 0.28f, 0.58f, 0.8f});
+  fy += 6.f * s;
+  for (const std::string &line : hint_lines) {
+    tr::ui_text_outline(px + 35.f * s, fy, line.c_str(), hint_fs, soft, ink, 1.8f * s);
+    fy += hint_line_h;
+  }
+  return true;
+}
+
 // Draws the FPS counter and the F1 options menu with the tr::ui_* primitives, once per presented frame.
 // (w, h) is the size of the image being drawn; (cw, ch) the window's client size (the mouse lives there).
 void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
@@ -498,7 +757,7 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   const float s = std::max(0.6f, float(h) / 720.f);
   // Palette: night-sky violet, netherworld magenta and gold trim.
   const Color white{1.f, 1.f, 1.f, 1.f}, gold{1.f, 0.82f, 0.30f, 1.f}, pink{1.f, 0.28f, 0.58f, 1.f},
-      ink{0.04f, 0.02f, 0.10f, 0.95f}, gray{0.62f, 0.58f, 0.74f, 1.f};
+      ink{0.03f, 0.01f, 0.09f, 1.f};
 
   // Presented frames per second (what the player sees), refreshed twice a second.
   static auto last = std::chrono::steady_clock::now();
@@ -514,16 +773,18 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
     last = now;
   }
   const bool open = menu_is_open();
+  const bool dialog = draw_system_dialog(w, h, cw, ch, s);
   if (g_settings.show_fps) {
     char text[32];
     std::snprintf(text, sizeof text, "FPS %u", shown);
     tr::ui_text_outline(14.f * s, 10.f * s, text, 22.f * s, shown >= 55 ? Color{0.55f, 1.f, 0.65f, 1.f} : gold, ink, 1.5f * s);
   }
+  if (dialog) return; // system dialog on top: the F1 menu and hints wait
   if (!open) {
     if (frame_counter < 600) { // first ten seconds: tell the player where the options are
       const float a = frame_counter < 480 ? 1.f : float(600 - frame_counter) / 120.f;
-      const char *hint = "F1: Op\303\247\303\265es   \302\267   F11: Tela cheia";
-      tr::ui_text_outline(14.f * s, float(h) - 36.f * s, hint, 20.f * s, {1.f, 1.f, 1.f, a}, {0.04f, 0.02f, 0.10f, 0.95f * a}, 1.5f * s);
+      const char *hint = L("F1: Op\303\247\303\265es   \302\267   F11: Tela cheia", "F1: Options   \302\267   F11: Fullscreen");
+      tr::ui_text_outline(14.f * s, float(h) - 38.f * s, hint, 22.f * s, {1.f, 1.f, 1.f, a}, {0.03f, 0.01f, 0.09f, a}, 2.2f * s);
     }
     return;
   }
@@ -531,9 +792,25 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   std::lock_guard<std::mutex> lock(menu.m);
   menu.sx = cw ? float(w) / float(cw) : 1.f;
   menu.sy = ch ? float(h) / float(ch) : 1.f;
-  constexpr int kRows = 9; // settings + restore + back (pages with fewer rows are padded)
-  const float rowh = 44.f * s, head_h = 70.f * s, tab_h = 42.f * s, foot_h = 96.f * s;
-  const float pw = std::min(float(w) - 20.f, 700.f * s), ph = head_h + tab_h + rowh * kRows + foot_h;
+  constexpr int kRows = 10; // settings + restore + back (pages with fewer rows are padded)
+  const float rowh = 44.f * s, head_h = 70.f * s, tab_h = 42.f * s, fs = 25.f * s, hint_fs = 19.f * s;
+  const float pw = std::min(float(w) - 20.f, 720.f * s);
+  const Color soft{0.90f, 0.86f, 1.f, 1.f};
+  // Footer hints, word-wrapped to the panel width.
+  const std::string hint_texts[3] = {
+      L("Clique para avan\303\247ar \302\267 roda do mouse ou bot\303\243o direito: voltar",
+        "Click to advance \302\267 mouse wheel or right click: go back"),
+      menu.page == 0 ? L("AMD FSR 1.0 rende melhor com resolu\303\247\303\243o interna abaixo de 100%. Com FSR ligado, a Nitidez ajusta o RCAS.",
+                         "AMD FSR 1.0 works best with an internal resolution below 100%. With FSR on, Sharpness drives RCAS.")
+                     : L("Os filtros valem para a imagem inteira. \"Desligado\" volta ao original.",
+                         "Filters apply to the whole image. \"Off\" restores the original."),
+      L("F1 ou Esc fecha \302\267 as op\303\247\303\265es s\303\243o salvas sozinhas.", "F1 or Esc closes \302\267 options are saved automatically.")};
+  std::vector<std::string> hint_lines;
+  for (const std::string &t : hint_texts)
+    for (const std::string &part : wrap_text(t, hint_fs, pw - 70.f * s)) hint_lines.push_back(part);
+  const float hint_line_h = 25.f * s;
+  const float foot_h = 24.f * s + hint_line_h * float(hint_lines.size());
+  const float ph = head_h + tab_h + rowh * kRows + foot_h;
   const float px = std::max(0.f, (float(w) - pw) * 0.5f), py = std::max(0.f, (float(h) - ph) * 0.5f);
   menu.px = px; menu.py = py; menu.pw = pw; menu.ph = ph;
   menu.nhits = 0;
@@ -559,12 +836,12 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   tr::ui_rect(px, py + head_h, pw, 3.f * s, gold);
   tr::ui_diamond(px + 40.f * s, py + head_h * 0.5f, 10.f * s, gold);
   tr::ui_diamond(px + pw - 40.f * s, py + head_h * 0.5f, 10.f * s, gold);
-  const char *title = "OP\303\207\303\225ES";
-  const float tw = tr::ui_text_width(title, 38.f * s);
-  tr::ui_text_outline(px + (pw - tw) * 0.5f, py + (head_h - tr::ui_line_height(38.f * s)) * 0.5f, title, 38.f * s, white, ink, 2.f * s);
+  const char *title = L("OP\303\207\303\225ES", "OPTIONS");
+  const float tw = tr::ui_text_width(title, 40.f * s);
+  tr::ui_text_outline(px + (pw - tw) * 0.5f, py + (head_h - tr::ui_line_height(40.f * s)) * 0.5f, title, 40.f * s, white, ink, 2.8f * s);
 
   // Tabs.
-  const char *tab_names[2] = {"V\303\215DEO", "FILTROS"};
+  const char *tab_names[2] = {L("V\303\215DEO", "VIDEO"), L("FILTROS", "FILTERS")};
   for (int t = 0; t < 2; t++) {
     const float tx = px + 24.f * s + t * (pw / 2 - 12.f * s), tww = pw / 2 - 36.f * s, ty = py + head_h + 8.f * s;
     const bool active = menu.page == t, hot = menu.hover == (t ? A_TAB_FILTERS : A_TAB_VIDEO);
@@ -575,38 +852,42 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
     } else {
       tr::ui_gradient(tx, ty, tww, tab_h - 8.f * s, hot ? Color{0.35f, 0.18f, 0.50f, 1.f} : Color{0.16f, 0.08f, 0.26f, 1.f}, {0.10f, 0.05f, 0.18f, 1.f}, 8.f * s);
     }
-    const float nw = tr::ui_text_width(tab_names[t], 22.f * s);
-    tr::ui_text_outline(tx + (tww - nw) * 0.5f, ty + (tab_h - 8.f * s - tr::ui_line_height(22.f * s)) * 0.5f, tab_names[t], 22.f * s,
-                        active ? white : gray, ink, 1.5f * s);
+    const float nw = tr::ui_text_width(tab_names[t], 23.f * s);
+    tr::ui_text_outline(tx + (tww - nw) * 0.5f, ty + (tab_h - 8.f * s - tr::ui_line_height(23.f * s)) * 0.5f, tab_names[t], 23.f * s,
+                        active ? white : soft, ink, 2.f * s);
   }
 
-  static const char *level_names[4] = {"\302\253 Desligado \302\273", "\302\253 Leve \302\273", "\302\253 M\303\251dio \302\273", "\302\253 Forte \302\273"};
+  const char *level_names[4] = {L("\302\253 Desligado \302\273", "\302\253 Off \302\273"), L("\302\253 Leve \302\273", "\302\253 Low \302\273"),
+                                L("\302\253 M\303\251dio \302\273", "\302\253 Medium \302\273"), L("\302\253 Forte \302\273", "\302\253 Strong \302\273")};
+  const char *on_off[2] = {L("\302\253 Desligado \302\273", "\302\253 Off \302\273"), L("\302\253 Ligado \302\273", "\302\253 On \302\273")};
   char res[48], scale_text[64];
   std::snprintf(res, sizeof res, "\302\253 %u \303\227 %u \302\273", g_settings.width, g_settings.height);
   std::snprintf(scale_text, sizeof scale_text, "\302\253 %u%%  (%u \303\227 %u) \302\273", g_settings.scale_pct,
                 unsigned(cw * g_settings.scale_pct / 100.f + 0.5f), unsigned(ch * g_settings.scale_pct / 100.f + 0.5f));
   struct Row { int act; const char *label; const char *value; bool enabled; bool button; };
   const Row video[kRows] = {
-      {A_MODE, "Modo de tela", g.fullscreen ? "\302\253 Tela cheia \302\273" : "\302\253 Janela \302\273", true, false},
-      {A_WINSIZE, "Tamanho da janela", g.fullscreen ? "s\303\263 em modo janela" : res, !g.fullscreen, false},
-      {A_SCALE, "Resolu\303\247\303\243o interna", scale_text, true, false},
-      {A_VSYNC, "V-Sync", g.vsync ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", true, false},
-      {A_FPS, "Mostrar FPS", g_settings.show_fps ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", true, false},
-      {A_AA, "Suaviza\303\247\303\243o (FXAA)", g_settings.aa ? "\302\253 Ligado \302\273" : "\302\253 Desligado \302\273", !g_settings.upscaler, false},
+      {A_MODE, L("Modo de tela", "Display mode"), g.fullscreen ? L("\302\253 Tela cheia \302\273", "\302\253 Fullscreen \302\273") : L("\302\253 Janela \302\273", "\302\253 Windowed \302\273"), true, false},
+      {A_WINSIZE, L("Tamanho da janela", "Window size"), g.fullscreen ? L("s\303\263 em modo janela", "windowed mode only") : res, !g.fullscreen, false},
+      {A_SCALE, L("Resolu\303\247\303\243o interna", "Internal resolution"), scale_text, true, false},
+      {A_VSYNC, "V-Sync", on_off[g.vsync ? 1 : 0], true, false},
+      {A_FPS, L("Mostrar FPS", "Show FPS"), on_off[g_settings.show_fps ? 1 : 0], true, false},
+      {A_AA, L("Suaviza\303\247\303\243o (FXAA)", "Anti-aliasing (FXAA)"), on_off[g_settings.aa ? 1 : 0], !g_settings.upscaler, false},
       {A_UPSCALER, "Upscaler", g_settings.upscaler ? "\302\253 AMD FSR 1.0 \302\273" : "\302\253 Bilinear \302\273", true, false},
-      {A_RESET, "Restaurar padr\303\265es", "", true, true},
-      {A_CLOSE, "Voltar ao jogo", "", true, true},
+      {A_LANG, L("Idioma", "Language"), g_settings.lang ? "\302\253 English \302\273" : "\302\253 Portugu\303\252s \302\273", true, false},
+      {A_RESET, L("Restaurar padr\303\265es", "Restore defaults"), "", true, true},
+      {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
   };
   const Row filters[kRows] = {
-      {A_SHARPEN, "Nitidez", level_names[g_settings.sharpen], true, false},
+      {A_SHARPEN, L("Nitidez", "Sharpness"), level_names[g_settings.sharpen], true, false},
       {A_SCAN, "Scanlines", level_names[g_settings.scanlines], true, false},
-      {A_MASK, "M\303\241scara CRT", level_names[g_settings.crt_mask], true, false},
-      {A_VIGNETTE, "Vinheta", level_names[g_settings.vignette], true, false},
-      {A_VIVID, "Cores vivas", level_names[g_settings.vivid], true, false},
+      {A_MASK, L("M\303\241scara CRT", "CRT mask"), level_names[g_settings.crt_mask], true, false},
+      {A_VIGNETTE, L("Vinheta", "Vignette"), level_names[g_settings.vignette], true, false},
+      {A_VIVID, L("Cores vivas", "Vivid colors"), level_names[g_settings.vivid], true, false},
       {-1, "", "", false, false},
       {-1, "", "", false, false},
-      {A_RESET, "Restaurar padr\303\265es", "", true, true},
-      {A_CLOSE, "Voltar ao jogo", "", true, true},
+      {-1, "", "", false, false},
+      {A_RESET, L("Restaurar padr\303\265es", "Restore defaults"), "", true, true},
+      {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
   };
   const Row *rows = menu.page == 0 ? video : filters;
   const float rows_y = py + head_h + tab_h;
@@ -619,27 +900,27 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
       tr::ui_gradient(px + 14.f * s, ry + 3.f * s, pw - 28.f * s, rowh - 6.f * s, {1.f, 0.35f, 0.65f, 0.95f}, {0.62f, 0.12f, 0.50f, 0.95f}, 10.f * s);
       tr::ui_rect(px + 14.f * s, ry + 3.f * s, 5.f * s, rowh - 6.f * s, gold);
     }
-    const float ty = ry + (rowh - tr::ui_line_height(24.f * s)) * 0.5f;
-    const Color label_color = rows[i].enabled ? white : gray;
+    const float ty = ry + (rowh - tr::ui_line_height(fs)) * 0.5f;
+    const Color label_color = rows[i].enabled ? white : Color{0.70f, 0.66f, 0.82f, 1.f};
     if (rows[i].button) {
-      const float bw = tr::ui_text_width(rows[i].label, 24.f * s);
-      tr::ui_text_outline(px + (pw - bw) * 0.5f, ty, rows[i].label, 24.f * s, hot ? gold : label_color, ink, 1.5f * s);
+      const float bw = tr::ui_text_width(rows[i].label, fs);
+      tr::ui_text_outline(px + (pw - bw) * 0.5f, ty, rows[i].label, fs, hot ? gold : label_color, ink, 2.2f * s);
     } else {
-      tr::ui_text_outline(px + 38.f * s, ty, rows[i].label, 24.f * s, label_color, ink, 1.5f * s);
+      tr::ui_text_outline(px + 38.f * s, ty, rows[i].label, fs, label_color, ink, 2.2f * s);
       if (rows[i].value[0]) {
-        const float vw = tr::ui_text_width(rows[i].value, 24.f * s);
-        tr::ui_text_outline(px + pw - 38.f * s - vw, ty, rows[i].value, 24.f * s, rows[i].enabled ? (hot ? white : gold) : gray, ink, 1.5f * s);
+        const float vw = tr::ui_text_width(rows[i].value, fs);
+        tr::ui_text_outline(px + pw - 38.f * s - vw, ty, rows[i].value, fs,
+                            rows[i].enabled ? (hot ? white : gold) : Color{0.70f, 0.66f, 0.82f, 1.f}, ink, 2.2f * s);
       }
     }
   }
-  const float fy = rows_y + rowh * kRows + 10.f * s;
-  tr::ui_rect(px + 30.f * s, fy - 4.f * s, pw - 60.f * s, 2.f * s, {1.f, 0.28f, 0.58f, 0.8f});
-  tr::ui_text(px + 30.f * s, fy + 4.f * s, "Clique para avan\303\247ar \302\267 roda do mouse ou bot\303\243o direito: voltar", 17.f * s, gray);
-  tr::ui_text(px + 30.f * s, fy + 28.f * s,
-              menu.page == 0 ? "AMD FSR 1.0 rende melhor com resolu\303\247\303\243o interna abaixo de 100%. Com FSR ligado, a Nitidez ajusta o RCAS."
-                             : "Os filtros valem para a imagem inteira. \"Desligado\" volta ao original.",
-              17.f * s, gray);
-  tr::ui_text(px + 30.f * s, fy + 52.f * s, "F1 ou Esc fecha \302\267 as op\303\247\303\265es s\303\243o salvas sozinhas.", 17.f * s, gray);
+  float fy = rows_y + rowh * kRows + 6.f * s;
+  tr::ui_rect(px + 30.f * s, fy, pw - 60.f * s, 2.f * s, {1.f, 0.28f, 0.58f, 0.8f});
+  fy += 12.f * s;
+  for (const std::string &line : hint_lines) {
+    tr::ui_text_outline(px + 35.f * s, fy, line.c_str(), hint_fs, soft, ink, 1.8f * s);
+    fy += hint_line_h;
+  }
 }
 #endif
 #endif
@@ -818,6 +1099,7 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height,
     // M2: real guest draws. Needs the shader compiler (embedded DXC); a
     // failure here makes init fail so the caller can report it clearly.
     tr::init(*g.renderer);
+    ps3_overlay_set_renderer(1); // save/load lists and confirmations are drawn by build_overlay
 #else
     // Degenerate triangle: keeps the presentation path valid with no visible
     // geometry until real draws are translated.

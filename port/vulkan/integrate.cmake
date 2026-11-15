@@ -44,7 +44,8 @@ target_include_directories(d2_vulkan_game
         "${PS3RECOMP_DIR}/runtime/ppu"
         "${PS3RECOMP_DIR}/runtime/memory"
         "${PS3RECOMP_DIR}/runtime/platform"
-        "${PS3RECOMP_DIR}/libs/video")
+        "${PS3RECOMP_DIR}/libs/video"
+        "${PS3RECOMP_DIR}/libs/system")
 target_compile_definitions(d2_vulkan_game
     PUBLIC D2_VULKAN_GAME_BACKEND
     PRIVATE VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR NOMINMAX WIN32_LEAN_AND_MEAN)
