@@ -578,6 +578,10 @@ class Backend:
                 log.write('falha_deteccao=' + type(error).__name__ + ': ' + str(error) + '\n')
                 raise
             log.write('toolchain=' + env.get('D2_TOOLCHAIN_ID', '') + '\n')
+            if not OFFICIAL_RELEASE:
+                # Preview builds include the experimental Vulkan backend when it can be built; the build
+                # falls back to DirectX 12 only if it cannot. The stable release stays DirectX 12 only.
+                env.setdefault('D2_VULKAN_GAME_BACKEND', 'auto')
             for tool in ('git', 'cmake', 'ninja'):
                 log.write(tool + '=' + str(shutil.which(tool, path=env['PATH'])) + '\n')
             return env

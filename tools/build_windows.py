@@ -95,21 +95,36 @@ def main():
             if not Path(os.environ[name]).is_file():
                 p.error('Portable compiler incomplete: ' + name)
         compiler_options = [
-            '-DCMAKE_C_COMPILER=' + os.environ['D2_PORTABLE_COMPILER'],
-            '-DCMAKE_CXX_COMPILER=' + os.environ['D2_PORTABLE_CXX'],
-            '-DCMAKE_RC_COMPILER=' + os.environ['D2_PORTABLE_RC'],
+            '-DCMAKE_C_COMPILER=' + Path(os.environ['D2_PORTABLE_COMPILER']).as_posix(),
+            '-DCMAKE_CXX_COMPILER=' + Path(os.environ['D2_PORTABLE_CXX']).as_posix(),
+            '-DCMAKE_RC_COMPILER=' + Path(os.environ['D2_PORTABLE_RC']).as_posix(),
             '-DCMAKE_C_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions',
             '-DCMAKE_CXX_FLAGS=-D_WIN32_WINNT=0x0A00 -fms-extensions',
             '-DCMAKE_EXE_LINKER_FLAGS=-static -ldxguid -ld3d12 -ldxgi -ld3dcompiler -luuid -lpthread -lxinput9_1_0']
-    run('cmake', '-S', root / 'port', '-B', build, '-G', 'Ninja',
-        '-DCMAKE_BUILD_TYPE=Release', *compiler_options,
-        '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DD2_ENABLE_ISO_VFS=' + ('ON' if args.iso_vfs else 'OFF'),
-        '-DD2_GAME_VERSION=140',
-        '-DPS3RECOMP_DIR=' + str(sdk), '-DPython3_EXECUTABLE=' + sys.executable,
-        '-DD2_JSON_INCLUDE_DIR=' + str(include), '-DRECOMP_DIR=' + str(generated / 'src/recomp-140'),
-        '-DD2_OUT_DIR=' + str(generated / 'out-140'), '-DSPU_DIR=' + str(generated / 'spu-140'),
-        '-DD2_SPU_SIMD_SSE41=ON', '-DBUILD_TESTING=OFF')
-    run('cmake', '--build', build, '--parallel', args.jobs)
+    def configure_and_build(vulkan):
+        run('cmake', '-S', root / 'port', '-B', build, '-G', 'Ninja',
+            '-DCMAKE_BUILD_TYPE=Release', *compiler_options,
+            '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DD2_ENABLE_ISO_VFS=' + ('ON' if args.iso_vfs else 'OFF'),
+            '-DD2_GAME_VERSION=140',
+            '-DPS3RECOMP_DIR=' + sdk.as_posix(), '-DPython3_EXECUTABLE=' + Path(sys.executable).as_posix(),
+            '-DD2_JSON_INCLUDE_DIR=' + include.as_posix(), '-DRECOMP_DIR=' + (generated / 'src/recomp-140').as_posix(),
+            '-DD2_OUT_DIR=' + (generated / 'out-140').as_posix(), '-DSPU_DIR=' + (generated / 'spu-140').as_posix(),
+            '-DD2_SPU_SIMD_SSE41=ON', '-DBUILD_TESTING=OFF',
+            '-DD2_VULKAN_GAME_BACKEND=' + ('ON' if vulkan else 'OFF'))
+        run('cmake', '--build', build, '--parallel', args.jobs)
+    # Experimental Vulkan backend. D2_VULKAN_GAME_BACKEND: unset/0 = off (default, stable DirectX 12 build),
+    # 1 = required (a failure fails the build), auto = try with Vulkan and, if that cannot be configured or
+    # built (no network for the pinned DXC, missing headers...), rebuild DirectX 12 only so the game still builds.
+    vulkan_mode = os.environ.get('D2_VULKAN_GAME_BACKEND', '0')
+    if vulkan_mode == 'auto':
+        try:
+            configure_and_build(True)
+            print('Vulkan backend: included (experimental, opt-in at runtime).', flush=True)
+        except subprocess.CalledProcessError:
+            print('Vulkan backend could not be built; building DirectX 12 only.', flush=True)
+            configure_and_build(False)
+    else:
+        configure_and_build(vulkan_mode == '1')
     print('Local build created:', build / 'DisgaeaD2Recomp.exe')
     print('Keep the executable and generated game code local. See docs/WINDOWS.md to run.')
 

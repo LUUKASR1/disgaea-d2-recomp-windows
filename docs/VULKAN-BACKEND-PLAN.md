@@ -59,3 +59,12 @@ Estado: M1 concluído e verificado no jogo (RTX 5070, 1.140 frames, encerramento
 - Escopo equivalente a reescrever o backend D3D12 de ~7.400 linhas.
 - Sem GPU/Windows neste ambiente: compilação MSVC/clang-cl e execução só no PC do usuário.
 - Primeira execução do Vulkan não deve afetar saves nem o perfil D3D12.
+
+## Como os usuários recebem o Vulkan (build e launcher)
+
+- `tools/build_windows.py` lê `D2_VULKAN_GAME_BACKEND`: ausente/`0` = só DirectX 12 (padrão, build estável); `1` = Vulkan obrigatório; `auto` = tenta incluir o Vulkan e, se não conseguir configurar ou compilar (por exemplo sem rede para baixar o DXC fixado), refaz o build só com DirectX 12 para o jogo continuar compilando.
+- O launcher de preview (não oficial) define `D2_VULKAN_GAME_BACKEND=auto` ao compilar; a versão oficial estável continua só DirectX 12.
+- No launcher, "Vulkan (experimental)" liga `D2_GRAPHICS_API=vulkan` com fallback explícito para DirectX 12. Isso vale a partir de um launcher reempacotado (`tools/package_launcher.py`).
+- Sem launcher reempacotado: `Compilar-Jogo-Vulkan.bat` e `Rodar-Jogo-Vulkan.bat`.
+- Limitações e testes pendentes: save/load, DLC, sessões longas, outras GPUs, render-to-texture e cubemaps.
+
