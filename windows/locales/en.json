@@ -45,7 +45,6 @@
   "Abrir logs do jogo": "Open game logs",
   "Abrir projeto no GitHub": "Open project on GitHub",
   "O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.": "The launcher sets up portable compiler and Git tools automatically.",
-  "Não apague a pasta local para atualizar o launcher. Android ainda não está disponível.": "Keep the local application folder when updating the launcher. Android is not available yet.",
   "Cenário — girar câmera": "Scenery — rotate camera",
   "Sprites — movimentar personagem": "Sprites — move character",
   "Shaders — preparar Vulkan": "Shaders — prepare Vulkan",
@@ -328,5 +327,9 @@
   "Usar a pasta do jogo (PS3_GAME)?\nSim = pasta do jogo. Não = imagem ISO.": "Use the game folder (PS3_GAME)?\nYes = game folder. No = ISO image.",
   "Pasta do jogo europeu (BLES01939) ou PS3_GAME": "European game folder (BLES01939) or PS3_GAME",
   "Selecione a pasta do jogo europeu (BLES01939) ou uma ISO existente.": "Select the European (BLES01939) game folder or an existing ISO.",
-  "A pasta selecionada não é Disgaea D2 europeu (BLES01939).": "The selected folder is not European Disgaea D2 (BLES01939)."
+  "A pasta selecionada não é Disgaea D2 europeu (BLES01939).": "The selected folder is not European Disgaea D2 (BLES01939).",
+  "Não apague a pasta local para atualizar o launcher. O Android ainda está em desenvolvimento (prévia).": "Keep the local application folder when updating the launcher. Android is still in development (preview).",
+  "Prévia Android: compila o jogo já preparado neste PC para o Odin 2 (ARM64). Baixa o NDK na primeira vez (~750 MB).": "Android preview: builds the game already prepared on this PC for the Odin 2 (ARM64). Downloads the NDK the first time (~750 MB).",
+  "Preparar núcleo Android (prévia)": "Prepare Android core (preview)",
+  "Núcleo Android pronto: ": "Android core ready: "
 }

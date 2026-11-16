@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '1.0.6' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
+VERSION = '1.0.7' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -563,6 +563,29 @@ class Backend:
                        standalone=self.standalone, profile='eu100'))
         self.notify('Prévia europeia pronta.')
 
+    def prepare_android_core(self):
+        """Preview: compile the recompiled game (already generated on this PC) for Android ARM64 with the NDK."""
+        try:
+            config = json.loads((self.home / 'build-atual.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raise RuntimeError('Prepare o jogo no Windows primeiro; o núcleo Android reaproveita essa preparação.')
+        repo = Path(config['workspace'])
+        eu = profile_name(config) == 'eu100'
+        generated = repo / ('port-eu-windows-generated' if eu else 'port-140-windows-generated')
+        recomp, out, spu = generated / ('src/recomp-eu' if eu else 'src/recomp-140'), generated / ('out-eu' if eu else 'out-140'), generated / ('spu-eu' if eu else 'spu-140')
+        if not (recomp / 'ppu_recomp.h').is_file():
+            raise RuntimeError('O código gerado do jogo não foi encontrado. Prepare o jogo novamente.')
+        env = self.compiler_environment()
+        output = self.home / 'android-core' / profile_name(config)
+        self.notify('Núcleo Android: baixando o NDK (uma vez, ~750 MB) e compilando para ARM64. Pode demorar bastante.')
+        self.run([sys.executable, repo / 'tools/build_android_core.py', '--sdk', repo / 'ps3recomp',
+                  '--work', self.home / 'android-work' / profile_name(config), '--recomp-dir', recomp,
+                  '--out-dir', out, '--spu-dir', spu, '--game-version', '100' if eu else '140',
+                  '--json-include', ROOT / 'vendor/include', '--output', output], env,
+                 label='Compilar núcleo Android (ARM64)')
+        self.notify('Núcleo Android pronto: ' + str(output / 'libd2core.so'))
+        return output / 'libd2core.so'
+
     def prepare_and_play(self, folder, packages=(), firmware=None, on_prepared=None):
         self.prepare(folder, packages, firmware)
         if on_prepared:
@@ -833,7 +856,7 @@ def main():
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         if OFFICIAL_RELEASE:
-            if VERSION != '1.0.6' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+            if VERSION != '1.0.7' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
                 raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')

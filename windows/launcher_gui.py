@@ -794,7 +794,14 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
     if not standalone: button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
-    label(page, 'Não apague a pasta local para atualizar o launcher. Android ainda não está disponível.', 10, MUTED)
+    def build_android_core():
+        def work():
+            library = backend.prepare_android_core()
+            events.put(('android_ready', str(library)))
+        task(work)
+    label(page, 'Prévia Android: compila o jogo já preparado neste PC para o Odin 2 (ARM64). Baixa o NDK na primeira vez (~750 MB).', 10, MUTED)
+    button(page, 'Preparar núcleo Android (prévia)', build_android_core)
+    label(page, 'Não apague a pasta local para atualizar o launcher. O Android ainda está em desenvolvimento (prévia).', 10, MUTED)
     for variable in (resolution, mode, vsync):
         variable.trace_add('write', update_summary)
     update_summary()
@@ -820,6 +827,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
                     widget.configure(state='readonly' if isinstance(widget, ttk.Combobox) else 'normal')
                 download_button.configure(state='normal' if update_state['url'] else 'disabled')
                 update_summary()
+            elif kind == 'android_ready':
+                status.set('Núcleo Android pronto: ' + message)
+                open_path(Path(message).parent)
             elif kind == 'eu_ready':
                 config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
                 ready = True

@@ -1,3 +1,7 @@
+# 1.0.7 — Prévia europeia + núcleo Android (prévia)
+
+- Novo botão em Configurações: "Preparar núcleo Android (prévia)" compila, neste PC, o jogo já preparado para ARM64 (Odin 2). Baixa o NDK uma vez (~750 MB). Nada do jogo é distribuído.
+
 # 1.0.6 — Prévia europeia (BLES01939)
 
 - Corrige o botão Jogar no perfil europeu: abre o jogo já compilado em vez de pedir ISO e PKGs americanos.
