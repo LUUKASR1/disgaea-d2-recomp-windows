@@ -154,6 +154,12 @@
 !/windows/*.py
 !/windows/*.bat
 !/windows/perfil.json
+!/windows/assets/
+/windows/assets/*
+!/windows/assets/hero-*.png
+!/docs/images/
+!/docs/images/*.jpg
+!/docs/images/*.png
 !/windows/config.exemplo.json
 !/port/d2_*.h
 /windows/config.local.json
