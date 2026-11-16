@@ -857,6 +857,14 @@ public:
     post_vs.assign(v.begin(), v.end());
     post_fs.assign(f.begin(), f.end());
   }
+  void requestShot() { shot_requested = true; }
+  bool takeShot(std::vector<uint8_t> &pixels, uint32_t &width, uint32_t &height, bool &bgra) {
+    if (!shot_ready) return false;
+    pixels = std::move(shot_pixels);
+    width = shot_w; height = shot_h; bgra = shot_bgra;
+    shot_ready = false;
+    return true;
+  }
   void setPostValues(const std::array<float, 8> &params, bool active) {
     post_params = params;
     if (post_active != active) {
@@ -2664,13 +2672,9 @@ void Renderer::setPostProgram(std::span<const uint32_t> vertex, std::span<const 
 void Renderer::setPostParams(const std::array<float, 8> &params, bool active) {
   impl_->setPostValues(params, active);
 }
-void Renderer::requestScreenshot() { impl_->shot_requested = true; }
+void Renderer::requestScreenshot() { impl_->requestShot(); }
 bool Renderer::takeScreenshot(std::vector<uint8_t> &pixels, uint32_t &width, uint32_t &height, bool &bgra) {
-  if (!impl_->shot_ready) return false;
-  pixels = std::move(impl_->shot_pixels);
-  width = impl_->shot_w; height = impl_->shot_h; bgra = impl_->shot_bgra;
-  impl_->shot_ready = false;
-  return true;
+  return impl_->takeShot(pixels, width, height, bgra);
 }
 void Renderer::renderExtent(uint32_t &width, uint32_t &height) const {
   impl_->currentExtent(width, height);
