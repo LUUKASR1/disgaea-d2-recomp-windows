@@ -64,3 +64,7 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 - Real-ESRGAN (ampliador de texturas) ainda não testado.
 - Mouse como ponteiro dentro do jogo (estacionado).
 - Etapas 5/6: pausar ao perder foco, aviso de controle conectado/desconectado, ícone, multi-monitor/DPI, instalador.
+
+## Etapa 5/6 (em andamento)
+- Pausar ao perder o foco: D3D12 (F1 > Sistema > "Pausar ao perder o foco", padrão ligado, `pause_focus=` no settings.ini) e Vulkan (sempre; `D2_PAUSE_UNFOCUSED=0` desliga). Log `[D2FOCUS]`.
+- Aviso de controle conectado/desconectado: D3D12 (aviso no topo da tela, XInput). Vulkan: pendente.

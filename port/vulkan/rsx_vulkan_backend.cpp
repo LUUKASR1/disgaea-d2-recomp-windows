@@ -1390,6 +1390,26 @@ int rsx_vulkan_backend_pump_messages(void) {
 void rsx_vulkan_backend_present(void) {
   if (!g.initialized || g.closed || !g.renderer || !g.hwnd)
     return;
+#ifdef D2_VULKAN_GAME_BACKEND
+  { // pause while the window is not in front (D2_PAUSE_UNFOCUSED=0 turns this off)
+    static const bool pause_on = [] { const char *e = std::getenv("D2_PAUSE_UNFOCUSED"); return !(e && e[0] == '0'); }();
+    auto in_front = [] {
+      if (IsIconic(g.hwnd)) return false;
+      HWND fg = GetForegroundWindow();
+      DWORD pid = 0;
+      if (fg) GetWindowThreadProcessId(fg, &pid);
+      return fg && pid == GetCurrentProcessId();
+    };
+    if (pause_on && !in_front()) {
+      std::fprintf(stderr, "[D2FOCUS] paused (window not in front)\n");
+      while (!g.closed && IsWindow(g.hwnd) && !in_front()) {
+        if (rsx_vulkan_backend_pump_messages() < 0) return;
+        Sleep(40);
+      }
+      std::fprintf(stderr, "[D2FOCUS] resumed\n");
+    }
+  }
+#endif
   try {
     uint32_t w = 0, h = 0;
     if (!client_size(w, h))

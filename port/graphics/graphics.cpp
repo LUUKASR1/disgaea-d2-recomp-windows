@@ -34,7 +34,7 @@ struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=fal
 // Image filters of the in-game options panel (FXAA, sharpen, scanlines, CRT mask, vignette, vivid colours), set from the UI thread.
 float post_values[8]={};std::atomic<int> post_enabled{0};
 // HDR (scRGB FP16 swap chain): level 0..3 = how far highlights are expanded; paper/peak come from the display.
-std::atomic<int> hdr_level{0};float hdr_paper_scale=203.0f/80.0f,hdr_peak_nits=1000.0f;bool hdr_display=false;
+std::atomic<int> pause_unfocused{1};std::atomic<int> hdr_level{0};float hdr_paper_scale=203.0f/80.0f,hdr_peak_nits=1000.0f;bool hdr_display=false;
 struct State {
     ID3D12Device* device=nullptr; ID3D12CommandQueue* queue=nullptr;
     std::array<Ref<ID3D12Resource>,2> output;
@@ -306,6 +306,30 @@ extern "C" UINT d2_display_swap_flags(void* object){
 }
 extern "C" int d2_display_present(void* object,UINT interval){
     if(!object)return -1;auto* swap=static_cast<IDXGISwapChain3*>(object);
+    // Pause while the game window is not in front (alt-tab, minimised). Messages keep being pumped so the window and the F1 panel stay alive.
+    if(pause_unfocused.load()){
+        HWND window=nullptr;
+        if(SUCCEEDED(swap->GetHwnd(&window))&&window){
+            auto in_front=[&]{
+                if(IsIconic(window))return false;
+                HWND fg=GetForegroundWindow();DWORD pid=0;
+                if(fg)GetWindowThreadProcessId(fg,&pid);
+                return fg&&pid==GetCurrentProcessId();
+            };
+            if(!in_front()){
+                std::fprintf(stderr,"[D2FOCUS] paused (window not in front)\n");
+                while(pause_unfocused.load()&&IsWindow(window)&&!in_front()){
+                    MSG msg;
+                    while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){
+                        if(msg.message==WM_QUIT){PostQuitMessage(static_cast<int>(msg.wParam));return 0;}
+                        TranslateMessage(&msg);DispatchMessageW(&msg);
+                    }
+                    Sleep(40);
+                }
+                std::fprintf(stderr,"[D2FOCUS] resumed\n");
+            }
+        }
+    }
     UINT flags=0;DXGI_SWAP_CHAIN_DESC1 desc{};BOOL fullscreen=TRUE;
     if(flag("D2_VRR") && interval==0 && SUCCEEDED(swap->GetDesc1(&desc)) &&
        (desc.Flags&DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) && SUCCEEDED(swap->GetFullscreenState(&fullscreen,nullptr)) && !fullscreen)
@@ -548,3 +572,4 @@ extern "C" int d2_graphics_hdr_enabled(void){return cfg.hdr?1:0;}
 extern "C" void d2_graphics_set_hdr(int level){hdr_level.store(level<0?0:level>3?3:level);}
 extern "C" int d2_graphics_hdr_display(void){return hdr_display?1:0;}
 extern "C" void d2_graphics_hdr_disable(void){cfg.hdr=false;}
+extern "C" void d2_graphics_set_pause_unfocused(int on){pause_unfocused.store(on?1:0);}
