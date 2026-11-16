@@ -1,3 +1,7 @@
+# 1.0.12 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: saves, cache e pasta de trabalho do jogo vão para o armazenamento do app (antes o jogo tentava gravar numa pasta somente leitura e parava na recuperação de saves).
+
 # 1.0.11 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: o código só do Windows em `main.cpp` (troca de API gráfica) deixou de ser compilado no Android; cancelamento de threads sem suporte no Android virou no-op; o compilador mostra todos os erros de uma vez.
