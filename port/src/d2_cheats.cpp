@@ -617,8 +617,10 @@ extern "C" int ps3_host_key_event(unsigned code, unsigned modifiers, int down, i
     if (down && !repeat) d2_cheats_toggle_menu();
     return 1;
 }
+extern "C" __attribute__((weak)) void d2_cheats_host_start(void); // Win32 window (d2_cheats_win.cpp)
 extern "C" void d2_register_cheats(void)
 {
+    if (d2_cheats_host_start) d2_cheats_host_start();
     try {
         data = json::parse(d2_cheats_data);
         for (const auto& p : data["versions"]) {
