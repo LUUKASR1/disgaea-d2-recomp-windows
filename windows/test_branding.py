@@ -13,6 +13,17 @@ class BrandingTests(unittest.TestCase):
         self.assertEqual(depth, 8)
         self.assertIn(kind, (4, 6))  # PNG grayscale/RGB with alpha.
 
+    def test_cartoon_button_states_and_logo_exist_with_alpha(self):
+        for name, size in (('play', (340, 84)), ('iso', (164, 60)), ('gear', (164, 60)), ('small', (170, 46))):
+            for state in 'nhpd':
+                data = (Path(__file__).parent / ('assets/btn-%s-%s.png' % (name, state))).read_bytes()
+                self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
+                self.assertEqual(struct.unpack('>II', data[16:24]), size)
+                self.assertIn(data[25], (4, 6))  # alpha: rounded corners
+        logo = (Path(__file__).parent / 'assets/logo-disgaea.png').read_bytes()
+        self.assertEqual(struct.unpack('>II', logo[16:24])[0], 336)
+        self.assertIn(logo[25], (4, 6))
+
     def test_icon_has_valid_small_and_large_windows_entries(self):
         data = (Path(__file__).parent / 'assets/launcher.ico').read_bytes()
         reserved, kind, count = struct.unpack('<HHH', data[:6])

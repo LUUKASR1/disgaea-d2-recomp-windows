@@ -1,3 +1,7 @@
+# 1.0.1 — Stable / DirectX 12
+
+- Nova tela inicial do launcher: banner com capturas do jogo, título, botão JOGAR grande e atalhos em blocos. O jogo não mudou.
+
 # 1.0.0 — Stable / DirectX 12
 
 - Menu de opções dentro do jogo (F1): Vídeo, Filtros, Controles e Sistema; lembra a última aba; salva em `settings.ini`.

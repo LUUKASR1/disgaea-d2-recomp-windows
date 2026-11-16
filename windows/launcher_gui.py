@@ -378,23 +378,162 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         messagebox.showinfo('Como usar meu save', translate(SAVE_HELP).format(path=save_directory(home)))
 
     page = bodies['Início']
-    label(page, 'BEM-VINDO AO NETHERWORLD', 10, GOLD, True)
     label(page, variable=update_status, size=10, color=GOLD)
-    hero = tk.Canvas(page, height=278, bg=BG, highlightthickness=0)
-    hero.pack(fill='x', pady=(0, 6))
-    logo_item = hero.create_image(0, 0, image=logo_image, anchor='n')
-    hero.bind('<Configure>', lambda event: hero.coords(logo_item, event.width // 2, 0))
-    button(page, '▶  JOGAR DISGAEA D2', play, True)
-    button(page, 'Selecionar ISO e jogar' if clean else 'Jogar pela ISO (experimental)', play_iso)
-    button(page, 'Meus saves — abrir pasta', open_saves)
+    art = {}
+    for name in ('play', 'iso', 'gear', 'small'):
+        for state in 'nhpd':
+            art[name + state] = tk.PhotoImage(file=str(assets / ('btn-%s-%s.png' % (name, state))))
+    hero_images = [tk.PhotoImage(file=str(assets / ('hero-%d.png' % number))) for number in (1, 2, 3, 4)]
+    logo_game, pill_image = tk.PhotoImage(file=str(assets / 'logo-disgaea.png')), tk.PhotoImage(file=str(assets / 'pill.png'))
+    app._home_art = (art, hero_images, logo_game, pill_image)
+    # Home: in-game screenshot banner with the Disgaea logo and cartoon buttons drawn on the canvas. Each CartoonButton is also a real
+    # (never shown) Tk button, so text translation, enabling/disabling and tests keep working through the normal widget API.
+    hero = tk.Canvas(page, width=760, height=430, bg=BG, highlightthickness=0)
+    hero.pack(anchor='w', pady=(0, 10))
+    hero_image = hero.create_image(0, 0, image=hero_images[0], anchor='nw')
+    hero.create_image(24, 14, image=logo_game, anchor='nw')
+    hero.create_image(28, 186, image=pill_image, anchor='nw')
+    pill_text = hero.create_text(44, 203, anchor='w', fill=GOLD, font=('Segoe UI', 9, 'bold'), text='')
+    hero_dots = [hero.create_oval(0, 0, 0, 0, fill=MUTED, outline='') for _ in hero_images]
+    for position, dot in enumerate(hero_dots):
+        hero.coords(dot, 700 + position * 14 - 4, 398, 700 + position * 14 + 4, 406)
+    hero_state = {'index': 0, 'hover': None, 'down': None}
+
+    class CartoonButton(tk.Button):
+        def __init__(self, x, y, kind, text, command, size, edge, shift=0):
+            super().__init__(hero, text=text, command=command)
+            self._x, self._y, self._kind, self._edge, self._shift, self._size = x, y, kind, edge, shift, size
+            self._bw, self._bh = art[kind + 'n'].width(), art[kind + 'n'].height()
+            self._image = hero.create_image(x, y, image=art[kind + 'n'], anchor='nw')
+            cx, cy = x + self._bw // 2 + shift, y + (self._bh - 9) // 2
+            self._shadow = [hero.create_text(cx + dx, cy + dy, text=self._shown(text), fill=edge, font=('Segoe UI Black', size))
+                            for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3))]
+            self._label = hero.create_text(cx, cy, text=self._shown(text), fill='#ffffff', font=('Segoe UI Black', size))
+            self._look = 'n'
+
+        @staticmethod
+        def _shown(text):
+            return text.lstrip('▶ ').strip()
+
+        def contains(self, px, py):
+            return self._x <= px < self._x + self._bw and self._y <= py < self._y + self._bh - 8
+
+        def look(self, which):
+            if which == self._look:
+                return
+            self._look = which
+            hero.itemconfigure(self._image, image=art[self._kind + which])
+            lift = 2 if which == 'p' else 0
+            for item, (dx, dy) in zip(self._shadow + [self._label], ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3), (0, 0))):
+                hero.coords(item, self._x + self._bw // 2 + self._shift + dx, self._y + (self._bh - 9) // 2 + dy + lift)
+            hero.itemconfigure(self._label, fill='#9b94a6' if which == 'd' else '#ffffff')
+
+        def configure(self, cnf=None, **kw):
+            result = super().configure(cnf, **kw) if (cnf or kw) else super().configure()
+            if hasattr(self, '_label'):
+                if 'text' in kw:
+                    for item in self._shadow + [self._label]:
+                        hero.itemconfigure(item, text=self._shown(kw['text']))
+                if 'state' in kw:
+                    self.look('d' if kw['state'] == 'disabled' else 'n')
+            return result
+        config = configure
+
+        def enabled(self):
+            return str(self['state']) != 'disabled'
+
+    cartoon = []
+
+    def hero_hit(event):
+        for item in cartoon:
+            if item.contains(event.x, event.y):
+                return item
+        return None
+
+    def hero_motion(event):
+        hit = hero_hit(event)
+        previous = hero_state['hover']
+        if previous is not hit:
+            if previous is not None and previous.enabled() and hero_state['down'] is not previous:
+                previous.look('n')
+            hero_state['hover'] = hit
+        if hit is not None and hit.enabled() and hero_state['down'] is None:
+            hit.look('h')
+        hero.configure(cursor='hand2' if hit is not None and hit.enabled() else '')
+
+    def hero_leave(event):
+        for item in cartoon:
+            if item.enabled(): item.look('n')
+        hero_state['hover'] = None
+        hero.configure(cursor='')
+
+    def hero_press(event):
+        hit = hero_hit(event)
+        if hit is not None and hit.enabled():
+            hero_state['down'] = hit
+            hit.look('p')
+
+    def hero_release(event):
+        pressed, hero_state['down'] = hero_state['down'], None
+        if pressed is None or not pressed.enabled():
+            return
+        inside = pressed.contains(event.x, event.y)
+        pressed.look('h' if inside else 'n')
+        if inside:
+            pressed.invoke()
+    hero.bind('<Motion>', hero_motion)
+    hero.bind('<Leave>', hero_leave)
+    hero.bind('<ButtonPress-1>', hero_press)
+    hero.bind('<ButtonRelease-1>', hero_release)
+
+    play_button = CartoonButton(28, 230, 'play', '▶  JOGAR DISGAEA D2', play, 17, '#56102a', shift=26)
+    iso_button = CartoonButton(28, 324, 'iso', 'Escolher ISO' if clean else 'Jogar pela ISO (experimental)', play_iso, 11, '#101a62', shift=14)
+    video_button = CartoonButton(204, 324, 'gear', 'Configurações', lambda: show('Vídeo'), 11, '#101a62', shift=14)
+    cartoon.extend([play_button, iso_button, video_button])
+    buttons.extend([play_button, iso_button, video_button])
+
+    def sync_pill(*_):
+        hero.itemconfigure(pill_text, text=tk.StringVar.get(build_status))
+    build_status.trace_add('write', sync_pill)
+    sync_pill()
+
+    def hero_show(index):
+        hero_state['index'] = index
+        hero.itemconfigure(hero_image, image=hero_images[index])
+        for position, dot in enumerate(hero_dots):
+            hero.itemconfigure(dot, fill=GOLD if position == index else '#6f6280')
+
+    def hero_next():
+        try:
+            if active_page[0] == 'Início':
+                hero_show((hero_state['index'] + 1) % len(hero_images))
+            app.after(5200, hero_next)
+        except tk.TclError:
+            pass  # window closed
+    hero_show(0)
+    app.after(5200, hero_next)
+
+    row = tk.Frame(page, bg=BG)
+    row.pack(anchor='w')
+
+    def small(text, command, column, while_playing=False):
+        widget = tk.Button(row, text=text, command=command, image=art['smalln'], compound='center', bg=BG, activebackground=BG,
+                           fg='#ffffff', activeforeground='#ffffff', disabledforeground='#9b94a6', bd=0, highlightthickness=0,
+                           relief='flat', cursor='hand2', font=('Segoe UI Black', 10), padx=0, pady=0)
+        widget.grid(row=0, column=column, padx=(0, 8), pady=2)
+        widget.bind('<Enter>', lambda e: str(widget['state']) != 'disabled' and widget.configure(image=art['smallh']))
+        widget.bind('<Leave>', lambda e: widget.configure(image=art['smalln']))
+        widget.bind('<ButtonPress-1>', lambda e: str(widget['state']) != 'disabled' and widget.configure(image=art['smallp']))
+        widget.bind('<ButtonRelease-1>', lambda e: widget.configure(image=art['smallh']))
+        if not while_playing: buttons.append(widget)
+        return widget
+    small('Meus saves', open_saves, 0)
+    small('Backups de saves', manage_saves, 1)
+    small('Guia de comandos', lambda: show('Controles'), 2, True)
+    small('Preparação', lambda: show('Preparação'), 3)
     button(page, 'Como usar meu save', save_help)
-    button(page, 'Backups de saves', manage_saves)
     info = card(page)
-    label(info, variable=build_status, size=10, color=GOLD, bold=True)
     label(info, variable=summary, size=11)
-    button(page, 'Configurar vídeo', lambda: show('Vídeo'))
-    button(page, 'Guia de comandos', lambda: show('Controles'), while_playing=True)
-    button(page, 'Preparar ou importar meu jogo', lambda: show('Preparação'))
 
     refresh_controls = build_controls_guide(bodies['Controles'], translate)
 
