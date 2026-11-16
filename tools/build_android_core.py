@@ -157,6 +157,13 @@ def main():
         if getattr(args, name) is None:
             parser.error('--' + name.replace('_', '-') + ' e obrigatorio sem --runtime-only')
     build = work / 'core-build'
+    # The launcher unpacks its sources into a new temporary folder on every run; CMake refuses a build
+    # directory configured from another source path, so start clean when the path changed.
+    cache = build / 'CMakeCache.txt'
+    if cache.is_file():
+        home = re.search(r'(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$', cache.read_text(encoding='utf-8', errors='replace'))
+        if not home or Path(home.group(1)).resolve() != (ROOT / 'port').resolve():
+            shutil.rmtree(build)
     command = ['cmake', '-S', ROOT / 'port', '-B', build, *toolchain_args(ndk), *prefix,
                '-DD2_GAME_VERSION=' + args.game_version, '-DPS3RECOMP_DIR=' + str(sdk),
                '-DRECOMP_DIR=' + str(args.recomp_dir.resolve()), '-DD2_OUT_DIR=' + str(args.out_dir.resolve()),

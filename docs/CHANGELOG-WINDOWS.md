@@ -1,3 +1,7 @@
+# 1.0.10 — Prévia europeia + núcleo Android (prévia)
+
+- A compilação Android recomeça limpa quando o launcher é aberto de outra pasta temporária (o CMake recusava a pasta de build antiga).
+
 # 1.0.9 — Prévia europeia + núcleo Android (prévia)
 
 - O log da compilação Android agora mostra as mensagens do compilador (antes ficavam de fora).
