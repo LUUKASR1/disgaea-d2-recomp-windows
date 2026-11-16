@@ -713,6 +713,7 @@ static bool d2_standalone_start(std::string& eboot_ansi)
 #endif
 
 
+#ifdef _WIN32
 /* ---- Graphics API chosen inside the game ---------------------------------------------------------------------
  * The Vulkan options panel (SYSTEM tab) and F1 in the DirectX 12 window store "api=0|1" (0 DirectX 12, 1 Vulkan)
  * in settings.ini and restart the game. The next start applies it here, before the backend is picked, so it wins
@@ -827,6 +828,7 @@ static void d2_wait_for_previous_instance(void)
     WaitForSingleObject(previous, 30000);
     CloseHandle(previous);
 }
+#endif /* _WIN32: in-game graphics API switch and restart */
 
 
 int main(int argc, char** argv)

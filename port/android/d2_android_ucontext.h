@@ -9,6 +9,14 @@
  * and on Android shutdown ends the process (the app calls _exit), so cancellation is a no-op here. */
 static inline int pthread_cancel(pthread_t thread) { (void)thread; return 0; }
 static inline void pthread_testcancel(void) {}
+#ifndef PTHREAD_CANCEL_ENABLE
+#define PTHREAD_CANCEL_ENABLE 0
+#define PTHREAD_CANCEL_DISABLE 1
+#define PTHREAD_CANCEL_DEFERRED 0
+#define PTHREAD_CANCEL_ASYNCHRONOUS 1
+#endif
+static inline int pthread_setcancelstate(int state, int* old) { (void)state; if (old) *old = PTHREAD_CANCEL_ENABLE; return 0; }
+static inline int pthread_setcanceltype(int type, int* old) { (void)type; if (old) *old = PTHREAD_CANCEL_DEFERRED; return 0; }
 #ifdef __cplusplus
 extern "C" {
 #endif

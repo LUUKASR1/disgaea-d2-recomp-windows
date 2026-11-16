@@ -1,3 +1,7 @@
+# 1.0.11 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: o código só do Windows em `main.cpp` (troca de API gráfica) deixou de ser compilado no Android; cancelamento de threads sem suporte no Android virou no-op; o compilador mostra todos os erros de uma vez.
+
 # 1.0.10 — Prévia europeia + núcleo Android (prévia)
 
 - A compilação Android recomeça limpa quando o launcher é aberto de outra pasta temporária (o CMake recusava a pasta de build antiga).

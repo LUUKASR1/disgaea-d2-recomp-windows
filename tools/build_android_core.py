@@ -169,9 +169,14 @@ def main():
                '-DRECOMP_DIR=' + str(args.recomp_dir.resolve()), '-DD2_OUT_DIR=' + str(args.out_dir.resolve()),
                '-DSPU_DIR=' + str(args.spu_dir.resolve()), '-DD2_JSON_INCLUDE_DIR=' + str(args.json_include.resolve()),
                '-DD2_ENABLE_ISO_VFS=OFF', '-DD2_SPU_SIMD_SSE41=OFF', '-DBUILD_TESTING=OFF',
+               '-DCMAKE_CXX_FLAGS_RELEASE=-O1 -DNDEBUG', '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG',   # the lifted PPU files are huge
                '-DPython3_EXECUTABLE=' + sys.executable]
     run(command)
-    run(['cmake', '--build', build])
+    # -k 0: keep going after a failure so a single run reports every error, not just the first.
+    try:
+        run(['cmake', '--build', build, '--', '-k', '0'])
+    except subprocess.CalledProcessError:
+        raise SystemExit('A compilacao falhou; veja as linhas "error:" acima.')
     library = next(build.glob('libd2core.so'), None)
     if not library:
         raise SystemExit('A compilacao terminou sem libd2core.so.')

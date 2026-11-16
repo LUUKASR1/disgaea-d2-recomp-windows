@@ -288,6 +288,8 @@ if(ANDROID)
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME d2core)
     find_library(D2_ANDROID_LOG_LIB log)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${D2_ANDROID_LOG_LIB})
+    # bionic lacks pthread cancellation: every game TU gets the same no-op shim the runtime library uses.
+    target_compile_options(${PROJECT_NAME} PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/android/d2_android_ucontext.h)
 else()
     add_executable(${PROJECT_NAME} ${D2_GAME_SOURCES})
 endif()

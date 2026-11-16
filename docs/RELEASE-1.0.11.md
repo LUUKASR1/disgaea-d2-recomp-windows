@@ -1,4 +1,4 @@
-# Disgaea D2 Windows 1.0.10 — Prévia da versão europeia (BLES01939)
+# Disgaea D2 Windows 1.0.11 — Prévia da versão europeia (BLES01939)
 
 > **Pré-lançamento experimental.** A versão estável continua sendo a [1.0.2](RELEASE-1.0.2.md). Esta prévia existe para
 > testar o jogo europeu; pode falhar na preparação ou no jogo.
@@ -13,7 +13,7 @@
 - O executável europeu aceito tem SHA256 `0257bc3ab36a63f55b0a8722fa54f7d5278a568941bdff7817934a891fcb0cbb`
   (disco e atualização europeia têm o mesmo executável).
 
-### Novidades da 1.0.10
+### Novidades da 1.0.11
 
 - A preparação europeia já gera o código do jogo (10.374 funções) e passa pelas verificações; esta versão corrige o
   passo seguinte da compilação, que falhava em `spu-eu`.
