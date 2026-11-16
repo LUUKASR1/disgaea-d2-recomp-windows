@@ -5,7 +5,20 @@
 ## Versão pública oficial do projeto — 1.0.0 Stable
 
 Baixe o **instalador** ou o **ZIP portátil** em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest).
-**Novidades da 1.0:** menu de opções **dentro do jogo (F1)**, filtros de imagem, HDR, contorno nos personagens, captura de tela (F12), avisos no estilo Steam, pausa ao perder o foco, pacote de texturas e um novo **seletor de ISO em vidro** no launcher. Veja os [patch notes](docs/RELEASE-1.0.0.md). Mouse como controle dentro do jogo não entrou na 1.0.
+### Novidades da 1.0
+
+- **Menu de opções dentro do jogo (`F1`)** com abas Vídeo, Filtros, Controles e Sistema; lembra a última aba e guarda tudo em `settings.ini`.
+- **Vídeo:** janela / tela cheia sem bordas (`F11`), tamanho da janela, resolução de saída e interna, AMD FSR 1.0, VSync, contador de FPS.
+- **Filtros:** nitidez, scanlines, máscara CRT, vinheta, cores vivas, FXAA, **contorno nos personagens** e **HDR**.
+- **Controles:** todas as teclas remapeáveis. **Sistema:** idioma, **pausar ao perder o foco**, salvar texturas em PNG.
+- **Captura de tela** (`F12`) em PNG sem perdas e **avisos no estilo Steam** (captura salva, controle conectado/desconectado).
+- **Slots de save no jogo**, ícone do jogo, imagem nítida em monitores com escala de 125% / 150% e `Esc` não fecha mais o jogo.
+- **Pacote de texturas** (dump em PNG e substituição) e ferramenta de ampliação (Lanczos; Real-ESRGAN experimental).
+- **Launcher:** novo **seletor de ISO em vidro**, com lista das ISOs encontradas no PC.
+- **Fora da 1.0:** mouse como controle dentro do jogo (fica para uma versão futura).
+
+Detalhes completos nos [patch notes da 1.0.0](docs/RELEASE-1.0.0.md).
+
 
 **Comandos:** abra **Controles** ou **Guia de comandos** no início para consultar o teclado. O guia acompanha o idioma do launcher e usa títulos com contorno e cores inspiradas no jogo. Seleção direta pelo mouse dentro do jogo ainda não está disponível.
 
@@ -32,7 +45,20 @@ A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` po
 
 **Saves:** use **My saves — open folder** on Home or **Files and support → Open save folder**. **How to use my save** shows the destination and instructions; close the game and back up before copying.
 
-**What's new in 1.0:** an **in-game options menu (F1)**, image filters, HDR, character outline, screenshots (F12), Steam-style notices, pause on focus loss, texture packs and a new **glass-style ISO picker** in the launcher. See the [patch notes](docs/RELEASE-1.0.0.md). Mouse-as-controller inside the game is not part of 1.0.
+### What's new in 1.0
+
+- **In-game options menu (`F1`)** with Video, Filters, Controls and System tabs; remembers the last tab and saves everything to `settings.ini`.
+- **Video:** windowed / borderless fullscreen (`F11`), window size, output and internal resolution, AMD FSR 1.0, VSync, FPS counter.
+- **Filters:** sharpness, scanlines, CRT mask, vignette, vivid colors, FXAA, **character outline** and **HDR**.
+- **Controls:** every key remappable. **System:** language, **pause when unfocused**, save textures as PNG.
+- **Screenshots** (`F12`) as lossless PNG and **Steam-style notices** (screenshot saved, controller connected/disconnected).
+- **In-game save slots**, game icon, sharp image on 125% / 150% scaled monitors, and `Esc` no longer closes the game.
+- **Texture pack** (PNG dump and replacement) and an upscaling tool (Lanczos; Real-ESRGAN experimental).
+- **Launcher:** new **glass-style ISO picker** listing the ISOs found on your PC.
+- **Not in 1.0:** mouse-as-controller inside the game (left for a future version).
+
+Full details in the [1.0.0 patch notes](docs/RELEASE-1.0.0.md).
+
 
 Launcher languages: **Português (Brasil) / English**, selected below WIN PORT.
 
