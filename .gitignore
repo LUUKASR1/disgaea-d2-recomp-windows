@@ -7,6 +7,9 @@
 !/LICENSE
 !/THIRD_PARTY_NOTICES.md
 !/patches/
+!/android/
+/android/**/build/
+/android/.gradle/
 # Individual worker SDK exports; the combined patch and SDK.lock stay tracked.
 /patches/*-runtime.diff
 !/codex/

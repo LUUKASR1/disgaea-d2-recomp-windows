@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Disgaea D2 (Android)</string>
+    <string name="choose_iso">Escolher ISO</string>
+    <string name="no_iso">Nenhuma ISO selecionada</string>
+    <string name="iso_selected">ISO: %1$s</string>
+    <string name="second_title">Mapa de comandos</string>
+    <string name="second_commands">Direcional / analógico esquerdo: mover\nA (cruz): confirmar\nB (círculo): voltar\nX (quadrado) / Y (triângulo)\nL1 / R1, L2 / R2\nStart / Select</string>
+    <string name="status_input">Entrada: %1$s</string>
+    <string name="no_pad">nenhum botão</string>
+</resources>
