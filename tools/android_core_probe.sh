@@ -10,6 +10,17 @@ base=$(python3 -c "import json;print(json.load(open('$lock'))['base'])")
 git clone -q "$repo" "$work/ps3recomp" && git -C "$work/ps3recomp" checkout -q --detach "$base"
 # x86-only flag: keep it for x86-64 hosts, drop it for ARM64.
 sed -i 's/^\( *\)-msse4\.1\r\?$/\1$<$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86_64>:-msse4.1>/' "$work/ps3recomp/CMakeLists.txt"
+# bionic has no pthread_setaffinity_np; leave thread placement to the Android scheduler.
+sed -i 's/pthread_setaffinity_np(pt, sizeof set, &set);/(void)pt; (void)set;/' "$work/ps3recomp/runtime/platform/win32_compat.c"
+# ucontext routines for ARM64 (bionic omits them).
+cp "$root/android/core/d2_android_ucontext.c" "$root/android/core/d2_android_ucontext.h" "$work/ps3recomp/libs/spurs/"
+cat >> "$work/ps3recomp/CMakeLists.txt" <<'EOC'
+
+if(ANDROID)
+    target_sources(ps3recomp_runtime PRIVATE libs/spurs/d2_android_ucontext.c)
+    target_compile_options(ps3recomp_runtime PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/libs/spurs/d2_android_ucontext.h)
+endif()
+EOC
 cmake_bin="$(ls -d ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmake/*/bin | head -1)"
 export PATH="$cmake_bin:$PATH"
 # The SDK needs SDL2 for pad/audio off Windows: build SDL2 for ARM64 first.
