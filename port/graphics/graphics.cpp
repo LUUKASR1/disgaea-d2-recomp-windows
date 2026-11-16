@@ -573,3 +573,6 @@ extern "C" void d2_graphics_set_hdr(int level){hdr_level.store(level<0?0:level>3
 extern "C" int d2_graphics_hdr_display(void){return hdr_display?1:0;}
 extern "C" void d2_graphics_hdr_disable(void){cfg.hdr=false;}
 extern "C" void d2_graphics_set_pause_unfocused(int on){pause_unfocused.store(on?1:0);}
+std::atomic<int> cursor_dump{0};
+extern "C" void d2_graphics_request_cursor_dump(void){cursor_dump.store(1);}
+extern "C" int d2_graphics_cursor_dump_requested(void){return cursor_dump.exchange(0);}

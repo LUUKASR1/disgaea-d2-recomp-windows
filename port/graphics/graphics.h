@@ -28,6 +28,9 @@ int d2_graphics_hdr_enabled(void); /* swap chain is scRGB FP16 (D2_HDR=1) */
 void d2_graphics_hdr_disable(void);  /* fall back to an SDR swap chain (HDR swap chain creation failed) */
 void d2_graphics_set_hdr(int level); /* 0..3: how far highlights are expanded on an HDR display */
 int d2_graphics_hdr_display(void);   /* the display is in HDR mode */
+void d2_graphics_request_cursor_dump(void);   /* F9: write the recent sprite positions for map-cursor discovery */
+int d2_graphics_cursor_dump_requested(void);
+unsigned d2_pad_keys_mask(void);              /* bit0 up, 1 down, 2 left, 3 right, 4 cross, 5 circle (key states) */
 void d2_graphics_set_outline(int level); /* 0 off, 1..3: black outline around the world sprites (characters), DirectX 12 */
 int d2_graphics_outline_level(void);
 void d2_screenshot_request(void);

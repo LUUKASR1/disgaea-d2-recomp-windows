@@ -16,6 +16,7 @@ extern "C" void d2_texture_set_dump(int on);
 extern "C" void d2_graphics_set_outline(int level);
 extern "C" void d2_graphics_set_hdr(int level);
 extern "C" void d2_graphics_set_pause_unfocused(int on);
+extern "C" void d2_graphics_request_cursor_dump(void);
 extern "C" int d2_graphics_hdr_enabled(void);
 extern "C" int d2_graphics_hdr_display(void);
 extern "C" int d2_texture_dump_enabled(void);
@@ -1450,6 +1451,14 @@ static void mouse_button(int i, bool down)
     synth_key(cfg.keys[kMouseSlot[i]], down);
 }
 static int wheel_pulse_slot = -1;
+extern "C" unsigned d2_pad_keys_mask(void)
+{
+    unsigned m = 0;
+    const int slots[6] = {0, 1, 2, 3, 4, 5};
+    for (int i = 0; i < 6; i++)
+        if (cfg.keys[slots[i]] > 0 && (GetAsyncKeyState(cfg.keys[slots[i]]) & 0x8000)) m |= 1u << i;
+    return m;
+}
 
 static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
 {
@@ -1485,6 +1494,7 @@ static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
         if ((int)w == cfg.keys[kShotKey] && w != VK_SNAPSHOT) { if (!(l & (1 << 30))) d2_screenshot_request(); return 0; }
         if (w == VK_F1) { if (dlg && IsWindowVisible(dlg)) return 0; if (is_open) close_panel(); else open_panel(); return 0; }
         if (w == VK_F11) { set_fullscreen(!cfg.fullscreen); save_config(); return 0; }
+        if (w == VK_F9) { d2_graphics_request_cursor_dump(); push_notice(L("Diagnóstico do cursor", "Cursor diagnostics"), "cursor-diag.txt", 0); return 0; }
         if (w == VK_ESCAPE) return 0; /* the SDK window would close the game: Alt+F4 / the window button do that */
         break;
     case WM_KEYUP:
