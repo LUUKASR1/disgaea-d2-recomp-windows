@@ -28,6 +28,19 @@ static int d2_outline_is_character(const D3D12DrawRecord* dr, u32 d)
              dr->d2_capture_vs_hash == D2_OUTLINE_VS && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
              hud < s_d3d.draw_count && d < hud;
     if (dbg) {
+        /* Histogram of draw signatures (vertex program, verts, render target, tex0) so the right sprite shader can be identified. */
+        static struct { u32 vs, nv, rt, t0, fp, n; } sig[24]; static int nsig = 0;
+        if (dr->is_vp && !dr->is_clear) {
+            int k = 0;
+            for (; k < nsig; k++) if (sig[k].vs == dr->d2_capture_vs_hash && sig[k].nv == dr->vertex_count && sig[k].rt == dr->rt_off) break;
+            if (k == nsig && nsig < 24) { sig[nsig].vs = dr->d2_capture_vs_hash; sig[nsig].nv = dr->vertex_count; sig[nsig].rt = dr->rt_off; sig[nsig].t0 = dr->tex[0].raw; sig[nsig].fp = dr->fp_addr; sig[nsig].n = 0; nsig++; }
+            if (k < nsig) sig[k].n++;
+        }
+        if (d == 0 && frames % 300 == 299) {
+            for (int k = 0; k < nsig; k++)
+                fprintf(stderr, "[outline] sig vs=%08X verts=%u rt=0x%X tex0=0x%08X fp=0x%X n=%u d<hud=%d\n", sig[k].vs, sig[k].nv, sig[k].rt, sig[k].t0, sig[k].fp, sig[k].n, (int)(d < hud));
+            nsig = 0;
+        }
         seen++; if (ok) picked++;
         if (d == 0 && ++frames % 300 == 0) {
             fprintf(stderr, "[outline] last 300 frames: draws=%u outlined=%u hud-start=%u of %u (%s)\n", seen, picked, hud,
