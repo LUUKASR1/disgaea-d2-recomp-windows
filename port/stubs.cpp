@@ -34,7 +34,14 @@ extern "C" void d2_register_cheats(void);
 
 extern "C" void ps3_load_prx_modules(void)
 {
-#if D2_GAME_VERSION == 140
+#if D2_GAME_VERSION == 130
+#ifdef _WIN32
+    if (!std::getenv("PS3_GAME_UPDATE_ID"))
+        _putenv_s("PS3_GAME_UPDATE_ID", "BLJS10206");
+#else
+    setenv("PS3_GAME_UPDATE_ID", "BLJS10206", 0);
+#endif
+#elif D2_GAME_VERSION == 140
     /* D2_WINDOWS_UPDATE_ENV */
 #ifdef _WIN32
     if (!std::getenv("PS3_GAME_UPDATE_ID"))

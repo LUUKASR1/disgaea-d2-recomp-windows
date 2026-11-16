@@ -223,6 +223,102 @@
           "entity_register": 29
         }
       ]
+    },
+    {
+      "version": "1.30-JP",
+      "toc": 4644648,
+      "count_signature": 104056,
+      "pointer_offset": -32308,
+      "verified": true,
+      "calls": {
+        "add_item": {
+          "address": 865468,
+          "signature": [
+            "0xf821fde1",
+            "0x7c0802a6",
+            "0xfba10208"
+          ]
+        },
+        "remove_item": {
+          "address": 379528,
+          "signature": [
+            "0xf821ff91",
+            "0x7c0802a6",
+            "0xf8010080"
+          ]
+        },
+        "item_lookup": {
+          "address": 3445032,
+          "signature": [
+            "0x548b043e",
+            "0x2c0b0000",
+            "0x4182005c"
+          ]
+        },
+        "class_lookup": {
+          "address": 3444920,
+          "signature": [
+            "0x548b043e",
+            "0x2c0b0000",
+            "0x4182005c"
+          ]
+        },
+        "class_refresh": {
+          "address": 134316,
+          "signature": [
+            "0xf821ff71",
+            "0x7c0802a6",
+            "0xfba10078"
+          ]
+        },
+        "exp_threshold": {
+          "address": 102224,
+          "signature": [
+            "0x81228184",
+            "0x3d290001",
+            "0x54841838"
+          ]
+        }
+      },
+      "slots": {
+        "save_manager": -17492,
+        "save_stat": -17380,
+        "save_file": -17376,
+        "save_metadata": -17384,
+        "item_table": -29844,
+        "skill_table": -32256,
+        "class_table": -32360,
+        "inventory_table": -30300
+      },
+      "hooks": {
+        "exp": "0001A274",
+        "sp": "000F7838",
+        "shop": "000D1FA4",
+        "damage": "000ED234"
+      },
+      "resolver_words": [
+        "0x81220000",
+        "0x3d290015",
+        "0xa00907ec",
+        "0x38e00000",
+        "0x7c090734",
+        "0x2c090000"
+      ],
+      "sp_callers": [
+        {
+          "return": 2116884,
+          "entity_register": 29
+        },
+        {
+          "return": 2118452,
+          "entity_register": 29
+        },
+        {
+          "return": 2185560,
+          "entity_register": 31
+        }
+      ],
+      "note": "Mapped from 1.40 by masked-signature matching; save layout verified in RAM on 2026-11-01 (same party/class/mana/move/jump/HL/item offsets as US 1.40 at the same point of a new game)."
     }
   ],
   "fields": [

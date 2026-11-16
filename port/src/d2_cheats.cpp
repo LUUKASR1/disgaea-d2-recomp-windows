@@ -622,7 +622,7 @@ extern "C" void d2_register_cheats(void)
     try {
         data = json::parse(d2_cheats_data);
         for (const auto& p : data["versions"]) {
-            if (p["version"] != (D2_CHEATS_VERSION == 140 ? "1.40" : "1.00")) continue;
+            if (p["version"] != (D2_CHEATS_VERSION == 140 ? "1.40" : D2_CHEATS_VERSION == 130 ? "1.30-JP" : "1.00")) continue;
             uint32_t a = p["count_signature"];
             // The count helper loads a pointer via r2, then reads +0x1507EC.
             // Compiler scheduling differs in 1.40; the profile owns its signature.

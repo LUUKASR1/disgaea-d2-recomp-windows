@@ -5,6 +5,10 @@
  * Ranges vm_fill declines (diagnostics, null page, MMIO, OOB) run the lift.
  * The 1.00 lift of this function ends in a tail trampoline; it stays lifted. */
 #include "ppu_recomp.h"
+#if D2_GAME_VERSION == 130
+#define func_0033D91C func_003370F8
+#define d2_original_0033D91C d2_original_003370F8
+#endif
 
 extern "C" int vm_fill(uint32_t a, uint8_t v, uint32_t n);
 void d2_original_0033D91C(ppu_context*);

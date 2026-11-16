@@ -14,9 +14,9 @@ extern "C" void ps3_hle_register_ctx(uint32_t, const char*, void (*)(ppu_context
 static void notify_queue(ppu_context* ctx)
 {
     uint64_t key = ctx->gpr[3];
-#if D2_GAME_VERSION == 140
-    // 00306474: r30 = static SurMixer state; +500 is the worker's queue key.
-    if (!key && ctx->lr == 0x00306514 && ctx->gpr[30]) {
+#if D2_GAME_VERSION == 140 || D2_GAME_VERSION == 130
+    // 00306474 (JP 002FFC50): r30 = static SurMixer state; +500 is the worker's queue key.
+    if (!key && ctx->lr == (D2_GAME_VERSION == 130 ? 0x002FFCF0u : 0x00306514u) && ctx->gpr[30]) {
         const uint32_t address = (uint32_t)ctx->gpr[30] + 0x500;
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
         do {
@@ -35,7 +35,13 @@ static void notify_queue(ppu_context* ctx)
     ctx->gpr[3] = (uint32_t)cellAudioSetNotifyEventQueue(key);
 }
 
-#if D2_GAME_VERSION == 140
+#if D2_GAME_VERSION == 130
+#define func_00308234 func_00301A10
+#define D2_MIXER_ADDRESS 0x00301A10
+#else
+#define D2_MIXER_ADDRESS 0x00308234
+#endif
+#if D2_GAME_VERSION == 140 || D2_GAME_VERSION == 130
 void func_00308234(ppu_context*);
 extern "C" void ppu_register_function(uint64_t, void (*)(ppu_context*));
 static void delayed_mixer(ppu_context* ctx)
@@ -49,9 +55,9 @@ static void delayed_mixer(ppu_context* ctx)
 extern "C" void d2_register_audio(void)
 {
     ps3_hle_register_ctx(0x377E0CD9, "cellAudioSetNotifyEventQueue", notify_queue);
-#if D2_GAME_VERSION == 140
+#if D2_GAME_VERSION == 140 || D2_GAME_VERSION == 130
     // Deterministically expose the priority-scheduling race in host checks.
     if (std::getenv("D2_AUDIO_INIT_DELAY_MS"))
-        ppu_register_function(0x00308234, delayed_mixer);
+        ppu_register_function(D2_MIXER_ADDRESS, delayed_mixer);
 #endif
 }
