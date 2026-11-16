@@ -36,7 +36,8 @@ static int d2_outline_is_character(const D3D12DrawRecord* dr, u32 d)
     const u32 hud = d2_outline_hud_start();
     int ok = dr->is_vp && !dr->is_clear && !dr->rt_off && !dr->rt_mrt[0] && dr->fp_addr &&
              (evs ? (d2_outline_vs_hash(dr) == evs && (!etex || dr->tex[0].raw == etex)) : d2_outline_vs_hash(dr) == D2_OUTLINE_VS) && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
-             hud < s_d3d.draw_count && d < hud;
+             (dr->tex[0].fmt & 0x9Fu) == 0x81u && dr->tex[1].w == 256 && dr->tex[1].h == 1 && /* palette-indexed (B8 + 256x1 palette) */
+             d < hud;
     if (dbgon) {
         /* Per-texture table: which atlas/texture each draw samples, its format and size, and the draw sizes. */
         static struct { u32 vs, raw, w, h, fmt, w1, h1, fmt1, n, vmin, vmax; } sig[16]; static int nsig = 0;
