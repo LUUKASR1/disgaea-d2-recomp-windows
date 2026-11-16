@@ -976,16 +976,17 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, bool hidden
         double pr = 1.0;
         if (ms < in) pr = ease(ms / in);
         else if (ms > total - out) pr = 1.0 - ease((ms - (total - out)) / out);
-        const float cw2 = std::min(400.f * s, float(w) - 36.f * s), chh = 84.f * s, margin = 18.f * s;
+        const float ns = s * 0.7f; // notices are smaller than the menu
+        const float cw2 = std::min(250.f * ns, float(w) - 24.f * ns), chh = 56.f * ns, margin = 12.f * ns;
         const float x = float(w) - cw2 - margin, y = float(h) - (chh + margin) * float(pr); // slides up from below the bottom edge
-        const float bd = std::max(2.f, 2.f * s);
+        const float bd = std::max(2.f, 2.f * ns);
         tr::ui_rect(x, y, cw2, chh, pink);
         tr::ui_gradient(x + bd, y + bd, cw2 - 2 * bd, chh - 2 * bd, {0.22f, 0.09f, 0.36f, 1.f}, {0.06f, 0.04f, 0.16f, 1.f});
         const bool off = cur.kind == 2;
         tr::ui_gradient(x + bd, y + bd, chh - bd, chh - 2 * bd, off ? Color{0.47f, 0.24f, 0.51f, 1.f} : Color{0.78f, 0.16f, 0.45f, 1.f},
                         off ? Color{0.20f, 0.10f, 0.31f, 1.f} : Color{0.36f, 0.08f, 0.40f, 1.f});
         const Color ic = off ? Color{0.75f, 0.69f, 0.84f, 1.f} : gold;
-        const float cx = x + chh * 0.5f, cy = y + chh * 0.5f, u = chh / 84.f;
+        const float cx = x + chh * 0.5f, cy = y + chh * 0.5f, u = chh / 84.f * 0.9f;
         if (cur.kind == 0) { // camera
           tr::ui_rect(cx - 20 * u, cy - 11 * u, 40 * u, 28 * u, ic);
           tr::ui_rect(cx - 9 * u, cy - 17 * u, 18 * u, 8 * u, ic);
@@ -1001,11 +1002,19 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, bool hidden
           tr::ui_rect(cx + 8 * u, cy - 5 * u, 4 * u, 4 * u, dark);
           tr::ui_rect(cx + 14 * u, cy - 1 * u, 4 * u, 4 * u, dark);
         }
-        const float tx = x + chh + 14.f * s, room = cw2 - chh - 26.f * s;
-        tr::ui_text_outline(tx, y + 12.f * s, cur.title.c_str(), 22.f * s, gold, ink, 1.8f * s);
+        const float tx = x + chh + 10.f * ns, room = cw2 - chh - 18.f * ns;
+        tr::ui_text_outline(tx, y + 8.f * ns, cur.title.c_str(), 17.f * ns, gold, ink, 1.4f * ns);
         std::string line = cur.text;
-        while (line.size() > 4 && tr::ui_text_width(line.c_str(), 17.f * s) > room) line = line.substr(0, line.size() - 2) + "\342\200\246";
-        tr::ui_text_outline(tx, y + 46.f * s, line.c_str(), 17.f * s, {0.91f, 0.86f, 1.f, 1.f}, ink, 1.4f * s);
+        if (tr::ui_text_width(line.c_str(), 13.f * ns) > room) { // shorten (never loops: the text only ever gets shorter)
+          std::string cut = line;
+          while (cut.size() > 1) {
+            cut.pop_back();
+            while (cut.size() > 1 && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0x80) cut.pop_back(); // keep UTF-8 intact
+            if (tr::ui_text_width((cut + "\342\200\246").c_str(), 13.f * ns) <= room) break;
+          }
+          line = cut + "\342\200\246";
+        }
+        tr::ui_text_outline(tx, y + 31.f * ns, line.c_str(), 13.f * ns, {0.91f, 0.86f, 1.f, 1.f}, ink, 1.1f * ns);
       }
     }
   }

@@ -1292,8 +1292,8 @@ static double toast_scale()
 {
     RECT client = {0, 0, 1280, 720};
     if (game) GetClientRect(game, &client);
-    double s = client.bottom / 720.0;
-    return s < 1.0 ? 1.0 : s > 3.0 ? 3.0 : s;
+    double s = client.bottom / 720.0 * 0.7;
+    return s < 0.8 ? 0.8 : s > 2.1 ? 2.1 : s;
 }
 
 static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
@@ -1330,7 +1330,7 @@ static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         const double s = toast_scale();
         RECT client;
         GetClientRect(game, &client);
-        const int cw = (int)(400 * s), ch = (int)(84 * s), margin = (int)(18 * s);
+        const int cw = (int)(250 * s), ch = (int)(56 * s), margin = (int)(12 * s);
         const int shown = (int)((ch + margin) * p); // how far the card has risen above the bottom edge
         if (shown <= 0) { ShowWindow(h, SW_HIDE); return 0; }
         POINT o = {0, 0};
@@ -1347,7 +1347,7 @@ static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         GetClientRect(h, &r);
         fill(dc, 0, 0, r.right, r.bottom, RGB(255, 0, 255)); // colour key: the strip below the card stays see-through
         const double s = toast_scale();
-        const int cw = r.right, ch = (int)(84 * s), bw = ch;
+        const int cw = r.right, ch = (int)(56 * s), bw = ch;
         const COLORREF gold = rgb(255, 214, 77), ink = rgb(8, 3, 24), soft = rgb(232, 219, 255), pink = rgb(255, 71, 148);
         gradient(dc, 0, 0, cw, ch, rgb(56, 23, 92), rgb(15, 10, 41));
         const int bd = std::max(2, (int)(2 * s));
@@ -1366,14 +1366,22 @@ static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         SelectObject(dc, old);
         DeleteObject(icon);
         // Title and text.
-        const int tx = bw + (int)(14 * s), room = cw - tx - (int)(12 * s);
-        HFONT tfont = make_font((int)(22 * s)), bfont = make_font((int)(17 * s));
+        const int tx = bw + (int)(10 * s), room = cw - tx - (int)(8 * s);
+        HFONT tfont = make_font((int)(17 * s)), bfont = make_font((int)(13 * s));
         SelectObject(dc, tfont);
-        text_outline(dc, tx, (int)(14 * s), toast_cur.title, gold, ink, (int)(1 * s) + 1);
+        text_outline(dc, tx, (int)(8 * s), toast_cur.title, gold, ink, (int)(1 * s) + 1);
         SelectObject(dc, bfont);
         std::string line = toast_cur.text;
-        while (line.size() > 4 && text_width(dc, line) > room) line = line.substr(0, line.size() - 2) + "…";
-        text_outline(dc, tx, (int)(46 * s), line, soft, ink, 1);
+        if (text_width(dc, line) > room) { // shorten (never loops: the text only ever gets shorter)
+            std::string cut = line;
+            while (cut.size() > 1) {
+                cut.pop_back();
+                while (cut.size() > 1 && ((unsigned char)cut.back() & 0xC0) == 0x80) cut.pop_back(); // do not split a UTF-8 character
+                if (text_width(dc, cut + "…") <= room) break;
+            }
+            line = cut + "…";
+        }
+        text_outline(dc, tx, (int)(31 * s), line, soft, ink, 1);
         SelectObject(dc, old);
         DeleteObject(tfont);
         DeleteObject(bfont);
