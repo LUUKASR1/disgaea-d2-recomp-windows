@@ -1,3 +1,7 @@
+# 1.0.6 — Prévia europeia (BLES01939)
+
+- Corrige o botão Jogar no perfil europeu: abre o jogo já compilado em vez de pedir ISO e PKGs americanos.
+
 # 1.0.5 — Prévia europeia (BLES01939)
 
 - Corrige a compilação europeia: o passo SSE4.1 dos SPU não reconhecia a pasta `spu-eu`.

@@ -376,6 +376,12 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
 
     def play():
         auto_backup_saves()
+        if ready and config.get('profile') == 'eu100' and not packages and not firmware.get():
+            # European preview is already built from the game folder/ISO: just launch it.
+            try: save_settings(home, get_settings())
+            except (OSError, ValueError) as error:
+                messagebox.showerror('Configurações', str(error)); return
+            task(backend.play); return
         if ready and config.get('iso_path') and not packages and not firmware.get():
             try: save_settings(home, get_settings())
             except (OSError, ValueError) as error:
