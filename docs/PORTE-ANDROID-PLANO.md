@@ -76,8 +76,12 @@ recompilado, com um relatório único por teste no aparelho.
 - **Marco 1a (feito no CI):** o runtime `ps3recomp` (HLE, SPU, RSX, áudio, arquivos) **compila para ARM64 Android**
   com o NDK. Foi preciso: SDL2 compilado para ARM64 (entrada/áudio), `-msse4.1` só em x86-64, `ucontext` próprio
   para ARM64 (`android/core/d2_android_ucontext.c`, usado pelos fibers) e sem afinidade de thread.
-- **Próximo (1b):** aplicar o patch do projeto sobre o SDK, compilar o `port/` (HLE do jogo, VFS) para ARM64 e ligar
-  tudo ao app; depois gerar no PC o código recompilado da ISO do usuário como biblioteca ARM64.
+- **Marco 1b (feito no CI):** o SDK **com o patch do projeto** (o mesmo do Windows) também compila para ARM64. Foi
+  preciso tornar `pthread_cancel/testcancel` no-op (o bionic não os tem; o app encerra com `_exit`).
+- **Próximo (1c):** entrada nativa do Android (`main_android.cpp`): memória guest, execução do código recompilado,
+  Vulkan em `ANativeWindow`, VFS da ISO via SAF. Depois, o launcher do Windows gera o código recompilado da ISO do
+  usuário como biblioteca ARM64 (exige o NDK no PC) e o app carrega essa biblioteca. A validação do jogo inteiro só
+  é possível com a ISO, então os testes passam pelo aparelho do usuário.
 
 ## English
 
