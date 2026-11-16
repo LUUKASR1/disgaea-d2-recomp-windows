@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int d2_game_main(int argc, char** argv);   /* port/main.cpp's main() */
@@ -19,6 +21,20 @@ int d2_core_run(const char* eboot_path, const char* vfs_root, const char* log_pa
         if (err) { setvbuf(stderr, nullptr, _IONBF, 0); }
     }
     if (vfs_root && *vfs_root) setenv("PS3_VFS_ROOT", vfs_root, 1);
+
+    /* The process starts in a read-only directory. Give the game a writable "disc" for saves and caches next to the log. */
+    if (log_path && *log_path) {
+        std::string base(log_path);
+        size_t slash = base.rfind('/');
+        base = slash == std::string::npos ? "." : base.substr(0, slash);
+        std::string hdd0 = base + "/dev_hdd0";
+        std::string tmp = base + "/tmp";
+        mkdir(hdd0.c_str(), 0775);
+        mkdir(tmp.c_str(), 0775);
+        setenv("PS3_HDD0_ROOT", hdd0.c_str(), 1);
+        setenv("TMPDIR", tmp.c_str(), 1);
+        if (chdir(base.c_str()) != 0) perror("chdir");
+    }
     __android_log_print(ANDROID_LOG_INFO, "d2core", "starting: eboot=%s vfs=%s", eboot_path ? eboot_path : "(null)",
                         vfs_root ? vfs_root : "(null)");
     char program[] = "d2core";
