@@ -24,6 +24,9 @@ void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint
 void d2_texture_set_dump(int on);
 int d2_texture_dump_enabled(void);
 /* Screenshot of the final image (output resolution, after upscaler and filters), lossless PNG. */
+int d2_graphics_hdr_enabled(void); /* swap chain is scRGB FP16 (D2_HDR=1) */
+void d2_graphics_set_hdr(int level); /* 0..3: how far highlights are expanded on an HDR display */
+int d2_graphics_hdr_display(void);   /* the display is in HDR mode */
 void d2_graphics_set_outline(int level); /* 0 off, 1..3: black outline around the world sprites (characters), DirectX 12 */
 int d2_graphics_outline_level(void);
 void d2_screenshot_request(void);

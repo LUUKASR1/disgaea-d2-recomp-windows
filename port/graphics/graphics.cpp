@@ -30,9 +30,11 @@ template<class T> struct Ref {
     T** put(){if(p)p->Release();p=nullptr;return &p;}
     T* operator->()const{return p;}
 };
-struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=false,fsr=false,post=false;float sharpness=0.2f;} cfg;
+struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=false,fsr=false,post=false,hdr=false;float sharpness=0.2f;} cfg;
 // Image filters of the in-game options panel (FXAA, sharpen, scanlines, CRT mask, vignette, vivid colours), set from the UI thread.
 float post_values[8]={};std::atomic<int> post_enabled{0};
+// HDR (scRGB FP16 swap chain): level 0..3 = how far highlights are expanded; paper/peak come from the display.
+std::atomic<int> hdr_level{0};float hdr_paper_scale=203.0f/80.0f,hdr_peak_nits=1000.0f;bool hdr_display=false;
 struct State {
     ID3D12Device* device=nullptr; ID3D12CommandQueue* queue=nullptr;
     std::array<Ref<ID3D12Resource>,2> output;
@@ -41,7 +43,7 @@ struct State {
     Ref<ID3D12Resource> middle,final,post;
     Ref<ID3D12DescriptorHeap> heap;
     Ref<ID3D12RootSignature> root;
-    Ref<ID3D12PipelineState> easu,rcas,bilinear,filters;
+    Ref<ID3D12PipelineState> easu,rcas,bilinear,filters,hdr;
     UINT stride=0;
 };
 State* gpu=nullptr;
@@ -54,6 +56,17 @@ std::string shot_directory(){
     else if(const char* u=std::getenv("USERPROFILE"))dir=std::string(u)+"\\Pictures\\Disgaea D2";
     else if(const char* l=std::getenv("LOCALAPPDATA"))dir=std::string(l)+"\\DisgaeaD2Recomp\\screenshots";
     return dir;
+}
+float half_to_float(uint16_t h){
+    const uint32_t sign=(h>>15)&1u,exp=(h>>10)&31u,man=h&1023u;float v;
+    if(exp==0)v=std::ldexp(static_cast<float>(man),-24);else if(exp==31)v=man?0.0f:65504.0f;else v=std::ldexp(static_cast<float>(man|1024u),static_cast<int>(exp)-25);
+    return sign?-v:v;
+}
+// HDR screenshots are saved as ordinary SDR PNGs: scRGB / SDR white, clipped, sRGB encoded.
+uint8_t scrgb_to_srgb8(uint16_t h,float scale){
+    float v=half_to_float(h)/scale;v=v<0.0f?0.0f:v>1.0f?1.0f:v;
+    v=v<=0.0031308f?v*12.92f:1.055f*std::pow(v,1.0f/2.4f)-0.055f;
+    return static_cast<uint8_t>(v*255.0f+0.5f);
 }
 void shot_save(std::vector<uint8_t> rgba,UINT w,UINT h,bool bgra){
     if(bgra)for(size_t i=0;i+3<rgba.size();i+=4)std::swap(rgba[i],rgba[i+2]);
@@ -92,12 +105,12 @@ void pipeline(const char* shader,Ref<ID3D12PipelineState>& out){
     D3D12_COMPUTE_PIPELINE_STATE_DESC d{};d.pRootSignature=gpu->root.p;d.CS={code->GetBufferPointer(),code->GetBufferSize()};
     checked(gpu->device->CreateComputePipelineState(&d,IID_ID3D12PipelineState,reinterpret_cast<void**>(out.put())),"Graphics compute pipeline");
 }
-void descriptors(UINT index,ID3D12Resource* input,ID3D12Resource* output){
+void descriptors(UINT index,ID3D12Resource* input,ID3D12Resource* output,DXGI_FORMAT uav_format=DXGI_FORMAT_R8G8B8A8_UNORM){
     auto cpu=gpu->heap->GetCPUDescriptorHandleForHeapStart();cpu.ptr+=index*gpu->stride;
     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
     srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;
     gpu->device->CreateShaderResourceView(input,&srv,cpu);cpu.ptr+=gpu->stride;
-    D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.Format=DXGI_FORMAT_R8G8B8A8_UNORM;uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2D;
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.Format=uav_format;uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2D;
     gpu->device->CreateUnorderedAccessView(output,nullptr,&uav,cpu);
 }
 // Full-screen filters (same maths as the Vulkan post pass, without FSR). Reads t0, writes u0, 20 root constants:
@@ -164,6 +177,26 @@ void main(uint3 id : SV_DispatchThreadID) {
     result[id.xy] = float4(saturate(c), 1.0);
 }
 )HLSL";
+// SDR -> HDR: sRGB decode, highlight expansion on the brightest channel (keeps hue), scale to scRGB (1.0 = 80 nits).
+// pp[0] = (width, height, paper scale (SDR white / 80 nits), highlight boost).
+const char* d2_hdr_cs = R"HLSL(
+cbuffer HdrParams : register(b0) { float4 pp[5]; };
+Texture2D<float4> scene : register(t0);
+RWTexture2D<float4> result : register(u0);
+float3 srgb_to_linear(float3 c) {
+    return lerp(c / 12.92, pow((c + 0.055) / 1.055, 2.4), step(0.04045, c));
+}
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= (uint)pp[0].x || id.y >= (uint)pp[0].y) return;
+    float3 c = saturate(scene.Load(int3(id.xy, 0)).rgb);
+    float3 lin = srgb_to_linear(c);
+    float m = max(lin.r, max(lin.g, lin.b));
+    float t = saturate((m - 0.55) / 0.45);
+    float gain = 1.0 + pp[0].w * t * t;
+    result[id.xy] = float4(lin * gain * pp[0].z, 1.0);
+}
+)HLSL";
 void dispatch(ID3D12PipelineState* p,UINT index,const UINT constants[20]){
     auto h=gpu->heap->GetGPUDescriptorHandleForHeapStart();h.ptr+=static_cast<UINT64>(index)*gpu->stride;
     gpu->commands->SetPipelineState(p);gpu->commands->SetComputeRoot32BitConstants(0,20,constants,0);
@@ -182,6 +215,25 @@ void run_filters(UINT frame,ID3D12Resource* source,D3D12_RESOURCE_STATES source_
     dispatch(gpu->filters.p,slot,constants);
     transition(source,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,source_state);
     transition(gpu->post.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
+}
+}
+
+namespace {
+// Final step in HDR: source (8-bit, state `source_state`) -> HDR pass -> swap buffer (FP16, already in UNORDERED_ACCESS).
+void hdr_pass(UINT frame,ID3D12Resource* source,D3D12_RESOURCE_STATES source_state,ID3D12Resource* output){
+    static const float strength[4]={0.f,0.5f,0.75f,1.0f};
+    int lv=hdr_level.load();lv=lv<0?0:lv>3?3:lv;
+    const float level_peak=(hdr_peak_nits<1500.0f?hdr_peak_nits:1500.0f)*strength[lv];
+    const float paper_nits=hdr_paper_scale*80.0f;
+    const float boost=(hdr_display&&level_peak>paper_nits)?level_peak/paper_nits-1.0f:0.0f;
+    float values[20]{};values[0]=static_cast<float>(cfg.ow);values[1]=static_cast<float>(cfg.oh);values[2]=hdr_display?hdr_paper_scale:1.0f;values[3]=boost;
+    UINT constants[20];std::memcpy(constants,values,sizeof constants);
+    const UINT slot=16+frame*2;
+    descriptors(slot,source,output,DXGI_FORMAT_R16G16B16A16_FLOAT);
+    ID3D12DescriptorHeap* heaps[]={gpu->heap.p};gpu->commands->SetDescriptorHeaps(1,heaps);gpu->commands->SetComputeRootSignature(gpu->root.p);
+    transition(source,source_state,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    dispatch(gpu->hdr.p,slot,constants);
+    transition(source,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,source_state);
 }
 }
 
@@ -276,11 +328,51 @@ extern "C" int d2_graphics_configure(UINT w,UINT h){
         if(sharp){char* end=nullptr;cfg.sharpness=std::strtof(sharp,&end);if(*end||!std::isfinite(cfg.sharpness)||cfg.sharpness<0||cfg.sharpness>1)throw std::runtime_error("Invalid FSR sharpness");}
         const char* hud=std::getenv("D2_HUD_AFTER_UPSCALE");
         cfg.post=flag("D2_POST_FILTERS");
-        cfg.active=cfg.fsr||cfg.post||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h||(hud && !std::strcmp(hud,"1"));
+        cfg.hdr=flag("D2_HDR");
+        cfg.active=cfg.hdr||cfg.fsr||cfg.post||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h||(hud && !std::strcmp(hud,"1"));
         if(cfg.active&&(std::getenv("GCM_GUEST_FB")||std::getenv("SUBVP_RTT")||std::getenv("GCM_COMPOSITE_RT")))throw std::runtime_error("Experimental framebuffer override incompatible with graphics scaling");
         std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s filters=%s DLSS=unavailable FG=unavailable\n",cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native",cfg.post?"available":"off");
         return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] %s\n",e.what());return -1;}
+}
+namespace {
+// SDR white level the user chose in Windows (Settings > Display > HDR > SDR content brightness) for the monitor holding the window.
+float windows_sdr_white_nits(const wchar_t* gdi_name){
+    UINT32 np=0,nm=0;
+    if(GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS,&np,&nm)!=ERROR_SUCCESS||!np)return 0.0f;
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(np);std::vector<DISPLAYCONFIG_MODE_INFO> modes(nm);
+    if(QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS,&np,paths.data(),&nm,modes.data(),nullptr)!=ERROR_SUCCESS)return 0.0f;
+    for(UINT32 i=0;i<np;++i){
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME src{};src.header.type=DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;src.header.size=sizeof src;
+        src.header.adapterId=paths[i].sourceInfo.adapterId;src.header.id=paths[i].sourceInfo.id;
+        if(DisplayConfigGetDeviceInfo(&src.header)!=ERROR_SUCCESS||_wcsicmp(src.viewGdiDeviceName,gdi_name))continue;
+        DISPLAYCONFIG_SDR_WHITE_LEVEL w{};w.header.type=DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;w.header.size=sizeof w;
+        w.header.adapterId=paths[i].targetInfo.adapterId;w.header.id=paths[i].targetInfo.id;
+        if(DisplayConfigGetDeviceInfo(&w.header)==ERROR_SUCCESS&&w.SDRWhiteLevel)return static_cast<float>(w.SDRWhiteLevel)/1000.0f*80.0f;
+    }
+    return 0.0f;
+}
+// Puts the swap chain in scRGB (linear BT.709, 1.0 = 80 nits) and reads the display's HDR state, peak and SDR white.
+void hdr_setup(IDXGISwapChain3* swap){
+    UINT support=0;
+    if(FAILED(swap->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,&support))||!(support&DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT))
+        throw std::runtime_error("scRGB color space not supported");
+    checked(swap->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709),"HDR color space");
+    hdr_display=false;hdr_paper_scale=1.0f;hdr_peak_nits=80.0f;
+    Ref<IDXGIOutput> out;
+    if(SUCCEEDED(swap->GetContainingOutput(out.put()))){
+        Ref<IDXGIOutput6> out6;DXGI_OUTPUT_DESC1 d{};
+        if(SUCCEEDED(out->QueryInterface(IID_IDXGIOutput6,reinterpret_cast<void**>(out6.put())))&&SUCCEEDED(out6->GetDesc1(&d))&&d.ColorSpace==DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020){
+            hdr_display=true;hdr_peak_nits=d.MaxLuminance>200.0f?d.MaxLuminance:1000.0f;
+            float white=0.0f;DXGI_OUTPUT_DESC od{};
+            if(SUCCEEDED(out->GetDesc(&od)))white=windows_sdr_white_nits(od.DeviceName);
+            if(const char* e=std::getenv("D2_HDR_PAPER_NITS")){float v=static_cast<float>(std::atof(e));if(v>=80.0f&&v<=480.0f)white=v;}
+            if(white<80.0f)white=203.0f;
+            hdr_paper_scale=white/80.0f;
+        }
+    }
+    std::fprintf(stderr,"[D2HDR] scRGB swap chain; display HDR=%d peak=%.0f nits SDR white=%.0f nits\n",hdr_display?1:0,hdr_peak_nits,hdr_paper_scale*80.0f);
+}
 }
 extern "C" int d2_graphics_start(void* device,void* queue,void* swapchain){
     if(!cfg.active)return 0;
@@ -294,11 +386,12 @@ extern "C" int d2_graphics_start(void* device,void* queue,void* swapchain){
         checked(gpu->device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,gpu->allocator[0].p,nullptr,IID_ID3D12GraphicsCommandList,reinterpret_cast<void**>(gpu->commands.put())),"Graphics command list");
         checked(gpu->commands->Close(),"Close graphics command list");
         const bool scaling=cfg.fsr||cfg.rw!=cfg.ow||cfg.rh!=cfg.oh;
-        if(!scaling&&!cfg.post)return 0;
+        if(cfg.hdr){try{hdr_setup(swap);}catch(const std::exception& e){std::fprintf(stderr,"[D2HDR] %s; showing as SDR\n",e.what());hdr_display=false;hdr_paper_scale=1.0f;}}
+        if(!scaling&&!cfg.post&&!cfg.hdr)return 0;
         if(scaling)texture(gpu->final.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         if(cfg.fsr)texture(gpu->middle.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         if(cfg.post)texture(gpu->post.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-        D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.NumDescriptors=16;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.NumDescriptors=24;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         checked(gpu->device->CreateDescriptorHeap(&hd,IID_ID3D12DescriptorHeap,reinterpret_cast<void**>(gpu->heap.put())),"Graphics descriptor heap");
         gpu->stride=gpu->device->GetDescriptorHandleIncrementSize(hd.Type);
         D3D12_DESCRIPTOR_RANGE ranges[2]{};
@@ -313,6 +406,7 @@ extern "C" int d2_graphics_start(void* device,void* queue,void* swapchain){
         checked(gpu->device->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(),IID_ID3D12RootSignature,reinterpret_cast<void**>(gpu->root.put())),"Graphics root signature object");
         if(cfg.fsr){pipeline(d2_easu,gpu->easu);pipeline(d2_rcas,gpu->rcas);}else if(scaling)pipeline(d2_bilinear,gpu->bilinear);
         if(cfg.post)pipeline(d2_post_cs,gpu->filters);
+        if(cfg.hdr)pipeline(d2_hdr_cs,gpu->hdr);
         return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] start: %s\n",e.what());delete gpu;gpu=nullptr;return -1;}
 }
@@ -333,14 +427,17 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
         const bool filters=cfg.post&&gpu->filters.p&&post_enabled.load()!=0;
         checked(gpu->allocator[frame]->Reset(),"Graphics allocator reset");
         checked(gpu->commands->Reset(gpu->allocator[frame].p,nullptr),"Graphics list reset");
-        transition(output,D3D12_RESOURCE_STATE_PRESENT,D3D12_RESOURCE_STATE_COPY_DEST);
+        const bool hdr=cfg.hdr&&gpu->hdr.p;
+        const D3D12_RESOURCE_STATES out_state=hdr?D3D12_RESOURCE_STATE_UNORDERED_ACCESS:D3D12_RESOURCE_STATE_COPY_DEST;
+        transition(output,D3D12_RESOURCE_STATE_PRESENT,out_state);
         if(!scaling&&!filters){
-            transition(input,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_COPY_SOURCE);gpu->commands->CopyResource(output,input);
-            transition(input,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
+            if(hdr)hdr_pass(frame,input,D3D12_RESOURCE_STATE_COMMON,output);
+            else{transition(input,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_COPY_SOURCE);gpu->commands->CopyResource(output,input);
+            transition(input,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);}
         }else if(!scaling){
             // Native size with image filters: scene -> filters -> swap buffer.
             run_filters(frame,input,D3D12_RESOURCE_STATE_COMMON);
-            gpu->commands->CopyResource(output,gpu->post.p);
+            if(hdr)hdr_pass(frame,gpu->post.p,D3D12_RESOURCE_STATE_COPY_SOURCE,output);else gpu->commands->CopyResource(output,gpu->post.p);
             transition(gpu->post.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
         }else{
             UINT constants[20]{};constants[16]=cfg.ow;constants[17]=cfg.oh;
@@ -360,30 +457,30 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
                 // Upscaled image -> filters -> swap buffer.
                 run_filters(frame,gpu->final.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                 transition(gpu->final.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COMMON);
-                gpu->commands->CopyResource(output,gpu->post.p);
+                if(hdr)hdr_pass(frame,gpu->post.p,D3D12_RESOURCE_STATE_COPY_SOURCE,output);else gpu->commands->CopyResource(output,gpu->post.p);
                 transition(gpu->post.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
             }else{
             transition(gpu->final.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
-            gpu->commands->CopyResource(output,gpu->final.p);
+            if(hdr)hdr_pass(frame,gpu->final.p,D3D12_RESOURCE_STATE_COPY_SOURCE,output);else gpu->commands->CopyResource(output,gpu->final.p);
             transition(gpu->final.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
             }
         }
         const bool grab=shot_request.exchange(0)!=0;
-        Ref<ID3D12Resource> readback;D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT shot_rows=0;UINT64 shot_row_bytes=0;bool shot_bgra=false;UINT shot_w=0,shot_h=0;
+        Ref<ID3D12Resource> readback;D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT shot_rows=0;UINT64 shot_row_bytes=0;bool shot_bgra=false,shot_f16=false;UINT shot_w=0,shot_h=0;
         if(grab){
             try{
-                const auto desc=output->GetDesc();UINT64 total=0;shot_w=static_cast<UINT>(desc.Width);shot_h=desc.Height;shot_bgra=desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM||desc.Format==DXGI_FORMAT_B8G8R8A8_TYPELESS;
+                const auto desc=output->GetDesc();shot_f16=desc.Format==DXGI_FORMAT_R16G16B16A16_FLOAT;UINT64 total=0;shot_w=static_cast<UINT>(desc.Width);shot_h=desc.Height;shot_bgra=desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM||desc.Format==DXGI_FORMAT_B8G8R8A8_TYPELESS;
                 gpu->device->GetCopyableFootprints(&desc,0,1,0,&footprint,&shot_rows,&shot_row_bytes,&total);
                 D3D12_HEAP_PROPERTIES hp{};hp.Type=D3D12_HEAP_TYPE_READBACK;
                 D3D12_RESOURCE_DESC bd{};bd.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;bd.Width=total;bd.Height=1;bd.DepthOrArraySize=1;bd.MipLevels=1;bd.SampleDesc.Count=1;bd.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
                 checked(gpu->device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&bd,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_ID3D12Resource,reinterpret_cast<void**>(readback.put())),"Screenshot buffer");
-                transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_COPY_SOURCE);
+                transition(output,out_state,D3D12_RESOURCE_STATE_COPY_SOURCE);
                 D3D12_TEXTURE_COPY_LOCATION src{},dst{};src.pResource=output;src.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
                 dst.pResource=readback.p;dst.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;dst.PlacedFootprint=footprint;
                 gpu->commands->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
                 transition(output,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_PRESENT);
-            }catch(const std::exception& e){std::fprintf(stderr,"[D2SHOT] %s\n",e.what());if(readback.p){readback.p->Release();readback.p=nullptr;}transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PRESENT);}
-        }else transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PRESENT);
+            }catch(const std::exception& e){std::fprintf(stderr,"[D2SHOT] %s\n",e.what());if(readback.p){readback.p->Release();readback.p=nullptr;}transition(output,out_state,D3D12_RESOURCE_STATE_PRESENT);}
+        }else transition(output,out_state,D3D12_RESOURCE_STATE_PRESENT);
         checked(gpu->commands->Close(),"Graphics close");ID3D12CommandList* lists[]={gpu->commands.p};gpu->queue->ExecuteCommandLists(1,lists);
         if(readback.p){
             try{
@@ -394,6 +491,14 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
                 void* mapped=nullptr;D3D12_RANGE range{0,static_cast<SIZE_T>(footprint.Footprint.RowPitch)*shot_rows};
                 checked(readback->Map(0,&range,&mapped),"Screenshot map");
                 std::vector<uint8_t> pixels(static_cast<size_t>(shot_w)*shot_h*4);
+                if(shot_f16){
+                    const float scale=hdr_display?hdr_paper_scale:1.0f;
+                    for(UINT y=0;y<shot_h;++y){
+                        const auto* row=reinterpret_cast<const uint16_t*>(static_cast<uint8_t*>(mapped)+static_cast<size_t>(footprint.Footprint.RowPitch)*y);
+                        uint8_t* dst=&pixels[static_cast<size_t>(y)*shot_w*4];
+                        for(UINT x=0;x<shot_w;++x){dst[x*4]=scrgb_to_srgb8(row[x*4],scale);dst[x*4+1]=scrgb_to_srgb8(row[x*4+1],scale);dst[x*4+2]=scrgb_to_srgb8(row[x*4+2],scale);dst[x*4+3]=255;}
+                    }
+                }else
                 for(UINT y=0;y<shot_h;++y)std::memcpy(&pixels[static_cast<size_t>(y)*shot_w*4],static_cast<uint8_t*>(mapped)+static_cast<size_t>(footprint.Footprint.RowPitch)*y,static_cast<size_t>(shot_w)*4);
                 D3D12_RANGE none{0,0};readback->Unmap(0,&none);
                 std::thread(shot_save,std::move(pixels),shot_w,shot_h,shot_bgra).detach();
@@ -434,3 +539,6 @@ extern "C" void d2_screenshot_save(const void* pixels,uint32_t w,uint32_t h,int 
 }
 extern "C" void d2_graphics_set_outline(int level){outline_level.store(level<0?0:level>3?3:level);}
 extern "C" int d2_graphics_outline_level(void){return outline_level.load();}
+extern "C" int d2_graphics_hdr_enabled(void){return cfg.hdr?1:0;}
+extern "C" void d2_graphics_set_hdr(int level){hdr_level.store(level<0?0:level>3?3:level);}
+extern "C" int d2_graphics_hdr_display(void){return hdr_display?1:0;}

@@ -14,6 +14,9 @@ extern "C" void d2_restart_with_api(int api);
 extern "C" void d2_graphics_set_post(const float* values, int enabled);
 extern "C" void d2_texture_set_dump(int on);
 extern "C" void d2_graphics_set_outline(int level);
+extern "C" void d2_graphics_set_hdr(int level);
+extern "C" int d2_graphics_hdr_enabled(void);
+extern "C" int d2_graphics_hdr_display(void);
 extern "C" int d2_texture_dump_enabled(void);
 extern "C" void d2_screenshot_request(void);
 extern "C" unsigned d2_screenshot_last(char* path, unsigned size); /* port/graphics/graphics.cpp */
@@ -30,7 +33,7 @@ constexpr int kShotKey = 14;
 constexpr int kRows = 10;
 constexpr int kMaxHits = 48;
 constexpr int A_KEY0 = 200;
-enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_OUTLINE, A_TAB0 = 100 };
+enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_OUTLINE, A_HDR, A_TAB0 = 100 };
 constexpr int kTabs = 4; // 0 video, 1 filters, 2 controls, 3 system
 
 constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
@@ -52,6 +55,7 @@ struct Config {
     bool texdump = false; // save every texture the game loads as PNG (texture pack)
     int out_idx = -1, scale_pct = -1, fsr = -1; // -1: not chosen in the game (the launcher's values stay)
     unsigned menu_page = 0; // last tab open in F1
+    unsigned hdr = 0; // 0 off, 1..3 on (highlight expansion); on/off needs a restart (swap chain format)
     unsigned outline = 0; // black outline around the world sprites: 0 off .. 3 thick
     unsigned sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0, aa = 0; // 0 off .. 3 strong (aa: 0/1)
     int keys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
@@ -85,7 +89,7 @@ static std::wstring W(const std::string& utf8)
 
 static bool is_known_key(const std::string& key)
 {
-    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "menu_page" || key == "sharpen" ||
+    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "hdr" || key == "menu_page" || key == "sharpen" ||
         key == "scanlines" || key == "crtmask" || key == "vignette" || key == "vivid" || key == "aa" || key == "d3_out" || key == "d3_scale" ||
         key == "d3_fsr")
         return true;
@@ -115,6 +119,7 @@ static void load_config()
             else if (key == "showfps") cfg.show_fps = value != 0;
             else if (key == "texdump") cfg.texdump = value != 0;
             else if (key == "menu_page" && value >= 0 && value < kTabs) cfg.menu_page = (unsigned)value;
+            else if (key == "hdr" && value >= 0 && value <= 3) cfg.hdr = (unsigned)value;
             else if (key == "outline" && value >= 0 && value <= 3) cfg.outline = (unsigned)value;
             else if (key == "d3_out" && value >= 0 && value < kOutCount) cfg.out_idx = (int)value;
             else if (key == "d3_scale" && value >= 25 && value <= 400) cfg.scale_pct = (int)value;
@@ -158,6 +163,7 @@ static void save_config()
     text += "showfps=" + std::to_string(cfg.show_fps ? 1 : 0) + "\n";
     text += "texdump=" + std::to_string(cfg.texdump ? 1 : 0) + "\n";
     text += "outline=" + std::to_string(cfg.outline) + "\n";
+    text += "hdr=" + std::to_string(cfg.hdr) + "\n";
     text += "menu_page=" + std::to_string(cfg.menu_page) + "\n";
     if (cfg.out_idx >= 0) text += "d3_out=" + std::to_string(cfg.out_idx) + "\n";
     if (cfg.scale_pct >= 0) text += "d3_scale=" + std::to_string(cfg.scale_pct) + "\n";
@@ -217,6 +223,7 @@ static void prepare()
         fprintf(stderr, "[d3d12][ui] start options: output %ux%u, internal %d%%, upscaler %s\n", ow, oh, pct, fsr ? "FSR1" : "native");
     }
     if (!getenv("D2_POST_FILTERS")) _putenv_s("D2_POST_FILTERS", "1");
+    if (cfg.hdr && !getenv("D2_HDR")) _putenv_s("D2_HDR", "1");
 }
 
 /* ---- window handling --------------------------------------------------------------------------------------- */
@@ -233,6 +240,7 @@ static void apply_post()
     const bool active = cfg.sharpen || cfg.scanlines || cfg.crt_mask || cfg.vignette || cfg.vivid || cfg.aa;
     d2_graphics_set_post(params, active ? 1 : 0);
     d2_graphics_set_outline((int)cfg.outline);
+    d2_graphics_set_hdr((int)cfg.hdr);
 }
 
 // ---- FPS counter: a small click-through window in the top-left corner of the game window -----------------------
@@ -493,6 +501,13 @@ static void activate(int act, int dir)
     case A_VIGNETTE: cfg.vignette = (cfg.vignette + 4 + (unsigned)dir) % 4; apply_post(); break;
     case A_VIVID: cfg.vivid = (cfg.vivid + 4 + (unsigned)dir) % 4; apply_post(); break;
     case A_AA: cfg.aa = cfg.aa ? 0u : 1u; apply_post(); break;
+    case A_HDR: {
+        const unsigned old = cfg.hdr;
+        cfg.hdr = (cfg.hdr + 4 + (unsigned)dir) % 4;
+        if ((old == 0) != (cfg.hdr == 0)) restart_pending = true; // the swap chain format changes
+        apply_post();
+        break;
+    }
     case A_OUTLINE: cfg.outline = (cfg.outline + 4 + (unsigned)dir) % 4; apply_post(); break;
     case A_LANG: cfg.lang = cfg.lang ? 0u : 1u; break;
     case A_TEXDUMP: cfg.texdump = !d2_texture_dump_enabled(); d2_texture_set_dump(cfg.texdump ? 1 : 0); break;
@@ -509,6 +524,8 @@ static void activate(int act, int dir)
     case A_RESET:
         if (page == 1) {
             cfg.sharpen = cfg.scanlines = cfg.crt_mask = cfg.vignette = cfg.vivid = cfg.aa = cfg.outline = 0;
+            if (cfg.hdr) restart_pending = true;
+            cfg.hdr = 0;
             apply_post();
         } else {
             cfg.vsync = true;
@@ -620,10 +637,17 @@ static void layout_rows(Row* rows, std::string& hint)
         rows[4] = Row{A_VIVID, L("Cores vivas", "Vivid colors"), levels[cfg.vivid], true, false};
         rows[5] = Row{A_AA, L("Suavização (FXAA)", "Anti-aliasing (FXAA)"), on_off[cfg.aa ? 1 : 0], true, false};
         rows[6] = Row{A_OUTLINE, L("Contorno nos personagens", "Character outline"), levels[cfg.outline], true, false};
+        rows[7] = Row{A_HDR, L("HDR (reinicia ao ligar/desligar)", "HDR (restart to toggle)"), levels[cfg.hdr], true, false};
         rows[8] = Row{A_RESET, L("Restaurar padrões", "Restore defaults"), "", true, true};
         rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};
         hint = L("Os filtros valem para a imagem inteira, na resolução do jogo. \"Desligado\" volta ao original.",
                  "Filters apply to the whole image at the game's resolution. \"Off\" restores the original.");
+        if (restart_pending && cfg.hdr != 0 && d2_graphics_hdr_enabled() == 0)
+            hint = L("HDR: reinicie o jogo (aba Vídeo) para ligar. Ative também \"Usar HDR\" nas configurações de vídeo do Windows.",
+                     "HDR: restart the game (Video tab) to turn it on. Also enable \"Use HDR\" in Windows display settings.");
+        else if (cfg.hdr != 0 && d2_graphics_hdr_enabled() && !d2_graphics_hdr_display())
+            hint = L("HDR ligado, mas o Windows está sem HDR neste monitor: a imagem fica igual ao SDR.",
+                     "HDR is on, but Windows HDR is off for this monitor: the image stays SDR.");
     } else if (page == 2) {
         rows[8] = Row{A_KEYS_RESET, L("Restaurar teclas", "Restore keys"), "", true, true};
         rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};

@@ -28,6 +28,10 @@ def generate(source, output):
     text = replace(text, 's_d3d.hwnd = create_window(d2_graphics_output_width(), d2_graphics_output_height(), title);',
         's_d3d.hwnd = create_window(d2_graphics_output_width(), d2_graphics_output_height(), title);\n'
         '    d2_display_start(s_d3d.hwnd);')
+    text = replace(text, '    sc_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;',
+        '    sc_desc.Format = d2_graphics_hdr_enabled() ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R8G8B8A8_UNORM;')
+    text = replace(text, '    sc_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;',
+        '    sc_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | (d2_graphics_hdr_enabled() ? DXGI_USAGE_UNORDERED_ACCESS : 0);')
     text = replace(text, '    sc_desc.Width = width;', '    sc_desc.Width = d2_graphics_output_width();')
     text = replace(text, '    sc_desc.Height = height;', '    sc_desc.Height = d2_graphics_output_height();')
     text = replace(text, '    /* Create RTV descriptor heap */',
