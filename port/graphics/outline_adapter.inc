@@ -19,21 +19,26 @@ static u32 d2_outline_hud_start(void)
     return start;
 }
 
+static u32 d2_outline_vs_hash(const D3D12DrawRecord* dr)
+{
+    return (dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n) ? s_d3d.vp_vs[dr->vs_idx].hash : 0u;
+}
+
 static int d2_outline_is_character(const D3D12DrawRecord* dr, u32 d)
 {
     static int dbg = -1; static u32 seen = 0, picked = 0, frames = 0;
     if (dbg < 0) { const char* e = getenv("D2_OUTLINE_DEBUG"); dbg = e && *e && *e != '0'; }
     const u32 hud = d2_outline_hud_start();
     int ok = dr->is_vp && !dr->is_clear && !dr->rt_off && !dr->rt_mrt[0] && dr->fp_addr &&
-             dr->d2_capture_vs_hash == D2_OUTLINE_VS && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
+             d2_outline_vs_hash(dr) == D2_OUTLINE_VS && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
              hud < s_d3d.draw_count && d < hud;
     if (dbg) {
         /* Histogram of draw signatures (vertex program, verts, render target, tex0) so the right sprite shader can be identified. */
         static struct { u32 vs, nv, rt, t0, fp, n; } sig[24]; static int nsig = 0;
         if (dr->is_vp && !dr->is_clear) {
             int k = 0;
-            for (; k < nsig; k++) if (sig[k].vs == dr->d2_capture_vs_hash && sig[k].nv == dr->vertex_count && sig[k].rt == dr->rt_off) break;
-            if (k == nsig && nsig < 24) { sig[nsig].vs = dr->d2_capture_vs_hash; sig[nsig].nv = dr->vertex_count; sig[nsig].rt = dr->rt_off; sig[nsig].t0 = dr->tex[0].raw; sig[nsig].fp = dr->fp_addr; sig[nsig].n = 0; nsig++; }
+            for (; k < nsig; k++) if (sig[k].vs == d2_outline_vs_hash(dr) && sig[k].nv == dr->vertex_count && sig[k].rt == dr->rt_off) break;
+            if (k == nsig && nsig < 24) { sig[nsig].vs = d2_outline_vs_hash(dr); sig[nsig].nv = dr->vertex_count; sig[nsig].rt = dr->rt_off; sig[nsig].t0 = dr->tex[0].raw; sig[nsig].fp = dr->fp_addr; sig[nsig].n = 0; nsig++; }
             if (k < nsig) sig[k].n++;
         }
         if (d == 0 && frames % 300 == 299) {

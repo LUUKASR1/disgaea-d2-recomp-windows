@@ -51,6 +51,7 @@ struct Config {
     bool show_fps = false;
     bool texdump = false; // save every texture the game loads as PNG (texture pack)
     int out_idx = -1, scale_pct = -1, fsr = -1; // -1: not chosen in the game (the launcher's values stay)
+    unsigned menu_page = 0; // last tab open in F1
     unsigned outline = 0; // black outline around the world sprites: 0 off .. 3 thick
     unsigned sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0, aa = 0; // 0 off .. 3 strong (aa: 0/1)
     int keys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
@@ -84,7 +85,7 @@ static std::wstring W(const std::string& utf8)
 
 static bool is_known_key(const std::string& key)
 {
-    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "sharpen" ||
+    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "menu_page" || key == "sharpen" ||
         key == "scanlines" || key == "crtmask" || key == "vignette" || key == "vivid" || key == "aa" || key == "d3_out" || key == "d3_scale" ||
         key == "d3_fsr")
         return true;
@@ -113,6 +114,7 @@ static void load_config()
             else if (key == "lang" && value >= 0 && value <= 1) cfg.lang = (unsigned)value;
             else if (key == "showfps") cfg.show_fps = value != 0;
             else if (key == "texdump") cfg.texdump = value != 0;
+            else if (key == "menu_page" && value >= 0 && value < kTabs) cfg.menu_page = (unsigned)value;
             else if (key == "outline" && value >= 0 && value <= 3) cfg.outline = (unsigned)value;
             else if (key == "d3_out" && value >= 0 && value < kOutCount) cfg.out_idx = (int)value;
             else if (key == "d3_scale" && value >= 25 && value <= 400) cfg.scale_pct = (int)value;
@@ -156,6 +158,7 @@ static void save_config()
     text += "showfps=" + std::to_string(cfg.show_fps ? 1 : 0) + "\n";
     text += "texdump=" + std::to_string(cfg.texdump ? 1 : 0) + "\n";
     text += "outline=" + std::to_string(cfg.outline) + "\n";
+    text += "menu_page=" + std::to_string(cfg.menu_page) + "\n";
     if (cfg.out_idx >= 0) text += "d3_out=" + std::to_string(cfg.out_idx) + "\n";
     if (cfg.scale_pct >= 0) text += "d3_scale=" + std::to_string(cfg.scale_pct) + "\n";
     if (cfg.fsr >= 0) text += "d3_fsr=" + std::to_string(cfg.fsr) + "\n";
@@ -435,7 +438,7 @@ static void activate(int act, int dir)
     listening = -1;
     if (act != A_API) api_armed_until = 0;
     if (act != A_RESTART) restart_armed_until = 0;
-    if (act >= A_TAB0 && act < A_TAB0 + kTabs) { page = act - A_TAB0; panel_redraw(); return; }
+    if (act >= A_TAB0 && act < A_TAB0 + kTabs) { page = act - A_TAB0; cfg.menu_page = (unsigned)page; save_config(); panel_redraw(); return; }
     switch (act) {
     case A_MODE: set_fullscreen(!cfg.fullscreen); break;
     case A_WINSIZE: {
@@ -844,7 +847,7 @@ static void open_panel()
     POINT origin = {0, 0};
     ClientToScreen(game, &origin);
     SetWindowPos(panel, HWND_TOP, origin.x + (client.right - pw) / 2, origin.y + (client.bottom - ph) / 2, pw, ph, SWP_NOACTIVATE);
-    page = 0;
+    page = (int)(cfg.menu_page < (unsigned)kTabs ? cfg.menu_page : 0u);
     hover = A_NONE;
     listening = -1;
     is_open = true;
