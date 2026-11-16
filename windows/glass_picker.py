@@ -146,7 +146,7 @@ class GlassIsoPicker:
         win.configure(bg=KEY)
         try:
             win.attributes('-transparentcolor', KEY)
-            win.attributes('-alpha', 0.96)
+            win.attributes('-alpha', 0.975)
         except tk.TclError:
             win.configure(bg=BG)         # platforms without colour keys: a plain rectangle
         parent.update_idletasks()
