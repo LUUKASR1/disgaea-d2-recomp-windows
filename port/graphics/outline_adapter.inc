@@ -28,22 +28,29 @@ static int d2_outline_is_character(const D3D12DrawRecord* dr, u32 d)
 {
     static int dbg = -1; static u32 seen = 0, picked = 0, frames = 0;
     if (dbg < 0) { const char* e = getenv("D2_OUTLINE_DEBUG"); dbg = e && *e && *e != '0'; }
+    static u32 evs = 0, etex = 0, einit = 0;
+    if (!einit) { einit = 1; const char* a = getenv("D2_OUTLINE_VS"); const char* b = getenv("D2_OUTLINE_TEX0");
+                  if (a && *a) evs = (u32)strtoul(a, NULL, 16); if (b && *b) etex = (u32)strtoul(b, NULL, 16); }
     const u32 hud = d2_outline_hud_start();
     int ok = dr->is_vp && !dr->is_clear && !dr->rt_off && !dr->rt_mrt[0] && dr->fp_addr &&
-             d2_outline_vs_hash(dr) == D2_OUTLINE_VS && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
+             (evs ? (d2_outline_vs_hash(dr) == evs && (!etex || dr->tex[0].raw == etex)) : d2_outline_vs_hash(dr) == D2_OUTLINE_VS) && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
              hud < s_d3d.draw_count && d < hud;
     if (dbg) {
-        /* Histogram of draw signatures (vertex program, verts, render target, tex0) so the right sprite shader can be identified. */
-        static struct { u32 vs, nv, rt, t0, fp, n; } sig[24]; static int nsig = 0;
+        /* Per-texture table: which atlas/texture each draw samples, its format and size, and the draw sizes. */
+        static struct { u32 vs, raw, w, h, fmt, w1, h1, fmt1, n, vmin, vmax; } sig[16]; static int nsig = 0;
         if (dr->is_vp && !dr->is_clear) {
             int k = 0;
-            for (; k < nsig; k++) if (sig[k].vs == d2_outline_vs_hash(dr) && sig[k].nv == dr->vertex_count && sig[k].rt == dr->rt_off) break;
-            if (k == nsig && nsig < 24) { sig[nsig].vs = d2_outline_vs_hash(dr); sig[nsig].nv = dr->vertex_count; sig[nsig].rt = dr->rt_off; sig[nsig].t0 = dr->tex[0].raw; sig[nsig].fp = dr->fp_addr; sig[nsig].n = 0; nsig++; }
-            if (k < nsig) sig[k].n++;
+            for (; k < nsig; k++) if (sig[k].vs == d2_outline_vs_hash(dr) && sig[k].raw == dr->tex[0].raw && sig[k].fmt1 == dr->tex[1].fmt && sig[k].w1 == dr->tex[1].w) break;
+            if (k == nsig && nsig < 16) {
+                sig[nsig].vs = d2_outline_vs_hash(dr); sig[nsig].raw = dr->tex[0].raw; sig[nsig].w = dr->tex[0].w; sig[nsig].h = dr->tex[0].h; sig[nsig].fmt = dr->tex[0].fmt;
+                sig[nsig].w1 = dr->tex[1].w; sig[nsig].h1 = dr->tex[1].h; sig[nsig].fmt1 = dr->tex[1].fmt; sig[nsig].n = 0; sig[nsig].vmin = ~0u; sig[nsig].vmax = 0; nsig++;
+            }
+            if (k < nsig) { sig[k].n++; if (dr->vertex_count < sig[k].vmin) sig[k].vmin = dr->vertex_count; if (dr->vertex_count > sig[k].vmax) sig[k].vmax = dr->vertex_count; }
         }
         if (d == 0 && frames % 300 == 299) {
             for (int k = 0; k < nsig; k++)
-                fprintf(stderr, "[outline] sig vs=%08X verts=%u rt=0x%X tex0=0x%08X fp=0x%X n=%u d<hud=%d\n", sig[k].vs, sig[k].nv, sig[k].rt, sig[k].t0, sig[k].fp, sig[k].n, (int)(d < hud));
+                fprintf(stderr, "[outline] tex vs=%08X t0=0x%08X %ux%u fmt=0x%X | t1 %ux%u fmt=0x%X | n=%u verts=%u..%u\n", sig[k].vs, sig[k].raw, sig[k].w, sig[k].h, sig[k].fmt,
+                        sig[k].w1, sig[k].h1, sig[k].fmt1, sig[k].n, sig[k].vmin, sig[k].vmax);
             nsig = 0;
         }
         seen++; if (ok) picked++;
