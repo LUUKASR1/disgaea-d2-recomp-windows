@@ -176,13 +176,56 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         }
     }
 
+    private static File child(File dir, String name) {
+        File[] list = dir.listFiles();
+        if (list == null) return null;
+        for (File f : list) if (f.getName().equalsIgnoreCase(name)) return f;
+        return null;
+    }
+
+    /** Finds the folder that contains PS3_GAME (up to 3 levels deep, any letter case). */
+    private static File findGameRoot(File dir, int depth) {
+        if (child(dir, "PS3_GAME") != null) return dir;
+        File[] list = dir.listFiles();
+        if (depth <= 0 || list == null) return null;
+        for (File f : list) {
+            if (!f.isDirectory()) continue;
+            File found = findGameRoot(f, depth - 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static String listing(File dir, String indent, int depth) {
+        StringBuilder out = new StringBuilder();
+        File[] list = dir.listFiles();
+        if (list == null) return indent + "(cannot read " + dir + ")\n";
+        java.util.Arrays.sort(list);
+        int shown = 0;
+        for (File f : list) {
+            if (shown++ >= 12) { out.append(indent).append("...\n"); break; }
+            out.append(indent).append(f.getName()).append(f.isDirectory() ? "/" : "").append('\n');
+            if (f.isDirectory() && depth > 0) out.append(listing(f, indent + "  ", depth - 1));
+        }
+        return out.toString();
+    }
+
     private void startCore() {
         if (coreStarted) return;
-        File eboot = new File(gameRoot(), "PS3_GAME/USRDIR/EBOOT.elf");
         if (!coreFile().exists()) { logView.setText(R.string.core_missing); return; }
-        if (!eboot.exists()) { logView.setText(getString(R.string.game_missing) + "\n" + eboot); return; }
+        File root = findGameRoot(gameRoot(), 3);
+        File usr = null, eboot = null;
+        if (root != null) {
+            File game = child(root, "PS3_GAME");
+            usr = game == null ? null : child(game, "USRDIR");
+            eboot = usr == null ? null : child(usr, "EBOOT.elf");
+        }
+        if (eboot == null) {
+            logView.setText(getString(R.string.game_missing) + "\n" + gameRoot() + "\n" + listing(gameRoot(), "  ", 2));
+            return;
+        }
         String error = NativeBridge.startCore(coreFile().getAbsolutePath(), eboot.getAbsolutePath(),
-                gameRoot().getAbsolutePath(), logFile().getAbsolutePath());
+                root.getAbsolutePath(), logFile().getAbsolutePath());
         if (error != null) { logView.setText(error); return; }
         coreStarted = true;
     }
