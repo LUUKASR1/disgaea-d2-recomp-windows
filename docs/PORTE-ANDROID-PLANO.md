@@ -70,6 +70,15 @@ recompilado, com um relatório único por teste no aparelho.
 - Tamanho real: vários marcos. O primeiro (título na tela) depende de compilar o núcleo no NDK com a ISO e de medir o
   desempenho no aparelho.
 
+### Andamento
+
+- **Marco 0 (feito, testado no Odin 2 Portal):** APK abre, Vulkan em ~59 FPS, cor muda com os botões, estável.
+- **Marco 1a (feito no CI):** o runtime `ps3recomp` (HLE, SPU, RSX, áudio, arquivos) **compila para ARM64 Android**
+  com o NDK. Foi preciso: SDL2 compilado para ARM64 (entrada/áudio), `-msse4.1` só em x86-64, `ucontext` próprio
+  para ARM64 (`android/core/d2_android_ucontext.c`, usado pelos fibers) e sem afinidade de thread.
+- **Próximo (1b):** aplicar o patch do projeto sobre o SDK, compilar o `port/` (HLE do jogo, VFS) para ARM64 e ligar
+  tudo ao app; depois gerar no PC o código recompilado da ISO do usuário como biblioteca ARM64.
+
 ## English
 
 ### Starting point
