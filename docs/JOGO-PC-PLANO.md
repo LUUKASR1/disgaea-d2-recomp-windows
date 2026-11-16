@@ -58,3 +58,10 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 | Painel F1 no DirectX 12 | Feito (em teste) | O backend D3D12 do SDK não desenha 2D, então o painel é uma janela própria (GDI, semitransparente) sobre o jogo, em `port/d2_d3d12_options.inc`. Abas VÍDEO (tela cheia/janela, tamanho da janela, resolução de saída, resolução interna, upscaler AMD FSR 1.0, V-Sync, FPS), FILTROS (nitidez, scanlines, máscara CRT, vinheta, cores vivas, FXAA), CONTROLES (remapear teclas) e SISTEMA (idioma, API gráfica → Vulkan). Saída, resolução interna, upscaler e V-Sync valem ao reiniciar (botão "Reiniciar agora"): o pipeline `port/graphics` já os lia por `D2_OUTPUT_*`, `D2_RENDER_*` e `D2_UPSCALER`, e o painel só os grava em `settings.ini`. Os filtros são um passe de compute novo em `port/graphics/graphics.cpp` (liga com `D2_POST_FILTERS=1`, ligado por padrão). F11/Alt+Enter alternam a tela cheia (16:9 com barras pretas) e o Esc deixa de fechar o jogo. Usa o mesmo `settings.ini`. |
 
 | Contorno nos personagens | F1 > Filtros > "Contorno nos personagens" (Desligado/Leve/Médio/Forte), DX12. Sprites do mundo (VP 2003CB89, antes do HUD) são redesenhados 8x deslocados com a silhueta alfa em preto. `D2_OUTLINE_DEBUG=1` loga quantos draws foram contornados. Vulkan: pendente. |
+
+## Pendências para a versão 1.0 (acordado: fazer por último)
+- Contorno nos personagens no Vulkan.
+- Contorno: HUD em telas sem bloco de HUD detectável pode ser contornado.
+- Real-ESRGAN (ampliador de texturas) ainda não testado.
+- Mouse como ponteiro dentro do jogo (estacionado).
+- Etapas 5/6: pausar ao perder foco, aviso de controle conectado/desconectado, ícone, multi-monitor/DPI, instalador.
