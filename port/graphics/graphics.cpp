@@ -12,6 +12,9 @@
 #include <cstring>
 #include <cwchar>
 #include <stdexcept>
+#include <mutex>
+#include <thread>
+#include <vector>
 #include <string>
 #define A_CPU 1
 #include "vendor/fsr1/ffx_a.h"
@@ -42,6 +45,31 @@ struct State {
     UINT stride=0;
 };
 State* gpu=nullptr;
+// Screenshots: the final swap buffer is copied to a read-back buffer after the upscaler and filters ran.
+std::atomic<int> shot_request{0};std::atomic<unsigned> shot_count{0};std::mutex shot_lock;std::string shot_path;
+Ref<ID3D12Fence> shot_fence;HANDLE shot_event=nullptr;UINT64 shot_value=0;
+std::string shot_directory(){
+    std::string dir;
+    if(const char* e=std::getenv("D2_SCREENSHOT_DIR"))dir=e;
+    else if(const char* u=std::getenv("USERPROFILE"))dir=std::string(u)+"\\Pictures\\Disgaea D2";
+    else if(const char* l=std::getenv("LOCALAPPDATA"))dir=std::string(l)+"\\DisgaeaD2Recomp\\screenshots";
+    return dir;
+}
+void shot_save(std::vector<uint8_t> rgba,UINT w,UINT h,bool bgra){
+    if(bgra)for(size_t i=0;i+3<rgba.size();i+=4)std::swap(rgba[i],rgba[i+2]);
+    for(size_t i=3;i<rgba.size();i+=4)rgba[i]=255;
+    std::string dir=shot_directory();
+    if(dir.empty()){std::fprintf(stderr,"[D2SHOT] no folder for screenshots\n");return;}
+    d2tex::make_dirs(dir);
+    SYSTEMTIME t;GetLocalTime(&t);
+    char name[96];std::snprintf(name,sizeof name,"\\DisgaeaD2_%04u%02u%02u_%02u%02u%02u_%03u.png",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,t.wMilliseconds);
+    const std::string path=dir+name;
+    if(stbi_write_png(path.c_str(),static_cast<int>(w),static_cast<int>(h),4,rgba.data(),static_cast<int>(w)*4)){
+        {std::lock_guard<std::mutex> g(shot_lock);shot_path=path;}
+        shot_count.fetch_add(1);
+        std::fprintf(stderr,"[D2SHOT] saved %s (%ux%u)\n",path.c_str(),w,h);
+    }else std::fprintf(stderr,"[D2SHOT] could not write %s\n",path.c_str());
+}
 void checked(HRESULT hr,const char* what){if(FAILED(hr))throw std::runtime_error(std::string(what)+" HRESULT="+std::to_string(static_cast<unsigned long>(hr)));}
 UINT dimension(const char* key,UINT fallback){const char* s=std::getenv(key);if(!s)return fallback;char* end=nullptr;auto n=std::strtoul(s,&end,10);if(!*s||*end||n<320||n>4096)throw std::runtime_error("Invalid graphics dimension");return static_cast<UINT>(n);}
 void texture(ID3D12Resource** out,UINT w,UINT h,D3D12_RESOURCE_FLAGS flags){
@@ -340,8 +368,38 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
             transition(gpu->final.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
             }
         }
-        transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PRESENT);
-        checked(gpu->commands->Close(),"Graphics close");ID3D12CommandList* lists[]={gpu->commands.p};gpu->queue->ExecuteCommandLists(1,lists);return 0;
+        const bool grab=shot_request.exchange(0)!=0;
+        Ref<ID3D12Resource> readback;D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT shot_rows=0;UINT64 shot_row_bytes=0;bool shot_bgra=false;UINT shot_w=0,shot_h=0;
+        if(grab){
+            try{
+                const auto desc=output->GetDesc();UINT64 total=0;shot_w=static_cast<UINT>(desc.Width);shot_h=desc.Height;shot_bgra=desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM||desc.Format==DXGI_FORMAT_B8G8R8A8_TYPELESS;
+                gpu->device->GetCopyableFootprints(&desc,0,1,0,&footprint,&shot_rows,&shot_row_bytes,&total);
+                D3D12_HEAP_PROPERTIES hp{};hp.Type=D3D12_HEAP_TYPE_READBACK;
+                D3D12_RESOURCE_DESC bd{};bd.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;bd.Width=total;bd.Height=1;bd.DepthOrArraySize=1;bd.MipLevels=1;bd.SampleDesc.Count=1;bd.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+                checked(gpu->device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&bd,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_ID3D12Resource,reinterpret_cast<void**>(readback.put())),"Screenshot buffer");
+                transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_COPY_SOURCE);
+                D3D12_TEXTURE_COPY_LOCATION src{},dst{};src.pResource=output;src.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                dst.pResource=readback.p;dst.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;dst.PlacedFootprint=footprint;
+                gpu->commands->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
+                transition(output,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_PRESENT);
+            }catch(const std::exception& e){std::fprintf(stderr,"[D2SHOT] %s\n",e.what());if(readback.p){readback.p->Release();readback.p=nullptr;}transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PRESENT);}
+        }else transition(output,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PRESENT);
+        checked(gpu->commands->Close(),"Graphics close");ID3D12CommandList* lists[]={gpu->commands.p};gpu->queue->ExecuteCommandLists(1,lists);
+        if(readback.p){
+            try{
+                if(!shot_fence.p)checked(gpu->device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_ID3D12Fence,reinterpret_cast<void**>(shot_fence.put())),"Screenshot fence");
+                if(!shot_event)shot_event=CreateEventW(nullptr,FALSE,FALSE,nullptr);
+                checked(gpu->queue->Signal(shot_fence.p,++shot_value),"Screenshot signal");
+                if(shot_fence->GetCompletedValue()<shot_value){checked(shot_fence->SetEventOnCompletion(shot_value,shot_event),"Screenshot wait");WaitForSingleObject(shot_event,5000);}
+                void* mapped=nullptr;D3D12_RANGE range{0,static_cast<SIZE_T>(footprint.Footprint.RowPitch)*shot_rows};
+                checked(readback->Map(0,&range,&mapped),"Screenshot map");
+                std::vector<uint8_t> pixels(static_cast<size_t>(shot_w)*shot_h*4);
+                for(UINT y=0;y<shot_h;++y)std::memcpy(&pixels[static_cast<size_t>(y)*shot_w*4],static_cast<uint8_t*>(mapped)+static_cast<size_t>(footprint.Footprint.RowPitch)*y,static_cast<size_t>(shot_w)*4);
+                D3D12_RANGE none{0,0};readback->Unmap(0,&none);
+                std::thread(shot_save,std::move(pixels),shot_w,shot_h,shot_bgra).detach();
+            }catch(const std::exception& e){std::fprintf(stderr,"[D2SHOT] %s\n",e.what());}
+        }
+        return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] present: %s\n",e.what());return -1;}
 }
 extern "C" void d2_graphics_set_post(const float* values,int enabled){
@@ -363,3 +421,14 @@ extern "C" uint8_t* d2_texture_replacement(const uint8_t* source,uint32_t source
     return d2tex::replacement(source,source_bytes,w,h,format,out_w,out_h);
 }
 extern "C" void d2_texture_free(void* p) { std::free(p); }
+extern "C" void d2_screenshot_request(void){shot_request.store(1);}
+extern "C" unsigned d2_screenshot_last(char* path,unsigned size){
+    if(path&&size){std::lock_guard<std::mutex> g(shot_lock);std::snprintf(path,size,"%s",shot_path.c_str());}
+    return shot_count.load();
+}
+extern "C" void d2_screenshot_save(const void* pixels,uint32_t w,uint32_t h,int bgra){
+    if(!pixels||!w||!h)return;
+    const auto* p=static_cast<const uint8_t*>(pixels);
+    std::vector<uint8_t> copy(p,p+static_cast<size_t>(w)*h*4);
+    std::thread(shot_save,std::move(copy),w,h,bgra!=0).detach();
+}

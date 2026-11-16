@@ -13,7 +13,9 @@ extern "C" void ps3_pad_set_keyboard_map(const int* vk, int count);
 extern "C" void d2_restart_with_api(int api);
 extern "C" void d2_graphics_set_post(const float* values, int enabled);
 extern "C" void d2_texture_set_dump(int on);
-extern "C" int d2_texture_dump_enabled(void); /* port/graphics/graphics.cpp */
+extern "C" int d2_texture_dump_enabled(void);
+extern "C" void d2_screenshot_request(void);
+extern "C" unsigned d2_screenshot_last(char* path, unsigned size); /* port/graphics/graphics.cpp */
 #include <memory>
 #include <algorithm>
 #include "sys_overlay.h" /* SDK system dialogs (save/load lists, confirmations) */
@@ -21,14 +23,16 @@ static std::wstring d2_settings_ini_path(void);
 
 namespace d2opt {
 
-constexpr int kKeys = 14;
+constexpr int kKeys = 15;     /* 14 pad actions + screenshot */
+constexpr int kPadKeys = 14;
+constexpr int kShotKey = 14;
 constexpr int kRows = 10;
 constexpr int kMaxHits = 48;
 constexpr int A_KEY0 = 200;
 enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_TAB0 = 100 };
 constexpr int kTabs = 4; // 0 video, 1 filters, 2 controls, 3 system
 
-constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
+constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
 constexpr int kResW[] = {960, 1280, 1600, 1920, 2560};
 constexpr int kResH[] = {540, 720, 900, 1080, 1440};
 constexpr int kResCount = 5;
@@ -47,7 +51,7 @@ struct Config {
     bool texdump = false; // save every texture the game loads as PNG (texture pack)
     int out_idx = -1, scale_pct = -1, fsr = -1; // -1: not chosen in the game (the launcher's values stay)
     unsigned sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0, aa = 0; // 0 off .. 3 strong (aa: 0/1)
-    int keys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
+    int keys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
 };
 
 static Config cfg;
@@ -210,7 +214,7 @@ static void prepare()
 
 /* ---- window handling --------------------------------------------------------------------------------------- */
 
-static void apply_keymap() { ps3_pad_set_keyboard_map(cfg.keys, kKeys); }
+static void apply_keymap() { ps3_pad_set_keyboard_map(cfg.keys, kPadKeys); }
 
 // Image filter strengths for the post pass of the SDK backend (same table as the Vulkan panel).
 static void apply_post()
@@ -384,6 +388,7 @@ static std::string key_name(int vk)
     case VK_END: return "End";
     case VK_PRIOR: return "PgUp";
     case VK_NEXT: return "PgDn";
+    case VK_SNAPSHOT: return "Print Screen";
     default: break;
     }
     if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) return std::string(1, (char)vk);
@@ -676,10 +681,11 @@ static void paint(HDC dc, int W_, int H_)
     SelectObject(dc, fnt);
     if (page == 2) {
         const char* names[kKeys] = {L("Cima", "Up"), L("Baixo", "Down"), L("Esquerda", "Left"), L("Direita", "Right"), L("Cruz", "Cross"), L("Círculo", "Circle"),
-                                    L("Quadrado", "Square"), L("Triângulo", "Triangle"), "L1", "R1", "L2", "R2", "Start", "Select"};
+                                    L("Quadrado", "Square"), L("Triângulo", "Triangle"), "L1", "R1", "L2", "R2", "Start", "Select",
+                                    L("Captura de tela", "Screenshot")};
         const int col_w = (W_ - (int)(60 * s)) / 2;
         for (int i = 0; i < kKeys; i++) {
-            const int col = i / 7, row = i % 7;
+            const int col = i / 8, row = i % 8;
             const int cx = (int)(22 * s) + col * (col_w + (int)(16 * s)), cy = rows_y + rowh * row;
             add_hit(A_KEY0 + i, cx, cy, col_w, rowh);
             const bool wait = listening == i, hot = hover == A_KEY0 + i;
@@ -1188,15 +1194,99 @@ static void ensure_dialog_window()
     ps3_overlay_set_renderer(1); /* from now on the dialogs wait for the player */
 }
 
+/* ---- screenshot confirmation ---------------------------------------------------------------------------- */
+
+static HWND toast = nullptr;
+static unsigned toast_seen = 0;
+static ULONGLONG toast_until = 0;
+static std::string toast_text;
+
+static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
+{
+    switch (m) {
+    case WM_ERASEBKGND: return 1;
+    case WM_NCHITTEST: return HTTRANSPARENT;
+    case WM_TIMER: {
+        char path[520] = {};
+        const unsigned n = d2_screenshot_last(path, sizeof path);
+        if (n != toast_seen) {
+            toast_seen = n;
+            const char* base = strrchr(path, '\\');
+            toast_text = std::string(L("Captura salva: ", "Screenshot saved: ")) + (base ? base + 1 : path);
+            toast_until = GetTickCount64() + 3500;
+        }
+        if (game && GetTickCount64() < toast_until && IsWindowVisible(game) && !IsIconic(game)) {
+            RECT client;
+            GetClientRect(game, &client);
+            const int tw = std::min(720, (int)client.right - 20);
+            POINT o = {0, 0};
+            ClientToScreen(game, &o);
+            SetWindowPos(h, HWND_TOP, o.x + (client.right - tw) / 2, o.y + 12, tw, 44, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            InvalidateRect(h, nullptr, FALSE);
+        } else if (IsWindowVisible(h)) {
+            ShowWindow(h, SW_HIDE);
+        }
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        RECT r;
+        GetClientRect(h, &r);
+        HBRUSH key = CreateSolidBrush(RGB(255, 0, 255));
+        FillRect(dc, &r, key);
+        DeleteObject(key);
+        HFONT font = CreateFontW(-22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+        HGDIOBJ old = SelectObject(dc, font);
+        SetBkMode(dc, TRANSPARENT);
+        const std::wstring text = W(toast_text);
+        SIZE sz = {0, 0};
+        GetTextExtentPoint32W(dc, text.c_str(), (int)text.size(), &sz);
+        const int x = std::max(4, (int)(r.right - sz.cx) / 2);
+        SetTextColor(dc, RGB(8, 3, 24));
+        for (int dy = -2; dy <= 2; dy++)
+            for (int dx = -2; dx <= 2; dx++)
+                if (dx || dy) TextOutW(dc, x + dx, 6 + dy, text.c_str(), (int)text.size());
+        SetTextColor(dc, RGB(255, 214, 77));
+        TextOutW(dc, x, 6, text.c_str(), (int)text.size());
+        SelectObject(dc, old);
+        DeleteObject(font);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
+static void ensure_toast_window()
+{
+    if (toast || !game) return;
+    WNDCLASSEXW wc = {sizeof(wc)};
+    wc.lpfnWndProc = toast_proc;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"d2_toast";
+    RegisterClassExW(&wc);
+    toast = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"d2_toast", L"", WS_POPUP, 0, 0, 100, 44, game, nullptr,
+                            GetModuleHandleW(nullptr), nullptr);
+    if (!toast) return;
+    SetLayeredWindowAttributes(toast, RGB(255, 0, 255), 0, LWA_COLORKEY);
+    SetTimer(toast, 1, 150, nullptr);
+}
+
 /* ---- game window hook -------------------------------------------------------------------------------------- */
 
 static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
 {
     switch (m) {
     case WM_KEYDOWN:
+        if ((int)w == cfg.keys[kShotKey] && w != VK_SNAPSHOT) { if (!(l & (1 << 30))) d2_screenshot_request(); return 0; }
         if (w == VK_F1) { if (dlg && IsWindowVisible(dlg)) return 0; if (is_open) close_panel(); else open_panel(); return 0; }
         if (w == VK_F11) { set_fullscreen(!cfg.fullscreen); save_config(); return 0; }
         if (w == VK_ESCAPE) return 0; /* the SDK window would close the game: Alt+F4 / the window button do that */
+        break;
+    case WM_KEYUP:
+        if (w == VK_SNAPSHOT && cfg.keys[kShotKey] == VK_SNAPSHOT) { d2_screenshot_request(); return 0; }
         break;
     case WM_SYSKEYDOWN:
         if (w == VK_RETURN && (l & (1 << 29))) { set_fullscreen(!cfg.fullscreen); save_config(); return 0; }
@@ -1230,6 +1320,7 @@ static void attach()
     apply_post();
     if (cfg.show_fps) ensure_fps_window();
     ensure_dialog_window();
+    ensure_toast_window();
     if (!getenv("D2_PRESENT_INTERVAL")) _putenv_s("D2_PRESENT_INTERVAL", cfg.vsync ? "1" : "0");
     game_proc = (WNDPROC)SetWindowLongPtrA(game, GWLP_WNDPROC, (LONG_PTR)game_hook);
     if (!game_proc) { fprintf(stderr, "[d3d12][ui] options panel unavailable: could not hook the window\n"); return; }

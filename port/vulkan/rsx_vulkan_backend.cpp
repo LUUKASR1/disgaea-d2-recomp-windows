@@ -92,7 +92,7 @@ struct Settings {
   uint32_t lang = 0;     // menu language: 0 Portugues, 1 English
   int api = -1;          // graphics API for the next start: 0 DirectX 12, 1 Vulkan, -1 not chosen in the game
   // Keyboard bindings (Windows virtual-key codes) for the pad buttons, in the order of kKeyActions below.
-  int keys[14] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
+  int keys[15] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12}; // [14] = screenshot
   uint32_t upscaler = 0; // 0 bilinear, 1 AMD FSR 1.0 (EASU + RCAS)
   uint32_t width = 1280, height = 720; // windowed client size
 };
@@ -142,7 +142,7 @@ void load_settings() {
         else if (k == "api" && value <= 1) g_settings.api = int(value);
         else if (k.rfind("key", 0) == 0 && k.size() > 3 && value >= 1 && value <= 254) {
           const int idx = std::atoi(k.c_str() + 3);
-          if (idx >= 0 && idx < 14) g_settings.keys[idx] = int(value);
+          if (idx >= 0 && idx < 15) g_settings.keys[idx] = int(value);
         }
         else if (k == "width" && value >= 640 && value <= 16384) g_settings.width = value;
         else if (k == "height" && value >= 360 && value <= 16384) g_settings.height = value;
@@ -166,7 +166,7 @@ void save_settings() {
                  g_settings.fullscreen ? 1u : 0u, g_settings.vsync ? 1u : 0u, g_settings.show_fps ? 1u : 0u, g_settings.scale_pct,
                  g_settings.sharpen, g_settings.scanlines, g_settings.crt_mask, g_settings.vignette, g_settings.vivid, g_settings.aa, g_settings.upscaler, g_settings.lang,
                  g_settings.width, g_settings.height);
-    for (int i = 0; i < 14; i++) std::fprintf(f, "key%d=%d\n", i, g_settings.keys[i]);
+    for (int i = 0; i < 15; i++) std::fprintf(f, "key%d=%d\n", i, g_settings.keys[i]);
     if (g_settings.api >= 0) std::fprintf(f, "api=%d\n", g_settings.api);
     std::fprintf(f, "texdump=%u\n", g_settings.texdump ? 1u : 0u);
     std::fclose(f);
@@ -279,11 +279,14 @@ void request_api_switch() {
 
 // ---- Keyboard bindings ------------------------------------------------------------------------------------------
 // The SDK pad backend reads these keys when no XInput controller is connected (ps3_pad_set_keyboard_map).
-constexpr int kKeyActionCount = 14;
-constexpr int kDefaultKeys[kKeyActionCount] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB};
+constexpr int kKeyActionCount = 15; // 14 pad actions + screenshot
+constexpr int kPadKeys = 14;
+constexpr int kShotKey = 14;
+constexpr int kDefaultKeys[kKeyActionCount] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
+std::atomic<bool> g_shot_wanted{false};
 #ifdef D2_VULKAN_GAME_BACKEND
 extern "C" void ps3_pad_set_keyboard_map(const int *vk, int count);
-void apply_keymap() { ps3_pad_set_keyboard_map(g_settings.keys, kKeyActionCount); }
+void apply_keymap() { ps3_pad_set_keyboard_map(g_settings.keys, kPadKeys); }
 #else
 void apply_keymap() {}
 #endif
@@ -307,6 +310,7 @@ std::string vk_name(int vk) {
   case VK_END: return "End";
   case VK_PRIOR: return "PgUp";
   case VK_NEXT: return "PgDn";
+  case VK_SNAPSHOT: return "Print Screen";
   default: break;
   }
   if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) return std::string(1, char(vk));
@@ -529,6 +533,10 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     }
     // Esc no longer quits: it belongs to the game. Close with Alt+F4 or the window button.
+    if (int(wp) == g_settings.keys[kShotKey] && wp != VK_SNAPSHOT) {
+      if (!(lp & (1 << 30))) g_shot_wanted = true;
+      return 0;
+    }
     if (wp == VK_F11)
       set_fullscreen(!g.fullscreen);
     else if (wp == VK_F1)
@@ -536,6 +544,12 @@ LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     else if (wp == VK_ESCAPE && menu_is_open())
       menu_toggle(false);
     return 0;
+  case WM_KEYUP:
+    if (wp == VK_SNAPSHOT && g_settings.keys[kShotKey] == VK_SNAPSHOT) { // Print Screen only reports key-up
+      g_shot_wanted = true;
+      return 0;
+    }
+    break;
   case WM_SYSKEYDOWN:
     if (wp == VK_RETURN && (lp & (1 << 29))) { // Alt+Enter
       set_fullscreen(!g.fullscreen);
@@ -873,9 +887,10 @@ bool draw_system_dialog(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, float 
 
 // Draws the FPS counter and the F1 options menu with the tr::ui_* primitives, once per presented frame.
 // (w, h) is the size of the image being drawn; (cw, ch) the window's client size (the mouse lives there).
-void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
+void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, bool hidden = false) {
   using Color = std::array<float, 4>;
   tr::ui_begin(w, h);
+  if (hidden) return; // screenshot frame: nothing of the interface is drawn
   const float s = std::max(0.6f, float(h) / 720.f);
   // Palette: night-sky violet, netherworld magenta and gold trim.
   const Color white{1.f, 1.f, 1.f, 1.f}, gold{1.f, 0.82f, 0.30f, 1.f}, pink{1.f, 0.28f, 0.58f, 1.f},
@@ -900,6 +915,24 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
     char text[32];
     std::snprintf(text, sizeof text, "FPS %u", shown);
     tr::ui_text_outline(14.f * s, 10.f * s, text, 22.f * s, shown >= 55 ? Color{0.55f, 1.f, 0.65f, 1.f} : gold, ink, 1.5f * s);
+  }
+  {
+    // Confirmation of a saved screenshot, a few seconds at the top of the screen.
+    static unsigned seen = 0;
+    static auto until = std::chrono::steady_clock::now();
+    static std::string toast;
+    char path[520] = {};
+    const unsigned n = d2_screenshot_last(path, sizeof path);
+    if (n != seen) {
+      seen = n;
+      const char *base = std::strrchr(path, '\\');
+      toast = std::string(L("Captura salva: ", "Screenshot saved: ")) + (base ? base + 1 : path);
+      until = now + std::chrono::milliseconds(3500);
+    }
+    if (now < until && !toast.empty()) {
+      const float fs2 = 22.f * s, tw = tr::ui_text_width(toast.c_str(), fs2);
+      tr::ui_text_outline((float(w) - tw) * 0.5f, 12.f * s, toast.c_str(), fs2, gold, ink, 2.f * s);
+    }
   }
   if (dialog) return; // system dialog on top: the F1 menu and hints wait
   if (!open) {
@@ -1037,10 +1070,11 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   if (menu.page == 2) { // two columns of pad actions, each a button showing its current key
     const char *names[kKeyActionCount] = {
         L("Cima", "Up"), L("Baixo", "Down"), L("Esquerda", "Left"), L("Direita", "Right"), L("Cruz", "Cross"), L("C\303\255rculo", "Circle"),
-        L("Quadrado", "Square"), L("Tri\303\242ngulo", "Triangle"), "L1", "R1", "L2", "R2", "Start", "Select"};
+        L("Quadrado", "Square"), L("Tri\303\242ngulo", "Triangle"), "L1", "R1", "L2", "R2", "Start", "Select",
+        L("Captura de tela", "Screenshot")};
     const float col_w = (pw - 60.f * s) * 0.5f, cfs = 23.f * s;
     for (int i = 0; i < kKeyActionCount; i++) {
-      const int col = i / 7, row = i % 7;
+      const int col = i / 8, row = i % 8;
       const float cx = px + 22.f * s + col * (col_w + 16.f * s), cy = rows_y + rowh * row;
       add_hit(A_KEY0 + i, cx, cy, col_w, rowh);
       const bool listening = g_listen.load() == i, hot = menu.hover == A_KEY0 + i;
@@ -1373,8 +1407,16 @@ void rsx_vulkan_backend_present(void) {
 #ifdef D2_VULKAN_GAME_BACKEND
     uint32_t rw = w, rh = h; // size of the image the game is drawn into (differs from the window when render-scaled)
     g.renderer->renderExtent(rw, rh);
-    build_overlay(rw, rh, w, h);
+    const bool shot = g_shot_wanted.exchange(false);
+    if (shot) g.renderer->requestScreenshot(); // the interface is left out of this frame
+    build_overlay(rw, rh, w, h, shot);
     presented = tr::submit(*g.renderer, rw, rh, g.clear, tr::guest_w, tr::guest_h);
+    {
+      std::vector<uint8_t> pixels;
+      uint32_t sw = 0, sh = 0;
+      bool bgra = false;
+      if (g.renderer->takeScreenshot(pixels, sw, sh, bgra)) d2_screenshot_save(pixels.data(), sw, sh, bgra ? 1 : 0);
+    }
 #else
     d2::vulkan::DrawParameters params;
     params.clear_color = g.clear;

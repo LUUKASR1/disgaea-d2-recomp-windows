@@ -130,6 +130,10 @@ public:
   // change every frame.
   void setPostProgram(std::span<const uint32_t> vertex, std::span<const uint32_t> fragment);
   void setPostParams(const std::array<float, 8> &params, bool active);
+  // Screenshot of the final swapchain image (after scaling and post-processing): request it, and after the next
+  // submitted frame takeScreenshot() returns the pixels (tight rows, `bgra` tells the channel order).
+  void requestScreenshot();
+  bool takeScreenshot(std::vector<uint8_t> &pixels, uint32_t &width, uint32_t &height, bool &bgra);
   void setGeometry(std::span<const Vertex>,
                    std::span<const uint32_t> indices = {});
   // Trusted SPIR-V from the audited compiler only. Install before creating a

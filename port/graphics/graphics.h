@@ -23,6 +23,10 @@ void d2_graphics_set_post(const float* values,int enabled);
 void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,int kind,const void* decoded,uint32_t pitch);
 void d2_texture_set_dump(int on);
 int d2_texture_dump_enabled(void);
+/* Screenshot of the final image (output resolution, after upscaler and filters), lossless PNG. */
+void d2_screenshot_request(void);
+void d2_screenshot_save(const void* pixels,uint32_t w,uint32_t h,int bgra); /* tight RGBA/BGRA rows; written to a PNG in the background */
+unsigned d2_screenshot_last(char* path,unsigned size); /* returns a counter that grows with every saved shot */
 int d2_texture_pack_enabled(void);
 /* RGBA8 replacement for the texture (malloc'd, free with d2_texture_free) or NULL. */
 uint8_t* d2_texture_replacement(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,uint32_t* out_w,uint32_t* out_h);

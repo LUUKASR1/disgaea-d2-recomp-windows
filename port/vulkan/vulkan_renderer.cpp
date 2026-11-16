@@ -128,6 +128,15 @@ class Renderer::Impl {
   VkExtent2D swap_extent{};
   float render_scale = 1.f;
   bool scaled = false; // scene is rendered at extent and blitted to the (differently sized) swapchain
+  // Screenshot support (see Renderer::requestScreenshot).
+  std::atomic<bool> shot_requested{false};
+  bool shot_recorded = false, shot_ready = false, shot_bgra = false, swap_can_copy = false, shot_coherent = true;
+  VkBuffer shot_buf = VK_NULL_HANDLE;
+  VkDeviceMemory shot_mem = VK_NULL_HANDLE;
+  uint8_t *shot_map = nullptr;
+  VkDeviceSize shot_size = 0;
+  uint32_t shot_w = 0, shot_h = 0;
+  std::vector<uint8_t> shot_pixels;
   VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
   std::vector<VkImage> images;
   std::vector<VkImageView> views;
@@ -902,6 +911,11 @@ public:
         vkDestroyShaderModule(device, vert, nullptr);
       if (frag)
         vkDestroyShaderModule(device, frag, nullptr);
+      if (shot_buf)
+        vkDestroyBuffer(device, shot_buf, nullptr);
+      if (shot_mem)
+        vkFreeMemory(device, shot_mem, nullptr);
+      shot_buf = VK_NULL_HANDLE; shot_mem = VK_NULL_HANDLE; shot_map = nullptr; shot_size = 0;
       if (readback)
         vkDestroyBuffer(device, readback, nullptr);
       if (readback_memory)
@@ -2170,7 +2184,9 @@ public:
     sc.imageColorSpace = selected.colorSpace;
     sc.imageExtent = swap_extent;
     sc.imageArrayLayers = 1;
-    sc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (scaled && !havePost() ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0);
+    swap_can_copy = (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    sc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (scaled && !havePost() ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0) |
+                    (swap_can_copy ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
     sc.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sc.preTransform = caps.currentTransform;
     sc.compositeAlpha = alpha;
@@ -2487,6 +2503,43 @@ public:
                            VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &b, 0,
                            nullptr);
     }
+    if (surface && swap_can_copy && shot_requested.exchange(false)) {
+      const VkDeviceSize need = VkDeviceSize(swap_extent.width) * swap_extent.height * 4;
+      if (need > shot_size) {
+        OK(vkDeviceWaitIdle(device));
+        if (shot_buf) vkDestroyBuffer(device, shot_buf, nullptr);
+        if (shot_mem) { vkUnmapMemory(device, shot_mem); vkFreeMemory(device, shot_mem, nullptr); }
+        shot_buf = VK_NULL_HANDLE; shot_mem = VK_NULL_HANDLE; shot_map = nullptr;
+        makeHostBuffer(need, VK_BUFFER_USAGE_TRANSFER_DST_BIT, shot_buf, shot_mem, shot_map, shot_coherent);
+        shot_size = need;
+      }
+      auto shot_barrier = [&](VkImageLayout from, VkImageLayout to, VkAccessFlags src, VkAccessFlags dst, VkPipelineStageFlags src_stage,
+                              VkPipelineStageFlags dst_stage) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.srcAccessMask = src; b.dstAccessMask = dst; b.oldLayout = from; b.newLayout = to;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = images.at(index);
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &b);
+      };
+      shot_barrier(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+      VkBufferImageCopy copy{};
+      copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      copy.imageExtent = {swap_extent.width, swap_extent.height, 1};
+      vkCmdCopyImageToBuffer(cmd, images.at(index), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, shot_buf, 1, &copy);
+      shot_barrier(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_READ_BIT, 0,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+      VkBufferMemoryBarrier hb{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+      hb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; hb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+      hb.srcQueueFamilyIndex = hb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      hb.buffer = shot_buf; hb.size = VK_WHOLE_SIZE;
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &hb, 0, nullptr);
+      shot_recorded = true;
+      shot_w = swap_extent.width; shot_h = swap_extent.height;
+      shot_bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+    }
     OK(vkEndCommandBuffer(cmd));
     OK(vkResetFences(device, 1, &fence));
     VkPipelineStageFlags stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | (scaled ? VK_PIPELINE_STAGE_TRANSFER_BIT : 0);
@@ -2501,6 +2554,18 @@ public:
       submit.pSignalSemaphores = &finished[index];
     }
     OK(vkQueueSubmit(queue, 1, &submit, fence));
+    if (shot_recorded) {
+      shot_recorded = false;
+      if (vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull) == VK_SUCCESS) {
+        if (!shot_coherent) {
+          VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+          range.memory = shot_mem; range.size = VK_WHOLE_SIZE;
+          vkInvalidateMappedMemoryRanges(device, 1, &range);
+        }
+        shot_pixels.assign(shot_map, shot_map + size_t(shot_w) * shot_h * 4);
+        shot_ready = true;
+      }
+    }
     for (auto handle : pending_uploads)
       frame_textures[handle - 1].pending = false;
     pending_uploads.clear();
@@ -2598,6 +2663,14 @@ void Renderer::setPostProgram(std::span<const uint32_t> vertex, std::span<const 
 }
 void Renderer::setPostParams(const std::array<float, 8> &params, bool active) {
   impl_->setPostValues(params, active);
+}
+void Renderer::requestScreenshot() { impl_->shot_requested = true; }
+bool Renderer::takeScreenshot(std::vector<uint8_t> &pixels, uint32_t &width, uint32_t &height, bool &bgra) {
+  if (!impl_->shot_ready) return false;
+  pixels = std::move(impl_->shot_pixels);
+  width = impl_->shot_w; height = impl_->shot_h; bgra = impl_->shot_bgra;
+  impl_->shot_ready = false;
+  return true;
 }
 void Renderer::renderExtent(uint32_t &width, uint32_t &height) const {
   impl_->currentExtent(width, height);
