@@ -307,7 +307,8 @@ extern "C" UINT d2_display_swap_flags(void* object){
 extern "C" int d2_display_present(void* object,UINT interval){
     if(!object)return -1;auto* swap=static_cast<IDXGISwapChain3*>(object);
     // Pause while the game window is not in front (alt-tab, minimised). Messages keep being pumped so the window and the F1 panel stay alive.
-    if(pause_unfocused.load()){
+    static const bool pause_env_off=[]{const char* v=std::getenv("D2_PAUSE_UNFOCUSED");return v&&v[0]=='0';}();
+    if(pause_unfocused.load()&&!pause_env_off){
         HWND window=nullptr;
         if(SUCCEEDED(swap->GetHwnd(&window))&&window){
             auto in_front=[&]{
