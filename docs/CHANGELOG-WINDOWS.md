@@ -1,3 +1,7 @@
+# 1.0.8 — Prévia europeia + núcleo Android (prévia)
+
+- Corrige "Preparar núcleo Android": usa a ferramenta do launcher atual (a pasta de preparação antiga não a tinha) e avisa quando a preparação do jogo é de uma versão incompatível.
+
 # 1.0.7 — Prévia europeia + núcleo Android (prévia)
 
 - Novo botão em Configurações: "Preparar núcleo Android (prévia)" compila, neste PC, o jogo já preparado para ARM64 (Odin 2). Baixa o NDK uma vez (~750 MB). Nada do jogo é distribuído.

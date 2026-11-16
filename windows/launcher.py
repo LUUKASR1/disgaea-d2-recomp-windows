@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '1.0.7' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
+VERSION = '1.0.8' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -575,10 +575,16 @@ class Backend:
         recomp, out, spu = generated / ('src/recomp-eu' if eu else 'src/recomp-140'), generated / ('out-eu' if eu else 'out-140'), generated / ('spu-eu' if eu else 'spu-140')
         if not (recomp / 'ppu_recomp.h').is_file():
             raise RuntimeError('O código gerado do jogo não foi encontrado. Prepare o jogo novamente.')
+        # The build workspace is a copy made when the game was prepared (it may predate the Android tools), so the
+        # tool and the port sources come from this launcher; the SDK and the lift must be the ones they were made with.
+        workspace_lock = repo / 'patches/SDK-WINDOWS.lock'
+        if not workspace_lock.is_file() or workspace_lock.read_bytes() != (ROOT / 'payload/patches/SDK-WINDOWS.lock').read_bytes():
+            raise RuntimeError('Esta preparação do jogo é de uma versão anterior do launcher. Prepare o jogo novamente '
+                               'com esta versão (a europeia por "Preparar versão europeia") e tente de novo.')
         env = self.compiler_environment()
         output = self.home / 'android-core' / profile_name(config)
         self.notify('Núcleo Android: baixando o NDK (uma vez, ~750 MB) e compilando para ARM64. Pode demorar bastante.')
-        self.run([sys.executable, repo / 'tools/build_android_core.py', '--sdk', repo / 'ps3recomp',
+        self.run([sys.executable, ROOT / 'payload/tools/build_android_core.py', '--sdk', repo / 'ps3recomp',
                   '--work', self.home / 'android-work' / profile_name(config), '--recomp-dir', recomp,
                   '--out-dir', out, '--spu-dir', spu, '--game-version', '100' if eu else '140',
                   '--json-include', ROOT / 'vendor/include', '--output', output], env,
@@ -856,7 +862,7 @@ def main():
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         if OFFICIAL_RELEASE:
-            if VERSION != '1.0.7' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+            if VERSION != '1.0.8' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
                 raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
