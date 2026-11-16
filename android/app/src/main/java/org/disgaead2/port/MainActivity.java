@@ -12,6 +12,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.view.Display;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -27,11 +33,12 @@ import android.widget.TextView;
 
 /** Milestone 0: Vulkan surface + gamepad + ISO document picker + secondary display (Thor). */
 public final class MainActivity extends Activity implements DisplayManager.DisplayListener {
-    private static final int PICK_ISO = 1;
+    private static final int PICK_ISO = 1, PICK_CORE = 2;
     private static final String PREFS = "d2", KEY_ISO = "iso_uri";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private TextView info, iso;
+    private TextView info, iso, coreInfo, logView;
+    private boolean coreStarted;
     private SecondScreen second;
     private DisplayManager displays;
     private int buttons;
@@ -66,13 +73,43 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             startActivityForResult(intent, PICK_ISO);
         });
+        coreInfo = new TextView(this);
+        coreInfo.setTextColor(Color.WHITE);
+        logView = new TextView(this);
+        logView.setTextColor(Color.LTGRAY);
+        logView.setTextSize(10);
+        logView.setTypeface(android.graphics.Typeface.MONOSPACE);
+        Button chooseCore = new Button(this);
+        chooseCore.setText(R.string.choose_core);
+        chooseCore.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+            startActivityForResult(intent, PICK_CORE);
+        });
+        Button start = new Button(this);
+        start.setText(R.string.start_core);
+        start.setOnClickListener(v -> startCore());
+        Button share = new Button(this);
+        share.setText(R.string.share_log);
+        share.setOnClickListener(v -> {
+            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, logTail(300));
+            startActivity(Intent.createChooser(send, getString(R.string.share_log)));
+        });
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        buttons.addView(chooseCore);
+        buttons.addView(start);
+        buttons.addView(share);
         panel.addView(info);
         panel.addView(iso);
+        panel.addView(coreInfo);
+        panel.addView(buttons);
+        panel.addView(logView);
         panel.addView(choose);
         root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START));
         setContentView(root);
         showIso(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ISO, null));
+        showCore();
 
         displays = (DisplayManager) getSystemService(DISPLAY_SERVICE);
         displays.registerDisplayListener(this, handler);
@@ -84,6 +121,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         @Override public void run() {
             String vulkan = NativeBridge.info();
             info.setText(vulkan);
+            if (coreStarted) logView.setText(logTail(14));
             if (second != null) second.setStatus(vulkan + "\n" + getString(R.string.status_input, describeInput()));
             handler.postDelayed(this, 500);
         }
@@ -108,9 +146,70 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         iso.setText(getString(R.string.iso_selected, name));
     }
 
+    private File coreFile() { return new File(getFilesDir(), "libd2core.so"); }
+
+    private File gameRoot() { return new File(getExternalFilesDir(null), "game"); }
+
+    private File logFile() { return new File(getExternalFilesDir(null), "d2core.log"); }
+
+    private void showCore() {
+        File core = coreFile();
+        String text = core.exists() ? getString(R.string.core_ready, String.valueOf(core.length() / (1024 * 1024)))
+                : getString(R.string.core_missing);
+        coreInfo.setText(text + "\n" + getString(R.string.game_folder, gameRoot().getAbsolutePath()));
+    }
+
+    private String logTail(int lines) {
+        File log = logFile();
+        if (!log.exists()) return "";
+        try (RandomAccessFile f = new RandomAccessFile(log, "r")) {
+            long size = f.length(), from = Math.max(0, size - 64 * 1024);
+            byte[] data = new byte[(int) (size - from)];
+            f.seek(from);
+            f.readFully(data);
+            String[] all = new String(data, StandardCharsets.UTF_8).split("\n");
+            StringBuilder out = new StringBuilder();
+            for (int i = Math.max(0, all.length - lines); i < all.length; i++) out.append(all[i]).append('\n');
+            return out.toString();
+        } catch (java.io.IOException e) {
+            return "(log: " + e + ")";
+        }
+    }
+
+    private void startCore() {
+        if (coreStarted) return;
+        File eboot = new File(gameRoot(), "PS3_GAME/USRDIR/EBOOT.elf");
+        if (!coreFile().exists()) { logView.setText(R.string.core_missing); return; }
+        if (!eboot.exists()) { logView.setText(getString(R.string.game_missing) + "\n" + eboot); return; }
+        String error = NativeBridge.startCore(coreFile().getAbsolutePath(), eboot.getAbsolutePath(),
+                gameRoot().getAbsolutePath(), logFile().getAbsolutePath());
+        if (error != null) { logView.setText(error); return; }
+        coreStarted = true;
+    }
+
+    private void importCore(Uri uri) {
+        new Thread(() -> {
+            String message = null;
+            try (InputStream in = getContentResolver().openInputStream(uri);
+                 OutputStream out = new FileOutputStream(coreFile())) {
+                byte[] buffer = new byte[1 << 20];
+                int n;
+                while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+            } catch (java.io.IOException | RuntimeException e) {
+                message = "import: " + e;
+            }
+            final String shown = message;
+            handler.post(() -> { showCore(); if (shown != null) logView.setText(shown); });
+        }).start();
+    }
+
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == PICK_CORE && result == RESULT_OK && data != null && data.getData() != null) {
+            importCore(data.getData());
+            return;
+        }
         if (request != PICK_ISO || result != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         try {

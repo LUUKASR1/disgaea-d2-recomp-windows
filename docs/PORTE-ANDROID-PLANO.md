@@ -132,3 +132,9 @@ Vulkan); validating the full game needs the ISO on a machine with the NDK. There
 per-platform native layers, so Android needs a new layer (`ANativeWindow` + Vulkan, AAudio/Oboe, `InputDevice`,
 `Activity` lifecycle). `feature/android-bootstrap` starts from a different base and should only be mined for its useful
 parts (SAF ISO reading, JNI, APK/CI).
+
+### Marco 1c (em andamento)
+- 1b concluido: `libd2core.so` (ARM64, ~100 MB) compilado a partir da ISO do usuario com o NDK.
+- 1c: o app importa o `libd2core.so` (botao "Escolher libd2core.so", copia para o armazenamento privado), le o jogo em
+  `Android/data/org.disgaead2.port/files/game/PS3_GAME/USRDIR/EBOOT.elf` (modo pasta) e roda `d2_core_run` numa thread.
+  O log vai para `Android/data/org.disgaead2.port/files/d2core.log` e o botao "Compartilhar log" envia as ultimas linhas.

@@ -7,4 +7,11 @@
     <string name="second_commands">Direcional / analógico esquerdo: mover\nA (cruz): confirmar\nB (círculo): voltar\nX (quadrado) / Y (triângulo)\nL1 / R1, L2 / R2\nStart / Select</string>
     <string name="status_input">Entrada: %1$s</string>
     <string name="no_pad">nenhum botão</string>
+    <string name="choose_core">Escolher libd2core.so</string>
+    <string name="start_core">Iniciar núcleo do jogo</string>
+    <string name="share_log">Compartilhar log</string>
+    <string name="core_missing">Núcleo: ainda não importado</string>
+    <string name="core_ready">Núcleo: %1$s MB importado</string>
+    <string name="game_folder">Pasta do jogo: %1$s</string>
+    <string name="game_missing">EBOOT.elf não encontrado na pasta do jogo</string>
 </resources>
