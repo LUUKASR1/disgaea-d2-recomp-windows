@@ -3,6 +3,12 @@
 #ifndef D2_ANDROID_UCONTEXT_H
 #define D2_ANDROID_UCONTEXT_H
 #include <ucontext.h>
+#include <pthread.h>
+
+/* bionic has no pthread_cancel/pthread_testcancel. Guest workers are only cancelled while the game shuts down,
+ * and on Android shutdown ends the process (the app calls _exit), so cancellation is a no-op here. */
+static inline int pthread_cancel(pthread_t thread) { (void)thread; return 0; }
+static inline void pthread_testcancel(void) {}
 #ifdef __cplusplus
 extern "C" {
 #endif
