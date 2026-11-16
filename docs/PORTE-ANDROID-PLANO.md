@@ -55,6 +55,21 @@ No Android não dá para compilar C no aparelho. Opções:
 Retomar a fase 1 a partir da 0.0.15: tirar do bootstrap os diagnósticos de SELF e iniciar a execução do núcleo
 recompilado, com um relatório único por teste no aparelho.
 
+### Auditoria do código atual (resultado)
+
+- O núcleo (código PPU recompilado + SPU + `ps3recomp`) é C/C++ portátil: o projeto original já rodou em macOS ARM64,
+  então não há dependência de x86. Isso é a melhor notícia para o ARM64 do Android.
+- O código recompilado **não está no repositório**: é gerado a partir da ISO do usuário. Por isso o CI não consegue
+  compilar o jogo completo para Android; só as partes independentes (runtime, VFS, Vulkan). A validação do jogo
+  inteiro exige a ISO em uma máquina com o NDK.
+- Não há SDL: janela, áudio e entrada são camadas nativas por plataforma (Win32/D3D12, Cocoa/Metal, `port/vulkan`
+  para Windows). O Android precisa de uma camada nova: `ANativeWindow` + Vulkan, AAudio/Oboe, `InputDevice`/`MotionEvent`
+  e o ciclo de vida da `Activity`.
+- A branch `feature/android-bootstrap` parte de outra base (diagnóstico de SELF dentro do app) e deve ser **reaproveitada
+  só nas partes úteis** (leitura de ISO por SAF, JNI, APK/CI), não como base do núcleo.
+- Tamanho real: vários marcos. O primeiro (título na tela) depende de compilar o núcleo no NDK com a ISO e de medir o
+  desempenho no aparelho.
+
 ## English
 
 ### Starting point
@@ -95,3 +110,12 @@ possible BLES01939) needs its own recompiled executable; Android Scoped Storage 
 
 Resume phase 1 from 0.0.15: drop the SELF diagnostics from the bootstrap and start executing the recompiled core, with a
 single report per on-device test.
+
+### Code audit (result)
+
+The core (lifted PPU + SPU + `ps3recomp`) is portable C/C++ (it already ran on macOS ARM64), but the lifted code is
+generated from the user's ISO and is not in the repository, so CI can only build the independent parts (runtime, VFS,
+Vulkan); validating the full game needs the ISO on a machine with the NDK. There is no SDL: window/audio/input are
+per-platform native layers, so Android needs a new layer (`ANativeWindow` + Vulkan, AAudio/Oboe, `InputDevice`,
+`Activity` lifecycle). `feature/android-bootstrap` starts from a different base and should only be mined for its useful
+parts (SAF ISO reading, JNI, APK/CI).
