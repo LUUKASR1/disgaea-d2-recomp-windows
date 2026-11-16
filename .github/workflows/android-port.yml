@@ -55,4 +55,6 @@ jobs:
         if: always()
         with:
           name: android-core-probe-log
-          path: probe.log
+          path: |
+            probe.log
+            patch.log

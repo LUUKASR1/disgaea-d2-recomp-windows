@@ -8,6 +8,8 @@ lock="$root/patches/SDK-WINDOWS.lock"
 repo=$(python3 -c "import json;print(json.load(open('$lock'))['repository'])")
 base=$(python3 -c "import json;print(json.load(open('$lock'))['base'])")
 git clone -q "$repo" "$work/ps3recomp" && git -C "$work/ps3recomp" checkout -q --detach "$base"
+# Project patch (the same verified SDK patch the Windows build uses).
+git -C "$work/ps3recomp" apply "$root/patches/$(python3 -c "import json;print(json.load(open('$lock'))['patch'])")" 2> "$root/patch.log" || echo "patch apply failed" >> "$root/patch.log"
 # x86-only flag: keep it for x86-64 hosts, drop it for ARM64.
 sed -i 's/^\( *\)-msse4\.1\r\?$/\1$<$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86_64>:-msse4.1>/' "$work/ps3recomp/CMakeLists.txt"
 # bionic has no pthread_setaffinity_np; leave thread placement to the Android scheduler.
