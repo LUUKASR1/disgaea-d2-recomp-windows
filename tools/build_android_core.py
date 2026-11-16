@@ -90,8 +90,8 @@ def prepare_sdk(source, destination):
     # SSE4.1 is an x86 flag; keep it for x86-64 only.
     text, count = re.subn(r'(?m)^( *)-msse4\.1(\r?)$',
                           r'\1$<$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86_64>:-msse4.1>\2', text)
-    if not count:
-        raise SystemExit('SDK mudou: opcao -msse4.1 nao encontrada.')
+    if not count and 'PS3RECOMP_HAS_MSSE41' not in text:
+        raise SystemExit('SDK mudou: opcao -msse4.1 nao encontrada.')   # the project patch already tests for it
     text += ('\nif(ANDROID)\n'
              '    target_sources(ps3recomp_runtime PRIVATE libs/spurs/d2_android_ucontext.c)\n'
              '    target_compile_options(ps3recomp_runtime PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/libs/spurs/d2_android_ucontext.h)\n'
