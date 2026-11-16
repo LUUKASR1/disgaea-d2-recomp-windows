@@ -314,8 +314,16 @@ endif()
 # app.rc carries the icon, the version block and the manifest, and needs a
 # resource compiler. Listing it as a source on a host that has none is not a
 # link error, it is a "no rule to make" for a file nothing can consume.
-if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app.rc")
-    target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app.rc")
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app.rc" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../windows/assets/launcher.ico")
+    enable_language(RC OPTIONAL)
+    if(CMAKE_RC_COMPILER)
+        # windres resolves ICON paths from the build directory, so the .rc is generated with the icon's absolute path.
+        get_filename_component(D2_APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../windows/assets/launcher.ico" ABSOLUTE)
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/app.rc" "${CMAKE_CURRENT_BINARY_DIR}/d2_app.rc" @ONLY)
+        target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/d2_app.rc")
+    else()
+        message(STATUS "No resource compiler found: the game exe is built without its icon")
+    endif()
 endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE D2_GAME_VERSION=${D2_GAME_VERSION})

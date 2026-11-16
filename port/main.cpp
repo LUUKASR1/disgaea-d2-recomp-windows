@@ -834,6 +834,12 @@ int main(int argc, char** argv)
 #ifdef _WIN32
     static std::string standalone_eboot;
     static char* standalone_argv[2];
+    { // Per-monitor DPI awareness: real pixels on every monitor (no blurry bitmap scaling at 125%/150%), set before any window exists.
+        typedef BOOL(WINAPI * SetDpiCtx)(HANDLE);
+        if (HMODULE user = GetModuleHandleW(L"user32.dll"))
+            if (auto set = reinterpret_cast<SetDpiCtx>(reinterpret_cast<void*>(GetProcAddress(user, "SetProcessDpiAwarenessContext"))))
+                set(reinterpret_cast<HANDLE>(static_cast<intptr_t>(-4))); // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    }
     d2_wait_for_previous_instance();
     if (argc == 2 && strcmp(argv[1], "--create-shortcut") == 0) return d2_create_shortcut();
     if (argc < 2) {
