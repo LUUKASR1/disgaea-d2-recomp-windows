@@ -14,7 +14,7 @@ import time
 BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
 TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
 KEY = '#010203'                      # colour key: pixels of this colour are see-through (rounded corners)
-WIDTH, HEIGHT, RADIUS = 700, 600, 28
+WIDTH, HEIGHT, RADIUS = 700, 620, 28
 MIN_ISO_BYTES = 500 * 1024 * 1024    # the game image is several GB; smaller files are not it
 RECENT_FILE = 'iso-recentes.json'
 HINTS = ('disgaea', 'd2', 'blus', 'netherworld')
@@ -146,7 +146,7 @@ class GlassIsoPicker:
         win.configure(bg=KEY)
         try:
             win.attributes('-transparentcolor', KEY)
-            win.attributes('-alpha', 0.97)
+            win.attributes('-alpha', 0.96)
         except tk.TclError:
             win.configure(bg=BG)         # platforms without colour keys: a plain rectangle
         parent.update_idletasks()
@@ -183,15 +183,15 @@ class GlassIsoPicker:
 
         canvas.create_text(56, 262, text=t('ENCONTRADAS NESTE COMPUTADOR'), fill=MUTED, anchor='w', font=('Segoe UI', 8, 'bold'))
         self.list_frame = tk.Frame(canvas, bg=self.glass(0.05), highlightthickness=1, highlightbackground=self.glass(0.18))
-        canvas.create_window(WIDTH // 2, 410, window=self.list_frame, width=WIDTH - 100, height=252)
+        canvas.create_window(WIDTH // 2, 408, window=self.list_frame, width=WIDTH - 100, height=248)
         self.empty_label = tk.Label(self.list_frame, text=t('Procurando ISOs…'), bg=self.list_frame['bg'], fg=MUTED,
                                     font=('Segoe UI', 10))
         self.empty_label.pack(expand=True)
 
         self.confirm_button = self._button(canvas, t('Usar esta ISO'), self.confirm, primary=True)
         self.cancel_button = self._button(canvas, t('Cancelar'), self.cancel, primary=False)
-        canvas.create_window(WIDTH - 56 - 85, HEIGHT - 58, window=self.confirm_button, width=170, height=42)
-        canvas.create_window(WIDTH - 56 - 170 - 14 - 55, HEIGHT - 58, window=self.cancel_button, width=110, height=42)
+        canvas.create_window(WIDTH - 56 - 85, HEIGHT - 50, window=self.confirm_button, width=170, height=42)
+        canvas.create_window(WIDTH - 56 - 170 - 14 - 55, HEIGHT - 50, window=self.cancel_button, width=110, height=42)
         self._enable_confirm(False)
 
         win.bind('<Escape>', lambda e: self.cancel())
@@ -282,7 +282,7 @@ class GlassIsoPicker:
     def set_path(self, path):
         self.chosen = path
         ok, message = check_iso(path)
-        self.path_var.set(self._shorten(path))
+        self.path_var.set(self._shorten(path, 50))
         self.status_var.set(('✓  ' if ok else '!  ') + self.translate(message))
         self.status_label.configure(fg='#8fe3a8' if ok else '#ff9a8a')
         self._enable_confirm(ok)
@@ -342,7 +342,7 @@ class GlassIsoPicker:
             tk.Label(self.list_frame, text=t('Nenhuma ISO encontrada. Use “Procurar…” para escolher o arquivo.'), bg=self.list_frame['bg'],
                      fg=MUTED, font=('Segoe UI', 10), wraplength=WIDTH - 160).pack(expand=True)
             return
-        for path, size, mtime, recent in items[:5]:
+        for path, size, mtime, recent in items[:4]:
             self._row(path, size, recent)
         self._highlight()
 
