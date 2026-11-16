@@ -24,6 +24,8 @@ void d2_texture_dump(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint
 void d2_texture_set_dump(int on);
 int d2_texture_dump_enabled(void);
 /* Screenshot of the final image (output resolution, after upscaler and filters), lossless PNG. */
+void d2_graphics_set_outline(int level); /* 0 off, 1..3: black outline around the world sprites (characters), DirectX 12 */
+int d2_graphics_outline_level(void);
 void d2_screenshot_request(void);
 void d2_screenshot_save(const void* pixels,uint32_t w,uint32_t h,int bgra); /* tight RGBA/BGRA rows; written to a PNG in the background */
 unsigned d2_screenshot_last(char* path,unsigned size); /* returns a counter that grows with every saved shot */

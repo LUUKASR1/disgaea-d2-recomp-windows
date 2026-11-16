@@ -107,7 +107,7 @@ def generate(source, output):
     capture = capture.replace('+ d) * VP_CB_STRIDE', '+ r->cb_slot) * VP_CB_STRIDE')
     text = text[:start] + capture + text[end:]
     text = replace(text, 'static void render_frame(void)\n{',
-        '#include "hud_adapter.inc"\n#include "temporal_adapter.inc"\n\nstatic void render_frame(void)\n{')
+        '#include "hud_adapter.inc"\n#include "outline_adapter.inc"\n#include "temporal_adapter.inc"\n\nstatic void render_frame(void)\n{')
     text = replace(text, '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);',
         '                s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,\n                                                         dpso ? dpso : vpso);\n                d2_alpha_record_pso(d,dpso);')
     text = replace(text, '    off = _off0; mapped = _map0;\n    t->up->lpVtbl->Unmap(t->up, 0, NULL);',
@@ -124,6 +124,25 @@ def generate(source, output):
         '#include "texture_replace_adapter.inc"\n/* ---------------------------------------------------------------------------\n * Render-to-texture: offscreen RT pool.')
     text = replace(text, '                        DXGI_FORMAT sf =\n                            (_bf == 0x85',
         '                        DXGI_FORMAT sf = s_d3d.vp_tex[ts].d2_swapped ? DXGI_FORMAT_R8G8B8A8_UNORM :\n                            (_bf == 0x85')
+    text = replace(text, '                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,\n                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);\n                /* VP_SUBMIT',
+        '                if (d2_graphics_outline_level() > 0 && dpso && d2_outline_is_character(dr, d)) {\n'
+        '                    ID3D12PipelineState* opso = d2_outline_pso(dr);\n'
+        '                    if (opso) {\n'
+        '                        static const int ooff[8][2] = {{-1,0},{1,0},{0,-1},{0,1},{-1,-1},{1,-1},{-1,1},{1,1}};\n'
+        '                        int opx = d2_graphics_outline_level() * (dvp_h >= 1000.0f ? (int)(dvp_h / 720.0f + 0.5f) : 1);\n'
+        '                        if (opx < 1) opx = 1;\n'
+        '                        s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list, opso);\n'
+        '                        for (int _o = 0; _o < 8; _o++) {\n'
+        '                            D3D12_VIEWPORT ovp = {dvp_x + (float)(ooff[_o][0] * opx), dvp_y + (float)(ooff[_o][1] * opx), dvp_w, dvp_h, 0.0f, 1.0f};\n'
+        '                            s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &ovp);\n'
+        '                            s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list, dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);\n'
+        '                        }\n'
+        '                        D3D12_VIEWPORT rvp = {dvp_x, dvp_y, dvp_w, dvp_h, 0.0f, 1.0f};\n'
+        '                        s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &rvp);\n'
+        '                        s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list, dpso);\n'
+        '                    }\n'
+        '                }\n'
+        '                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,\n                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);\n                /* VP_SUBMIT')
     text = replace(text, '    wait_for_gpu();\n\n    /* Compile the real vertex program once',
         '    wait_for_gpu();\n    d2_posthud_frame(fi);\n\n    /* Compile the real vertex program once')
     text = replace(text, '    /* Transition render target to RENDER_TARGET state */',

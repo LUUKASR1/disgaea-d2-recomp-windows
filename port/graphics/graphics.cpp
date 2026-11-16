@@ -46,7 +46,7 @@ struct State {
 };
 State* gpu=nullptr;
 // Screenshots: the final swap buffer is copied to a read-back buffer after the upscaler and filters ran.
-std::atomic<int> shot_request{0};std::atomic<unsigned> shot_count{0};std::mutex shot_lock;std::string shot_path;
+std::atomic<int> outline_level{0};std::atomic<int> shot_request{0};std::atomic<unsigned> shot_count{0};std::mutex shot_lock;std::string shot_path;
 Ref<ID3D12Fence> shot_fence;HANDLE shot_event=nullptr;UINT64 shot_value=0;
 std::string shot_directory(){
     std::string dir;
@@ -432,3 +432,5 @@ extern "C" void d2_screenshot_save(const void* pixels,uint32_t w,uint32_t h,int 
     std::vector<uint8_t> copy(p,p+static_cast<size_t>(w)*h*4);
     std::thread(shot_save,std::move(copy),w,h,bgra!=0).detach();
 }
+extern "C" void d2_graphics_set_outline(int level){outline_level.store(level<0?0:level>3?3:level);}
+extern "C" int d2_graphics_outline_level(void){return outline_level.load();}
