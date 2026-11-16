@@ -1,0 +1,31 @@
+// Windows resources of DisgaeaD2Recomp.exe: the game icon (taskbar, window, Explorer, shortcuts) and the version block.
+// Constants are spelled out so the file needs no SDK header.
+1 ICON "@D2_APP_ICON@"
+
+1 VERSIONINFO
+ FILEVERSION 0,2,4,0
+ PRODUCTVERSION 0,2,4,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041604b0"
+        BEGIN
+            VALUE "CompanyName", "LUUKASR1"
+            VALUE "FileDescription", "Disgaea D2 - A Brighter Darkness (Windows port)"
+            VALUE "FileVersion", "0.2.4.0"
+            VALUE "InternalName", "DisgaeaD2Recomp"
+            VALUE "OriginalFilename", "DisgaeaD2Recomp.exe"
+            VALUE "ProductName", "Disgaea D2 Windows Port"
+            VALUE "ProductVersion", "0.2.4.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0416, 1200
+    END
+END

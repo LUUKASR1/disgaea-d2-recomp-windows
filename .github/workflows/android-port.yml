@@ -2,7 +2,7 @@ name: Android port (Vulkan surface milestone)
 on:
   push:
     branches: [android-port]
-    paths: ['android/**', '.github/workflows/android-port.yml', 'tools/android_core_probe.sh', 'tools/build_android_core.py', 'port/CMakeLists.txt']
+    paths: ['android/**', '.github/workflows/android-port.yml', 'tools/android_core_probe.sh', 'tools/build_android_core.py', 'port/CMakeLists.txt', 'port/android/**']
   workflow_dispatch:
 permissions:
   contents: read

@@ -104,7 +104,7 @@ def prepare_sdk(source, destination):
         raise SystemExit('SDK mudou: pthread_setaffinity_np nao encontrado.')
     write_text(affinity, body.replace('pthread_setaffinity_np(pt, sizeof set, &set);', '(void)pt; (void)set;'))
     for name in ('d2_android_ucontext.c', 'd2_android_ucontext.h'):
-        shutil.copyfile(ROOT / 'android/core' / name, destination / 'libs/spurs' / name)
+        shutil.copyfile(ROOT / 'port/android' / name, destination / 'libs/spurs' / name)
 
 
 def toolchain_args(ndk):

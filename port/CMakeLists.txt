@@ -283,7 +283,7 @@ if(ANDROID)
     # Android loads the game core as a shared library (libd2core.so) from the app; main() becomes
     # d2_game_main() and android/core/d2_core_entry.cpp is the exported entry point.
     add_library(${PROJECT_NAME} SHARED ${D2_GAME_SOURCES}
-        "${CMAKE_CURRENT_SOURCE_DIR}/../android/core/d2_core_entry.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/android/d2_core_entry.cpp")
     set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS "main=d2_game_main")
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME d2core)
     find_library(D2_ANDROID_LOG_LIB log)
