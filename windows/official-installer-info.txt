@@ -1,4 +1,4 @@
-Disgaea D2 Windows Launcher 0.2.1 - Stable / DirectX 12
+Disgaea D2 Windows Launcher 1.0.0 - Stable / DirectX 12
 
 Projeto independente da comunidade. Nao e uma publicacao oficial da NIS ou Sony.
 
@@ -17,7 +17,7 @@ O nome e mantido por compatibilidade. Nao apague essa pasta.
 Perfis anteriores sao preservados; nem todos sao migrados automaticamente.
 
 Renderizador: DirectX 12. Vulkan, DLSS, Frame Generation e Android indisponiveis.
-FSR 1 e configuracoes de video estao disponiveis. HUD apos upscaling e experimental.
+FSR 1, filtros, HDR e o menu de opcoes dentro do jogo (F1) estao disponiveis. HUD apos upscaling e experimental.
 Nao ha garantia de 60 FPS constantes ou de compatibilidade com todo hardware.
 Requer Windows x64 e driver DirectX 12. O executavel nao e assinado digitalmente.
 

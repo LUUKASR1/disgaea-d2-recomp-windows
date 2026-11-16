@@ -16,13 +16,11 @@ extern "C" void d2_texture_set_dump(int on);
 extern "C" void d2_graphics_set_outline(int level);
 extern "C" void d2_graphics_set_hdr(int level);
 extern "C" void d2_graphics_set_pause_unfocused(int on);
-extern "C" void d2_graphics_request_cursor_dump(void);
 extern "C" int d2_graphics_hdr_enabled(void);
 extern "C" int d2_graphics_hdr_display(void);
 extern "C" int d2_texture_dump_enabled(void);
 extern "C" void d2_screenshot_request(void);
 extern "C" unsigned d2_screenshot_last(char* path, unsigned size); /* port/graphics/graphics.cpp */
-#include <math.h>
 #include <memory>
 #include <vector>
 #include <algorithm>
@@ -37,7 +35,7 @@ constexpr int kShotKey = 14;
 constexpr int kRows = 10;
 constexpr int kMaxHits = 48;
 constexpr int A_KEY0 = 200;
-enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_OUTLINE, A_HDR, A_PAUSE, A_MOUSE, A_TAB0 = 100 };
+enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_OUTLINE, A_HDR, A_PAUSE, A_TAB0 = 100 };
 constexpr int kTabs = 4; // 0 video, 1 filters, 2 controls, 3 system
 
 constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
@@ -59,7 +57,6 @@ struct Config {
     bool texdump = false; // save every texture the game loads as PNG (texture pack)
     int out_idx = -1, scale_pct = -1, fsr = -1; // -1: not chosen in the game (the launcher's values stay)
     unsigned menu_page = 0; // last tab open in F1
-    unsigned mouse_pad = 0; // mouse buttons/wheel act as controller buttons (clicks = Cross/Circle/Triangle, side buttons = L1/R1, wheel = Up/Down)
     unsigned pause_focus = 1; // pause the game while its window is not in front
     unsigned hdr = 0; // 0 off, 1..3 on (highlight expansion); on/off needs a restart (swap chain format)
     unsigned outline = 0; // black outline around the world sprites: 0 off .. 3 thick
@@ -69,7 +66,6 @@ struct Config {
 
 static Config cfg;
 static HWND game = nullptr, panel = nullptr, backdrop = nullptr;
-static void mouse_release_all();
 static WNDPROC game_proc = nullptr;
 static bool is_open = false;
 static int page = 0, hover = A_NONE, listening = -1;
@@ -96,7 +92,7 @@ static std::wstring W(const std::string& utf8)
 
 static bool is_known_key(const std::string& key)
 {
-    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "hdr" || key == "pause_focus" || key == "mouse_pad" || key == "menu_page" || key == "sharpen" ||
+    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "hdr" || key == "pause_focus" || key == "menu_page" || key == "sharpen" ||
         key == "scanlines" || key == "crtmask" || key == "vignette" || key == "vivid" || key == "aa" || key == "d3_out" || key == "d3_scale" ||
         key == "d3_fsr")
         return true;
@@ -126,7 +122,6 @@ static void load_config()
             else if (key == "showfps") cfg.show_fps = value != 0;
             else if (key == "texdump") cfg.texdump = value != 0;
             else if (key == "menu_page" && value >= 0 && value < kTabs) cfg.menu_page = (unsigned)value;
-            else if (key == "mouse_pad") cfg.mouse_pad = value != 0;
             else if (key == "pause_focus") cfg.pause_focus = value != 0;
             else if (key == "hdr" && value >= 0 && value <= 3) cfg.hdr = (unsigned)value;
             else if (key == "outline" && value >= 0 && value <= 3) cfg.outline = (unsigned)value;
@@ -174,7 +169,6 @@ static void save_config()
     text += "outline=" + std::to_string(cfg.outline) + "\n";
     text += "hdr=" + std::to_string(cfg.hdr) + "\n";
     text += "pause_focus=" + std::to_string(cfg.pause_focus) + "\n";
-    text += "mouse_pad=" + std::to_string(cfg.mouse_pad) + "\n";
     text += "menu_page=" + std::to_string(cfg.menu_page) + "\n";
     if (cfg.out_idx >= 0) text += "d3_out=" + std::to_string(cfg.out_idx) + "\n";
     if (cfg.scale_pct >= 0) text += "d3_scale=" + std::to_string(cfg.scale_pct) + "\n";
@@ -513,7 +507,6 @@ static void activate(int act, int dir)
     case A_VIGNETTE: cfg.vignette = (cfg.vignette + 4 + (unsigned)dir) % 4; apply_post(); break;
     case A_VIVID: cfg.vivid = (cfg.vivid + 4 + (unsigned)dir) % 4; apply_post(); break;
     case A_AA: cfg.aa = cfg.aa ? 0u : 1u; apply_post(); break;
-    case A_MOUSE: cfg.mouse_pad = cfg.mouse_pad ? 0u : 1u; mouse_release_all(); break;
     case A_PAUSE: cfg.pause_focus = cfg.pause_focus ? 0u : 1u; apply_post(); break;
     case A_HDR: {
         const unsigned old = cfg.hdr;
@@ -684,7 +677,6 @@ static void layout_rows(Row* rows, std::string& hint)
 #else
         rows[1] = Row{A_API, L("API gráfica", "Graphics API"), std::string("« DirectX 12 (") + L("sem Vulkan nesta versão", "no Vulkan in this build") + ") »", false, false};
 #endif
-        rows[4] = Row{A_MOUSE, L("Mouse como controle", "Mouse as controller"), on_off[cfg.mouse_pad ? 1 : 0], true, false};
         rows[3] = Row{A_PAUSE, L("Pausar ao perder o foco", "Pause when unfocused"), on_off[cfg.pause_focus ? 1 : 0], true, false};
         rows[2] = Row{A_TEXDUMP, L("Salvar texturas (PNG)", "Save textures (PNG)"), on_off[d2_texture_dump_enabled() ? 1 : 0], true, false};
         rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};
@@ -1427,133 +1419,13 @@ static void ensure_toast_window()
 
 /* ---- game window hook -------------------------------------------------------------------------------------- */
 
-/* Mouse as a controller: the game has no pointer, so the mouse presses the keys bound to the pad buttons (the SDK reads those
- * keys with GetAsyncKeyState). Left click = Cross, right = Circle, middle = Triangle, side buttons = L1/R1, wheel = Up/Down. */
-static bool mouse_held[5] = {};
-static const int kMouseSlot[5] = {4, 5, 7, 8, 9};
-static void synth_key(int vk, bool down)
-{
-    if (vk <= 6 || vk >= 255) return; // mouse buttons themselves cannot be synthesised as keys
-    INPUT in = {};
-    in.type = INPUT_KEYBOARD;
-    in.ki.wVk = (WORD)vk;
-    in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
-    SendInput(1, &in, sizeof in);
-}
-static void mouse_release_all()
-{
-    for (int i = 0; i < 5; i++)
-        if (mouse_held[i]) { synth_key(cfg.keys[kMouseSlot[i]], false); mouse_held[i] = false; }
-}
-static void mouse_note_input();
-static void mouse_button(int i, bool down)
-{
-    mouse_note_input();
-    if (i < 0 || i > 4 || mouse_held[i] == down) return;
-    mouse_held[i] = down;
-    synth_key(cfg.keys[kMouseSlot[i]], down);
-}
-static int wheel_pulse_slot = -1;
-extern "C" unsigned d2_pad_keys_mask(void)
-{
-    unsigned m = 0;
-    const int slots[6] = {0, 1, 2, 3, 4, 5};
-    for (int i = 0; i < 6; i++)
-        if (cfg.keys[slots[i]] > 0 && (GetAsyncKeyState(cfg.keys[slots[i]]) & 0x8000)) m |= 1u << i;
-    return m;
-}
-
-/* Map cursor follows the mouse (battle). The cursor diamond stays near the screen centre while the camera scrolls, so the tile under
- * the mouse is found from the offset between the diamond and the mouse in the isometric basis: one hop moves the world by
- * (±hx, ±hy) (Up = (-,+), Left = (-,-), Down = (+,-), Right = (+,+)). Hops are sent as short key pulses, then the loop waits until
- * the cursor settles and measures again, so lost or extra hops are corrected. */
-static DWORD mouse_input_tick = 0;
-static void mouse_note_input() { mouse_input_tick = GetTickCount(); }
-extern "C" void d2_mouse_follow_frame(int present, float cx, float cy, float hx, float hy)
-{
-    static int queue[4] = {};          // pending hops: Up, Down, Left, Right
-    static int phase = 0, pulse_slot = -1, stable = 0, since_hop = 999, rounds = 0;
-    static float lastx = 0, lasty = 0;
-    static POINT done_mouse = {-1, -1};
-    static bool was_active = false;
-    auto release = [&]() { if (pulse_slot >= 0) { synth_key(cfg.keys[pulse_slot], false); pulse_slot = -1; } };
-    const bool active = present && cfg.mouse_pad && !is_open && !(dlg && IsWindowVisible(dlg)) && game && GetForegroundWindow() == game;
-    if (!active) {
-        release(); queue[0] = queue[1] = queue[2] = queue[3] = 0; phase = 0; stable = 0; rounds = 0; was_active = false;
-        return;
-    }
-    since_hop++;
-    stable = (fabsf(cx - lastx) < 0.0015f && fabsf(cy - lasty) < 0.0015f) ? stable + 1 : 0;
-    lastx = cx; lasty = cy;
-    if (!was_active) { was_active = true; done_mouse = POINT{-1, -1}; }
-    // pulse generator: 3 frames down, 7 frames up (the game repeats a held direction about every 9-10 frames)
-    if (phase > 0) {
-        phase--;
-        if (phase == 7) release();
-        if (phase == 0) since_hop = 0;
-        return;
-    }
-    for (int i = 0; i < 4; i++) {
-        if (queue[i] > 0) {
-            queue[i]--; pulse_slot = i; synth_key(cfg.keys[i], true); phase = 10; return;
-        }
-    }
-    if (since_hop < 20 || stable < 6) return;                    // wait for the glide to finish
-    if (GetTickCount() - mouse_input_tick < 600) return;          // a click/wheel just happened: the game is busy with it
-    POINT mp; RECT rc;
-    if (!GetCursorPos(&mp) || !ScreenToClient(game, &mp) || !GetClientRect(game, &rc) || rc.right < 64 || rc.bottom < 64) return;
-    if (mp.x < 0 || mp.y < 0 || mp.x >= rc.right || mp.y >= rc.bottom) return;
-    if (abs(mp.x - done_mouse.x) > 6 || abs(mp.y - done_mouse.y) > 6) { if (done_mouse.x >= 0 || rounds == 0) rounds = 0; }
-    const float mx = (float)mp.x / (float)rc.right * 2.0f - 1.0f, my = 1.0f - (float)mp.y / (float)rc.bottom * 2.0f;
-    const float s = (mx - cx) / hx, t = (my - cy) / hy;
-    int rl = (int)floorf((s + t) * 0.5f + 0.5f);   // Right - Left
-    int ud = (int)floorf((t - s) * 0.5f + 0.5f);   // Up - Down
-    if (rl == 0 && ud == 0) { done_mouse = mp; rounds = 0; return; }
-    if (abs(mp.x - done_mouse.x) <= 6 && abs(mp.y - done_mouse.y) <= 6 && rounds >= 4) return;   // give up until the mouse moves
-    if (abs(mp.x - done_mouse.x) > 6 || abs(mp.y - done_mouse.y) > 6) rounds = 0;
-    done_mouse = mp; rounds++;
-    const int cap = 14;
-    if (rl > cap) rl = cap; if (rl < -cap) rl = -cap; if (ud > cap) ud = cap; if (ud < -cap) ud = -cap;
-    if (ud > 0) queue[0] = ud; else queue[1] = -ud;
-    if (rl > 0) queue[3] = rl; else queue[2] = -rl;
-}
-
 static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
 {
-    if (cfg.mouse_pad && !is_open && !(dlg && IsWindowVisible(dlg))) {
-        switch (m) {
-        case WM_LBUTTONDOWN: SetCapture(h); mouse_button(0, true); return 0;
-        case WM_LBUTTONUP: mouse_button(0, false); ReleaseCapture(); return 0;
-        case WM_RBUTTONDOWN: SetCapture(h); mouse_button(1, true); return 0;
-        case WM_RBUTTONUP: mouse_button(1, false); ReleaseCapture(); return 0;
-        case WM_MBUTTONDOWN: SetCapture(h); mouse_button(2, true); return 0;
-        case WM_MBUTTONUP: mouse_button(2, false); ReleaseCapture(); return 0;
-        case WM_XBUTTONDOWN: SetCapture(h); mouse_button(HIWORD(w) == XBUTTON1 ? 3 : 4, true); return TRUE;
-        case WM_XBUTTONUP: mouse_button(HIWORD(w) == XBUTTON1 ? 3 : 4, false); ReleaseCapture(); return TRUE;
-        case WM_MOUSEWHEEL: {
-            mouse_note_input();
-            const int slot = (short)HIWORD(w) > 0 ? 0 : 1; // wheel up = Up, wheel down = Down
-            if (wheel_pulse_slot >= 0) synth_key(cfg.keys[wheel_pulse_slot], false);
-            wheel_pulse_slot = slot;
-            synth_key(cfg.keys[slot], true);
-            SetTimer(h, 0x2D2, 70, nullptr);
-            return 0;
-        }
-        }
-    }
-    if (m == WM_TIMER && w == 0x2D2) {
-        KillTimer(h, 0x2D2);
-        if (wheel_pulse_slot >= 0) synth_key(cfg.keys[wheel_pulse_slot], false);
-        wheel_pulse_slot = -1;
-        return 0;
-    }
-    if (m == WM_KILLFOCUS || m == WM_CAPTURECHANGED) mouse_release_all();
     switch (m) {
     case WM_KEYDOWN:
         if ((int)w == cfg.keys[kShotKey] && w != VK_SNAPSHOT) { if (!(l & (1 << 30))) d2_screenshot_request(); return 0; }
         if (w == VK_F1) { if (dlg && IsWindowVisible(dlg)) return 0; if (is_open) close_panel(); else open_panel(); return 0; }
         if (w == VK_F11) { set_fullscreen(!cfg.fullscreen); save_config(); return 0; }
-        if (w == VK_F9) { d2_graphics_request_cursor_dump(); push_notice(L("Diagnóstico do cursor", "Cursor diagnostics"), "cursor-diag.txt", 0); return 0; }
         if (w == VK_ESCAPE) return 0; /* the SDK window would close the game: Alt+F4 / the window button do that */
         break;
     case WM_KEYUP:

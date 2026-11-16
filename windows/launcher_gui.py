@@ -265,9 +265,21 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         else:
             task(lambda: backend.prepare_and_play(game, pkgs, fw, lambda: events.put(('prepared', ''))))
 
+    def browse_iso(initial_dir=''):
+        options = {'initialdir': initial_dir} if initial_dir and os.path.isdir(initial_dir) else {}
+        return filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
+            filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')], **options)
+
+    def choose_iso():
+        """Glass picker first; the plain system dialog if the custom window cannot open for any reason."""
+        try:
+            from glass_picker import ask_iso
+            return ask_iso(app, translate, home, config.get('iso_path', ''), browse_iso)
+        except Exception:
+            return browse_iso()
+
     def play_iso():
-        selected = filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
-            filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
+        selected = choose_iso()
         if not selected: return
         auto_backup_saves()
         try:

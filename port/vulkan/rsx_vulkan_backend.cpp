@@ -18,7 +18,6 @@
 
 #include <array>
 #include <atomic>
-#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -85,7 +84,6 @@ struct Settings {
   bool fullscreen = false; // borderless fullscreen on the current monitor
   bool vsync = true;
   bool show_fps = false; // FPS counter in the corner of the screen
-  bool mouse_pad = false; // mouse buttons/wheel act as controller buttons
   bool texdump = false; // save every texture the game loads as PNG (texture pack)
   uint32_t scale_pct = 100; // internal resolution: percent of the output size (50..200)
   // Image filters, each 0 (off) .. 3 (strong).
@@ -132,7 +130,6 @@ void load_settings() {
         else if (k == "vsync") g_settings.vsync = value != 0;
         else if (k == "showfps") g_settings.show_fps = value != 0;
         else if (k == "texdump") g_settings.texdump = value != 0;
-        else if (k == "mouse_pad") g_settings.mouse_pad = value != 0;
         else if (k == "scale" && value >= 25 && value <= 400) g_settings.scale_pct = value;
         else if (k == "sharpen" && value <= 3) g_settings.sharpen = value;
         else if (k == "scanlines" && value <= 3) g_settings.scanlines = value;
@@ -168,13 +165,13 @@ void save_settings() {
   std::string others;
   if (std::FILE *old = std::fopen(path.c_str(), "rb")) {
     static const char *mine[] = {"fullscreen", "vsync", "showfps", "scale", "sharpen", "scanlines", "crtmask", "vignette", "vivid", "aa",
-                                 "upscaler", "lang", "width", "height", "api", "texdump", "mouse_pad"};
+                                 "upscaler", "lang", "width", "height", "api", "texdump"};
     char line[256];
     while (std::fgets(line, sizeof line, old)) {
       const char *eq = std::strchr(line, '=');
       if (!eq) continue;
       const std::string k(line, size_t(eq - line));
-      bool owned = k.rfind("key", 0) == 0 && k.size() > 3 && std::isdigit(static_cast<unsigned char>(k[3]));
+      bool owned = k.rfind("key", 0) == 0 && k.size() > 3 && k[3] >= '0' && k[3] <= '9';
       for (const char *m : mine) owned = owned || k == m;
       if (!owned) others += line;
     }
@@ -188,7 +185,7 @@ void save_settings() {
                  g_settings.width, g_settings.height);
     for (int i = 0; i < 15; i++) std::fprintf(f, "key%d=%d\n", i, g_settings.keys[i]);
     if (g_settings.api >= 0) std::fprintf(f, "api=%d\n", g_settings.api);
-    std::fprintf(f, "texdump=%u\nmouse_pad=%u\n", g_settings.texdump ? 1u : 0u, g_settings.mouse_pad ? 1u : 0u);
+    std::fprintf(f, "texdump=%u\n", g_settings.texdump ? 1u : 0u);
     std::fputs(others.c_str(), f);
     std::fclose(f);
   }
@@ -225,7 +222,7 @@ void set_fullscreen(bool on) {
 // Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
 // would also move the game. The layout is produced each frame by build_overlay() (further down); the window
 // thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
-enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET, A_API, A_TAB_SYSTEM, A_TEXDUMP, A_MOUSE };
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET, A_API, A_TAB_SYSTEM, A_TEXDUMP };
 constexpr int A_KEY0 = 200; // A_KEY0 + i: rebind pad action i
 constexpr int kMaxHits = 32;
 constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
@@ -354,7 +351,6 @@ bool key_is_bindable(int vk) {
   return vk > 0 && vk < 255 && vk != VK_F1 && vk != VK_F11 && vk != VK_ESCAPE && vk != VK_LWIN && vk != VK_RWIN && vk != VK_APPS;
 }
 uint32_t cycle_level(uint32_t value, int dir) { return uint32_t((int(value) + dir + 4) % 4); }
-void mouse_release_all();
 void menu_activate(int action, int dir) {
   if (action >= A_KEY0 && action < A_KEY0 + kKeyActionCount) { // click on a key cell: wait for the new key
     g_listen = action - A_KEY0;
@@ -394,7 +390,6 @@ void menu_activate(int action, int dir) {
   case A_AA: if (g_settings.upscaler) return; g_settings.aa = g_settings.aa ? 0u : 1u; break;
   case A_UPSCALER: g_settings.upscaler = g_settings.upscaler ? 0u : 1u; break;
   case A_LANG: g_settings.lang = g_settings.lang ? 0u : 1u; break;
-  case A_MOUSE: g_settings.mouse_pad = !g_settings.mouse_pad; mouse_release_all(); break;
   case A_TEXDUMP: g_settings.texdump = !d2_texture_dump_enabled(); d2_texture_set_dump(g_settings.texdump ? 1 : 0); break;
   case A_API:
     if (dir != 1) { g_api_armed_until = 0; return; }
@@ -476,57 +471,7 @@ void dialog_activate(int, int) {}
 void dialog_wheel(int) {}
 #endif
 
-// Mouse as a controller: the game has no pointer, so the mouse presses the keys bound to the pad buttons (the SDK reads those
-// keys with GetAsyncKeyState). Left click = Cross, right = Circle, middle = Triangle, side buttons = L1/R1, wheel = Up/Down.
-bool g_mouse_held[5] = {};
-constexpr int kMouseSlot[5] = {4, 5, 7, 8, 9};
-int g_wheel_slot = -1;
-void synth_key(int vk, bool down) {
-  if (vk <= 6 || vk >= 255) return; // mouse buttons themselves cannot be synthesised as keys
-  INPUT in = {};
-  in.type = INPUT_KEYBOARD;
-  in.ki.wVk = WORD(vk);
-  in.ki.dwFlags = down ? 0 : KEYEVENTF_KEYUP;
-  SendInput(1, &in, sizeof in);
-}
-void mouse_release_all() {
-  for (int i = 0; i < 5; i++)
-    if (g_mouse_held[i]) { synth_key(g_settings.keys[kMouseSlot[i]], false); g_mouse_held[i] = false; }
-}
-void mouse_button(int i, bool down) {
-  if (i < 0 || i > 4 || g_mouse_held[i] == down) return;
-  g_mouse_held[i] = down;
-  synth_key(g_settings.keys[kMouseSlot[i]], down);
-}
-
 LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-  if (g_settings.mouse_pad && !menu_is_open() && !dialog_active()) {
-    switch (msg) {
-    case WM_LBUTTONDOWN: SetCapture(hwnd); mouse_button(0, true); return 0;
-    case WM_LBUTTONUP: mouse_button(0, false); ReleaseCapture(); return 0;
-    case WM_RBUTTONDOWN: SetCapture(hwnd); mouse_button(1, true); return 0;
-    case WM_RBUTTONUP: mouse_button(1, false); ReleaseCapture(); return 0;
-    case WM_MBUTTONDOWN: SetCapture(hwnd); mouse_button(2, true); return 0;
-    case WM_MBUTTONUP: mouse_button(2, false); ReleaseCapture(); return 0;
-    case WM_XBUTTONDOWN: SetCapture(hwnd); mouse_button(HIWORD(wp) == XBUTTON1 ? 3 : 4, true); return TRUE;
-    case WM_XBUTTONUP: mouse_button(HIWORD(wp) == XBUTTON1 ? 3 : 4, false); ReleaseCapture(); return TRUE;
-    case WM_MOUSEWHEEL: {
-      const int slot = short(HIWORD(wp)) > 0 ? 0 : 1; // wheel up = Up, wheel down = Down
-      if (g_wheel_slot >= 0) synth_key(g_settings.keys[g_wheel_slot], false);
-      g_wheel_slot = slot;
-      synth_key(g_settings.keys[slot], true);
-      SetTimer(hwnd, 0x2D2, 70, nullptr);
-      return 0;
-    }
-    }
-  }
-  if (msg == WM_TIMER && wp == 0x2D2) {
-    KillTimer(hwnd, 0x2D2);
-    if (g_wheel_slot >= 0) synth_key(g_settings.keys[g_wheel_slot], false);
-    g_wheel_slot = -1;
-    return 0;
-  }
-  if (msg == WM_KILLFOCUS || msg == WM_CAPTURECHANGED) mouse_release_all();
   switch (msg) {
   case WM_CLOSE:
     save_settings();
@@ -1199,8 +1144,7 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, bool hidden
       {A_LANG, L("Idioma", "Language"), g_settings.lang ? "\302\253 English \302\273" : "\302\253 Portugu\303\252s \302\273", true, false},
       {A_API, L("API gr\303\241fica", "Graphics API"), api_is_armed() ? L("\302\253 Clique: reiniciar em DirectX 12 \302\273", "\302\253 Click: restart in DirectX 12 \302\273") : "\302\253 Vulkan \302\273", true, false},
       {A_TEXDUMP, L("Salvar texturas (PNG)", "Save textures (PNG)"), on_off[d2_texture_dump_enabled() ? 1 : 0], true, false},
-      {A_MOUSE, L("Mouse como controle", "Mouse as controller"), on_off[g_settings.mouse_pad ? 1 : 0], true, false},
-      {-1, "", "", false, false},
+      {-1, "", "", false, false}, {-1, "", "", false, false},
       {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
       {-1, "", "", false, false},
       {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},

@@ -27,7 +27,7 @@ def main():
     out = Path('launcher-previews'); out.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as root:
         official = '--official' in sys.argv
-        app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', '0.2.4' if official else VERSION, lambda directory: False, preview=True, official=official)
+        app, show = run_gui(Backend, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', '1.0.0' if official else VERSION, lambda directory: False, preview=True, official=official)
         try:
             translate, choose_language = app._launcher_i18n
             original_settings = app._launcher_get_settings()
@@ -64,6 +64,25 @@ def main():
                                   if w.type(i) == 'text']
                         assert translate('Guia de comandos') in titles, 'Outlined title was not localized'
                     capture(app, target / (name + '.png'))
+            # Glass ISO picker, with a few sparse placeholder files so the list is populated.
+            from glass_picker import GlassIsoPicker
+            isos = Path(root) / 'ISOs'
+            for name, size in (('Disgaea D2 (USA).iso', 4300), ('Disgaea 2 backup.iso', 4300), ('ubuntu-24.04-desktop-amd64.iso', 6200)):
+                (isos / name).parent.mkdir(exist_ok=True)
+                with open(isos / name, 'wb') as f: f.truncate(size * 1024 * 1024)
+            for language in ('pt-BR', 'en'):
+                choose_language(language)
+                picker = GlassIsoPicker(app, translate, Path(root) / 'DisgaeaD2Recomp-Graphics-Preview', str(isos / 'Disgaea D2 (USA).iso'), None, [isos])
+                picker.win.update()
+                for _ in range(60):
+                    picker.win.update()
+                    if picker.rows: break
+                    app.after(50); picker.win.after(50)
+                picker.win.update(); picker.win.update_idletasks()
+                assert picker.rows, 'ISO list was not populated'
+                assert picker.confirm_button._enabled, 'Valid ISO did not enable the confirm button'
+                capture(picker.win, out / ('iso-vidro-en.png' if language == 'en' else 'iso-vidro.png'))
+                picker.cancel()
             choose_language('pt-BR')
             assert app._launcher_get_settings() == original_settings
             assert '▶  JOGAR DISGAEA D2' in all_text(app), 'Portuguese roundtrip failed'

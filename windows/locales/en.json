@@ -289,5 +289,21 @@
   "Criar backup agora": "Create backup now",
   "Restaurar selecionado": "Restore selected",
   "Apagar selecionado": "Delete selected",
-  "Abrir pasta": "Open folder"
+  "Abrir pasta": "Open folder",
+  "ESCOLHER IMAGEM": "CHOOSE IMAGE",
+  "Sua ISO de Disgaea D2": "Your Disgaea D2 ISO",
+  "Use a ISO USA do jogo. Ela não é copiada nem alterada.": "Use the game's USA ISO. It is never copied or modified.",
+  "ARQUIVO SELECIONADO": "SELECTED FILE",
+  "Procurar…": "Browse…",
+  "ENCONTRADAS NESTE COMPUTADOR": "FOUND ON THIS COMPUTER",
+  "Procurando ISOs…": "Looking for ISOs…",
+  "Nenhuma ISO encontrada. Use “Procurar…” para escolher o arquivo.": "No ISO found. Use “Browse…” to choose the file.",
+  "Usar esta ISO": "Use this ISO",
+  "Cancelar": "Cancel",
+  "Usada antes": "Used before",
+  "Parece ser o jogo": "Looks like the game",
+  "Escolha um arquivo .iso.": "Choose an .iso file.",
+  "Arquivo não encontrado.": "File not found.",
+  "Arquivo pequeno demais para ser a ISO do jogo.": "File is too small to be the game ISO.",
+  "Pronta para usar": "Ready to use"
 }

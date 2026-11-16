@@ -47,7 +47,7 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 | HDR | F1 > Filtros > "HDR" (Desligado/Leve/Médio/Forte), DX12, **confirmado pelo usuário** (passe HDR num buffer FP16 + cópia; se a swap chain HDR falhar, cai para SDR). Swap chain scRGB FP16 (D2_HDR=1, reinicia ao ligar/desligar); passe final expande os brilhos mantendo o matiz, branco SDR segue o ajuste do Windows (ou D2_HDR_PAPER_NITS). Sem HDR no Windows a imagem fica igual ao SDR. Screenshots saem em SDR. Vulkan: pendente. |
 | Contorno nos personagens | F1 > Filtros > "Contorno nos personagens" (Desligado/Leve/Médio/Forte), DX12, **confirmado pelo usuário**. Sprites indexados (B8 + paleta 256x1, 3–96 vértices, shader 2003CB89) são redesenhados 8x deslocados com a silhueta alfa em preto. Com a opção ligada o log traz tabela `[outline] tex`. Overrides: `D2_OUTLINE_VS`, `D2_OUTLINE_TEX0`. Vulkan: pendente. |
 | Vídeos em HD | Resolvido (sem trabalho extra) | O filme do disco já é H.264 1280x720 progressivo (~290 MB, sem recompressão). Não existe fonte melhor para trocar. Os quadros do filme passam pelo mesmo upscaler (FSR 1.0/bilinear) e pelos filtros/HDR do F1, então já saem na resolução de saída. |
-| Jogar com mouse e teclado | Feito (em teste) | Teclado já funciona como controle (teclas remapeáveis na aba CONTROLES). F1 > Sistema > "Mouse como controle": clique esquerdo = Cruz, direito = Círculo, meio = Triângulo, botões laterais = L1/R1, roda = Cima/Baixo (usa as teclas ligadas a esses botões, então segue o remapeamento). O jogo não tem ponteiro, então não há "mouse como mão"; o cursor do mapa continua com direcional/analógico. D3D12 e Vulkan, `mouse_pad=` no settings.ini. |
+| Jogar com mouse e teclado | Média | Teclado já funciona como controle e as teclas são remapeáveis na aba CONTROLES do F1 (feito, testado). Mouse como "mão" dentro do jogo exige o jogo aceitar ponteiro (estruturas do jogo ainda não mapeadas). |
 | Slots de saves e load | Feito | Gerenciador de backups no launcher e diálogo de slots dentro do jogo (salvar/carregar). |
 | Pacote de texturas (HD) | Feito (DirectX 12 confirmado; Vulkan em teste) | Dump: aba SISTEMA do F1 > "Salvar texturas (PNG)" (ou `D2_TEXTURE_DUMP=1`, ou `texdump=1`) grava cada textura em `%LOCALAPPDATA%\DisgaeaD2Recomp\texture-pack\dump\<hash>_<L>x<A>_f<fmt>.png`. Troca: PNG em `texture-pack\` cujo nome começa com o hash substitui a textura (qualquer tamanho). Funciona em DirectX 12 e Vulkan. `Ampliar-Texturas.bat` (tools/d2_texture_upscale.py) amplia o dump 2x/3x/4x para o pacote (Lanczos com Pillow, ou Real-ESRGAN com `--realesrgan`). Sprites de paleta (cinza) não devem ser trocados. |
 | Seletor de save no jogo (DirectX 12) | Feito | Mesma lista de slots e confirmações do Vulkan, em janela GDI sobre o jogo; mouse (clique, botão direito, roda) e teclado/controle. |
@@ -62,6 +62,7 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 - Contorno nos personagens no Vulkan.
 - Contorno: HUD em telas sem bloco de HUD detectável pode ser contornado.
 - Real-ESRGAN (ampliador de texturas) ainda não testado.
+- Mouse como ponteiro dentro do jogo: **fora da 1.0** (testado; o cursor do mapa seguia o mouse de forma mecânica e o ponteiro saía da janela em vários monitores). Código na branch `mouse-experimental`.
 - Etapas 5/6: pausar ao perder foco, aviso de controle conectado/desconectado, ícone, multi-monitor/DPI, instalador.
 
 ## Etapa 5/6 (em andamento)
@@ -71,4 +72,6 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 - Ícone do jogo e versão: `port/app.rc` (ícone `windows/assets/launcher.ico` + bloco de versão), gerado no build com caminho absoluto (windres). Aparece na janela, barra de tarefas, Explorer e atalho. Sem compilador de recursos o jogo compila sem ícone.
 - DPI/multi-monitor: o processo é "per-monitor DPI aware v2" (pixels reais em monitores com 125%/150%, sem imagem borrada). A tela cheia já usa o monitor onde a janela está.
 - Instalador: **não há instalador do jogo** de propósito. O executável e o código gerado vêm do disco do próprio jogador e ficam locais (não podem ser redistribuídos). O que se distribui é o launcher (`windows/installer.iss`); o jogo é compilado na máquina do jogador e o atalho vem de `Criar-Atalho-Jogo.bat` / `DisgaeaD2Recomp.exe --create-shortcut`.
-- Correção: o Vulkan reescrevia o settings.ini e apagava as chaves do painel D3D12 (outline, hdr, pause_focus, menu_page...); agora preserva as chaves que não são dele.
+
+## Versão 1.0.0
+- Lançada como estável D3D12 (branch `release/windows-1.0.0`, workflow `official-release-100.yml`). Notas: `docs/RELEASE-1.0.0.md`. Seletor de ISO em vidro: `windows/glass_picker.py`.
