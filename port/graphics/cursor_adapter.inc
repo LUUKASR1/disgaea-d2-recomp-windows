@@ -62,6 +62,18 @@ static void d2_cursor_scan(void)
             q->tex = r->tex[0].raw; q->w = r->tex[0].w; q->h = r->tex[0].h; q->fmt = r->tex[0].fmt; q->w1 = r->tex[1].w; q->nv = r->vertex_count;
         }
     }
+    {   /* the map cursor: the only 256x320 sprite with 6 vertices whose on-screen shape is a 2:1 diamond */
+        int found = 0; float cx = 0, cy = 0, hx = 0, hy = 0;
+        for (u32 q = 0; q < fr->count; q++) {
+            const D2CursorQuad* c = &fr->quad[q];
+            if (c->w != 256 || c->h != 320 || (c->fmt & 0xFF) != 0xA5 || c->nv != 6 || c->hx <= 0.0f || c->hy <= 0.0f) continue;
+            const float aspect = (c->hx * (float)s_d3d.width) / (c->hy * (float)s_d3d.height);
+            if (aspect < 1.6f || aspect > 2.4f) continue;
+            if (found) { found = 2; break; }
+            found = 1; cx = c->cx; cy = c->cy; hx = c->hx; hy = c->hy;
+        }
+        d2_mouse_follow_frame(found == 1, cx, cy, hx, hy);
+    }
     d2_cursor_head = (d2_cursor_head + 1) % D2_CUR_FRAMES;
     if (d2_cursor_filled < D2_CUR_FRAMES) d2_cursor_filled++;
     if (d2_graphics_cursor_dump_requested()) d2_cursor_dump();

@@ -22,6 +22,7 @@ extern "C" int d2_graphics_hdr_display(void);
 extern "C" int d2_texture_dump_enabled(void);
 extern "C" void d2_screenshot_request(void);
 extern "C" unsigned d2_screenshot_last(char* path, unsigned size); /* port/graphics/graphics.cpp */
+#include <math.h>
 #include <memory>
 #include <vector>
 #include <algorithm>
@@ -1444,8 +1445,10 @@ static void mouse_release_all()
     for (int i = 0; i < 5; i++)
         if (mouse_held[i]) { synth_key(cfg.keys[kMouseSlot[i]], false); mouse_held[i] = false; }
 }
+static void mouse_note_input();
 static void mouse_button(int i, bool down)
 {
+    mouse_note_input();
     if (i < 0 || i > 4 || mouse_held[i] == down) return;
     mouse_held[i] = down;
     synth_key(cfg.keys[kMouseSlot[i]], down);
@@ -1458,6 +1461,61 @@ extern "C" unsigned d2_pad_keys_mask(void)
     for (int i = 0; i < 6; i++)
         if (cfg.keys[slots[i]] > 0 && (GetAsyncKeyState(cfg.keys[slots[i]]) & 0x8000)) m |= 1u << i;
     return m;
+}
+
+/* Map cursor follows the mouse (battle). The cursor diamond stays near the screen centre while the camera scrolls, so the tile under
+ * the mouse is found from the offset between the diamond and the mouse in the isometric basis: one hop moves the world by
+ * (±hx, ±hy) (Up = (-,+), Left = (-,-), Down = (+,-), Right = (+,+)). Hops are sent as short key pulses, then the loop waits until
+ * the cursor settles and measures again, so lost or extra hops are corrected. */
+static DWORD mouse_input_tick = 0;
+static void mouse_note_input() { mouse_input_tick = GetTickCount(); }
+extern "C" void d2_mouse_follow_frame(int present, float cx, float cy, float hx, float hy)
+{
+    static int queue[4] = {};          // pending hops: Up, Down, Left, Right
+    static int phase = 0, pulse_slot = -1, stable = 0, since_hop = 999, rounds = 0;
+    static float lastx = 0, lasty = 0;
+    static POINT done_mouse = {-1, -1};
+    static bool was_active = false;
+    auto release = [&]() { if (pulse_slot >= 0) { synth_key(cfg.keys[pulse_slot], false); pulse_slot = -1; } };
+    const bool active = present && cfg.mouse_pad && !is_open && !(dlg && IsWindowVisible(dlg)) && game && GetForegroundWindow() == game;
+    if (!active) {
+        release(); queue[0] = queue[1] = queue[2] = queue[3] = 0; phase = 0; stable = 0; rounds = 0; was_active = false;
+        return;
+    }
+    since_hop++;
+    stable = (fabsf(cx - lastx) < 0.0015f && fabsf(cy - lasty) < 0.0015f) ? stable + 1 : 0;
+    lastx = cx; lasty = cy;
+    if (!was_active) { was_active = true; done_mouse = POINT{-1, -1}; }
+    // pulse generator: 3 frames down, 7 frames up (the game repeats a held direction about every 9-10 frames)
+    if (phase > 0) {
+        phase--;
+        if (phase == 7) release();
+        if (phase == 0) since_hop = 0;
+        return;
+    }
+    for (int i = 0; i < 4; i++) {
+        if (queue[i] > 0) {
+            queue[i]--; pulse_slot = i; synth_key(cfg.keys[i], true); phase = 10; return;
+        }
+    }
+    if (since_hop < 20 || stable < 6) return;                    // wait for the glide to finish
+    if (GetTickCount() - mouse_input_tick < 600) return;          // a click/wheel just happened: the game is busy with it
+    POINT mp; RECT rc;
+    if (!GetCursorPos(&mp) || !ScreenToClient(game, &mp) || !GetClientRect(game, &rc) || rc.right < 64 || rc.bottom < 64) return;
+    if (mp.x < 0 || mp.y < 0 || mp.x >= rc.right || mp.y >= rc.bottom) return;
+    if (abs(mp.x - done_mouse.x) > 6 || abs(mp.y - done_mouse.y) > 6) { if (done_mouse.x >= 0 || rounds == 0) rounds = 0; }
+    const float mx = (float)mp.x / (float)rc.right * 2.0f - 1.0f, my = 1.0f - (float)mp.y / (float)rc.bottom * 2.0f;
+    const float s = (mx - cx) / hx, t = (my - cy) / hy;
+    int rl = (int)floorf((s + t) * 0.5f + 0.5f);   // Right - Left
+    int ud = (int)floorf((t - s) * 0.5f + 0.5f);   // Up - Down
+    if (rl == 0 && ud == 0) { done_mouse = mp; rounds = 0; return; }
+    if (abs(mp.x - done_mouse.x) <= 6 && abs(mp.y - done_mouse.y) <= 6 && rounds >= 4) return;   // give up until the mouse moves
+    if (abs(mp.x - done_mouse.x) > 6 || abs(mp.y - done_mouse.y) > 6) rounds = 0;
+    done_mouse = mp; rounds++;
+    const int cap = 14;
+    if (rl > cap) rl = cap; if (rl < -cap) rl = -cap; if (ud > cap) ud = cap; if (ud < -cap) ud = -cap;
+    if (ud > 0) queue[0] = ud; else queue[1] = -ud;
+    if (rl > 0) queue[3] = rl; else queue[2] = -rl;
 }
 
 static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
@@ -1473,6 +1531,7 @@ static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
         case WM_XBUTTONDOWN: SetCapture(h); mouse_button(HIWORD(w) == XBUTTON1 ? 3 : 4, true); return TRUE;
         case WM_XBUTTONUP: mouse_button(HIWORD(w) == XBUTTON1 ? 3 : 4, false); ReleaseCapture(); return TRUE;
         case WM_MOUSEWHEEL: {
+            mouse_note_input();
             const int slot = (short)HIWORD(w) > 0 ? 0 : 1; // wheel up = Up, wheel down = Down
             if (wheel_pulse_slot >= 0) synth_key(cfg.keys[wheel_pulse_slot], false);
             wheel_pulse_slot = slot;
