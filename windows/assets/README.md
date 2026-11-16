@@ -9,3 +9,8 @@ As ilustrações e marcas de Disgaea pertencem aos respectivos titulares. A indi
 WIN PORT identifica esta adaptação de fãs, independente e não oficial.
 Essas imagens de apresentação não são ROM, firmware, dados extraídos da instalação
 nem código recompilado do jogo.
+
+## Imagens do início (hero-1..4.png)
+
+Capturas de tela feitas pelo próprio mantenedor com a tecla de captura do jogo (F12), recortadas em 760x300 e com
+degradê escuro na base para o título do launcher. São imagens de apresentação, não arquivos extraídos do jogo.

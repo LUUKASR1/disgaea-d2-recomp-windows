@@ -13,6 +13,14 @@ class BrandingTests(unittest.TestCase):
         self.assertEqual(depth, 8)
         self.assertIn(kind, (4, 6))  # PNG grayscale/RGB with alpha.
 
+    def test_home_banner_images_are_png_of_the_expected_size(self):
+        for number in (1, 2, 3, 4):
+            data = (Path(__file__).parent / ('assets/hero-%d.png' % number)).read_bytes()
+            self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
+            width, height = struct.unpack('>II', data[16:24])
+            self.assertEqual((width, height), (760, 300))
+            self.assertLess(len(data), 600 * 1024)
+
     def test_icon_has_valid_small_and_large_windows_entries(self):
         data = (Path(__file__).parent / 'assets/launcher.ico').read_bytes()
         reserved, kind, count = struct.unpack('<HHH', data[:6])
