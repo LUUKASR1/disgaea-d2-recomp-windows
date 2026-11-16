@@ -14,6 +14,9 @@ extern "C" void d2_restart_with_api(int api);
 extern "C" void d2_graphics_set_post(const float* values, int enabled);
 extern "C" void d2_texture_set_dump(int on);
 extern "C" int d2_texture_dump_enabled(void); /* port/graphics/graphics.cpp */
+#include <memory>
+#include <algorithm>
+#include "sys_overlay.h" /* SDK system dialogs (save/load lists, confirmations) */
 static std::wstring d2_settings_ini_path(void);
 
 namespace d2opt {
