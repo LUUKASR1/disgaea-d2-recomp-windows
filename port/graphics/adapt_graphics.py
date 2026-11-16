@@ -30,8 +30,15 @@ def generate(source, output):
         '    d2_display_start(s_d3d.hwnd);')
     text = replace(text, '    sc_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;',
         '    sc_desc.Format = d2_graphics_hdr_enabled() ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R8G8B8A8_UNORM;')
-    text = replace(text, '    sc_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;',
-        '    sc_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT | (d2_graphics_hdr_enabled() ? DXGI_USAGE_UNORDERED_ACCESS : 0);')
+    text = replace(text, '    if (FAILED(hr)) {\n        printf("[D3D12] ERROR: CreateSwapChainForHwnd failed',
+        '    if (FAILED(hr) && d2_graphics_hdr_enabled()) {\n'
+        '        printf("[D3D12] HDR swap chain failed (0x%08lX); retrying as SDR\\n", hr);\n'
+        '        d2_graphics_hdr_disable();\n'
+        '        sc_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;\n'
+        '        hr = factory->lpVtbl->CreateSwapChainForHwnd(\n'
+        '            factory, (IUnknown*)s_d3d.cmd_queue, s_d3d.hwnd, &sc_desc, NULL, NULL, &swap_chain1);\n'
+        '    }\n'
+        '    if (FAILED(hr)) {\n        printf("[D3D12] ERROR: CreateSwapChainForHwnd failed')
     text = replace(text, '    sc_desc.Width = width;', '    sc_desc.Width = d2_graphics_output_width();')
     text = replace(text, '    sc_desc.Height = height;', '    sc_desc.Height = d2_graphics_output_height();')
     text = replace(text, '    /* Create RTV descriptor heap */',

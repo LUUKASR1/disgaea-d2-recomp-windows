@@ -40,7 +40,7 @@ struct State {
     std::array<Ref<ID3D12Resource>,2> output;
     std::array<Ref<ID3D12CommandAllocator>,2> allocator;
     Ref<ID3D12GraphicsCommandList> commands;
-    Ref<ID3D12Resource> middle,final,post;
+    Ref<ID3D12Resource> middle,final,post,hdrbuf;
     Ref<ID3D12DescriptorHeap> heap;
     Ref<ID3D12RootSignature> root;
     Ref<ID3D12PipelineState> easu,rcas,bilinear,filters,hdr;
@@ -85,10 +85,10 @@ void shot_save(std::vector<uint8_t> rgba,UINT w,UINT h,bool bgra){
 }
 void checked(HRESULT hr,const char* what){if(FAILED(hr))throw std::runtime_error(std::string(what)+" HRESULT="+std::to_string(static_cast<unsigned long>(hr)));}
 UINT dimension(const char* key,UINT fallback){const char* s=std::getenv(key);if(!s)return fallback;char* end=nullptr;auto n=std::strtoul(s,&end,10);if(!*s||*end||n<320||n>4096)throw std::runtime_error("Invalid graphics dimension");return static_cast<UINT>(n);}
-void texture(ID3D12Resource** out,UINT w,UINT h,D3D12_RESOURCE_FLAGS flags){
+void texture(ID3D12Resource** out,UINT w,UINT h,D3D12_RESOURCE_FLAGS flags,DXGI_FORMAT format=DXGI_FORMAT_R8G8B8A8_UNORM){
     D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
     D3D12_RESOURCE_DESC d{};d.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;d.Width=w;d.Height=h;
-    d.DepthOrArraySize=1;d.MipLevels=1;d.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.Flags=flags;
+    d.DepthOrArraySize=1;d.MipLevels=1;d.Format=format;d.SampleDesc.Count=1;d.Flags=flags;
     checked(gpu->device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&d,D3D12_RESOURCE_STATE_COMMON,nullptr,
         IID_ID3D12Resource,reinterpret_cast<void**>(out)),"Graphics texture");
 }
@@ -219,7 +219,7 @@ void run_filters(UINT frame,ID3D12Resource* source,D3D12_RESOURCE_STATES source_
 }
 
 namespace {
-// Final step in HDR: source (8-bit, state `source_state`) -> HDR pass -> swap buffer (FP16, already in UNORDERED_ACCESS).
+// Final step in HDR: source (8-bit, state `source_state`) -> HDR pass -> FP16 buffer -> copied into the swap buffer (already COPY_DEST).
 void hdr_pass(UINT frame,ID3D12Resource* source,D3D12_RESOURCE_STATES source_state,ID3D12Resource* output){
     static const float strength[4]={0.f,0.5f,0.75f,1.0f};
     int lv=hdr_level.load();lv=lv<0?0:lv>3?3:lv;
@@ -229,11 +229,15 @@ void hdr_pass(UINT frame,ID3D12Resource* source,D3D12_RESOURCE_STATES source_sta
     float values[20]{};values[0]=static_cast<float>(cfg.ow);values[1]=static_cast<float>(cfg.oh);values[2]=hdr_display?hdr_paper_scale:1.0f;values[3]=boost;
     UINT constants[20];std::memcpy(constants,values,sizeof constants);
     const UINT slot=16+frame*2;
-    descriptors(slot,source,output,DXGI_FORMAT_R16G16B16A16_FLOAT);
+    descriptors(slot,source,gpu->hdrbuf.p,DXGI_FORMAT_R16G16B16A16_FLOAT);
     ID3D12DescriptorHeap* heaps[]={gpu->heap.p};gpu->commands->SetDescriptorHeaps(1,heaps);gpu->commands->SetComputeRootSignature(gpu->root.p);
     transition(source,source_state,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    transition(gpu->hdrbuf.p,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     dispatch(gpu->hdr.p,slot,constants);
     transition(source,D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,source_state);
+    transition(gpu->hdrbuf.p,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
+    gpu->commands->CopyResource(output,gpu->hdrbuf.p);
+    transition(gpu->hdrbuf.p,D3D12_RESOURCE_STATE_COPY_SOURCE,D3D12_RESOURCE_STATE_COMMON);
 }
 }
 
@@ -391,6 +395,7 @@ extern "C" int d2_graphics_start(void* device,void* queue,void* swapchain){
         if(scaling)texture(gpu->final.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         if(cfg.fsr)texture(gpu->middle.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         if(cfg.post)texture(gpu->post.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        if(cfg.hdr)texture(gpu->hdrbuf.put(),cfg.ow,cfg.oh,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,DXGI_FORMAT_R16G16B16A16_FLOAT);
         D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.NumDescriptors=24;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         checked(gpu->device->CreateDescriptorHeap(&hd,IID_ID3D12DescriptorHeap,reinterpret_cast<void**>(gpu->heap.put())),"Graphics descriptor heap");
         gpu->stride=gpu->device->GetDescriptorHandleIncrementSize(hd.Type);
@@ -428,7 +433,7 @@ extern "C" int d2_graphics_present(UINT frame,void* scene){
         checked(gpu->allocator[frame]->Reset(),"Graphics allocator reset");
         checked(gpu->commands->Reset(gpu->allocator[frame].p,nullptr),"Graphics list reset");
         const bool hdr=cfg.hdr&&gpu->hdr.p;
-        const D3D12_RESOURCE_STATES out_state=hdr?D3D12_RESOURCE_STATE_UNORDERED_ACCESS:D3D12_RESOURCE_STATE_COPY_DEST;
+        const D3D12_RESOURCE_STATES out_state=D3D12_RESOURCE_STATE_COPY_DEST;
         transition(output,D3D12_RESOURCE_STATE_PRESENT,out_state);
         if(!scaling&&!filters){
             if(hdr)hdr_pass(frame,input,D3D12_RESOURCE_STATE_COMMON,output);
@@ -542,3 +547,4 @@ extern "C" int d2_graphics_outline_level(void){return outline_level.load();}
 extern "C" int d2_graphics_hdr_enabled(void){return cfg.hdr?1:0;}
 extern "C" void d2_graphics_set_hdr(int level){hdr_level.store(level<0?0:level>3?3:level);}
 extern "C" int d2_graphics_hdr_display(void){return hdr_display?1:0;}
+extern "C" void d2_graphics_hdr_disable(void){cfg.hdr=false;}
