@@ -261,7 +261,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     hero_images = [tk.PhotoImage(file=str(assets / ('hero-%d.png' % number))) for number in range(1, 6)]
     logo_game, pill_image = tk.PhotoImage(file=str(assets / 'logo-disgaea.png')), tk.PhotoImage(file=str(assets / 'pill.png'))
     sidebar_glass = tk.PhotoImage(file=str(assets / 'sidebar-glass.png'))
-    app._home_art = (art, hero_images, logo_game, pill_image, sidebar_glass)
+    sidebar_logo = tk.PhotoImage(file=str(assets / 'logo-sidebar.png'))
+    app._home_art = (art, hero_images, logo_game, pill_image, sidebar_glass, sidebar_logo)
 
     sidebar = tk.Canvas(app, width=220, bg=PANEL, highlightthickness=0)
     sidebar.pack(side='left', fill='y')
@@ -277,7 +278,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         window = sidebar.create_window(x, y, window=widget, anchor=anchor)
         return widget, window
 
-    sidebar.create_window(110, 12, window=tk.Label(sidebar, image=sidebar_image, bg=tint(76), bd=0), anchor='n')
+    sidebar.create_image(110, 10, image=sidebar_logo, anchor='n')
     side_label('DISGAEA D2', 148, 17, TEXT, True)
     side_label('WIN PORT', 182, 12, GOLD, True)
     side_label('Idioma / Language', 212, 9, MUTED)

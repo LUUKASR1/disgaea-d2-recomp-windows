@@ -1,6 +1,6 @@
 """Regenerate the launcher artwork (cartoon buttons, home banner, logo). Needs Pillow; not part of the build.
 
-    python tools/make_launcher_art.py <folder with in-game screenshots> <disgaea-logo.png with transparency>
+    python tools/make_launcher_art.py <folder with in-game screenshots> <disgaea-logo.png with transparency> [winport-logo.png with transparency]
 
 Writes into windows/assets: hero-1..4.png (banner slides), logo-disgaea.png, pill.png and btn-*.png (n = normal,
 h = hover, p = pressed, d = disabled).
@@ -169,6 +169,15 @@ def make_slides(folder):
         print('hero', number, (OUT / ('hero-%d.png' % number)).stat().st_size // 1024, 'KB')
 
 
+def make_sidebar_logo(path):
+    """Logo with the characters and 'WIN PORT' shown above the side menu."""
+    logo = Image.open(path).convert('RGBA')
+    logo = logo.crop(logo.getchannel('A').getbbox())
+    logo.thumbnail((200, 134), Image.LANCZOS)
+    logo.save(OUT / 'logo-sidebar.png', optimize=True)
+    print('sidebar logo', logo.size)
+
+
 def make_sidebar():
     """Tall frosted-glass gradient for the side menu (220 px wide)."""
     w, h = 220, 1400
@@ -189,3 +198,5 @@ if __name__ == '__main__':
     make_logo(sys.argv[2])
     make_slides(sys.argv[1])
     make_sidebar()
+    if len(sys.argv) > 3:
+        make_sidebar_logo(sys.argv[3])
