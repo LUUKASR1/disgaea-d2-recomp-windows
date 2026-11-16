@@ -403,9 +403,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         def __init__(self, x, y, kind, text, command, size, edge, shift=0):
             super().__init__(hero, text=text, command=command)
             self._x, self._y, self._kind, self._edge, self._shift, self._size = x, y, kind, edge, shift, size
-            self._w, self._h = art[kind + 'n'].width(), art[kind + 'n'].height()
+            self._bw, self._bh = art[kind + 'n'].width(), art[kind + 'n'].height()
             self._image = hero.create_image(x, y, image=art[kind + 'n'], anchor='nw')
-            cx, cy = x + self._w // 2 + shift, y + (self._h - 9) // 2
+            cx, cy = x + self._bw // 2 + shift, y + (self._bh - 9) // 2
             self._shadow = [hero.create_text(cx + dx, cy + dy, text=self._shown(text), fill=edge, font=('Segoe UI Black', size))
                             for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3))]
             self._label = hero.create_text(cx, cy, text=self._shown(text), fill='#ffffff', font=('Segoe UI Black', size))
@@ -416,7 +416,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             return text.lstrip('▶ ').strip()
 
         def contains(self, px, py):
-            return self._x <= px < self._x + self._w and self._y <= py < self._y + self._h - 8
+            return self._x <= px < self._x + self._bw and self._y <= py < self._y + self._bh - 8
 
         def look(self, which):
             if which == self._look:
@@ -425,7 +425,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             hero.itemconfigure(self._image, image=art[self._kind + which])
             lift = 2 if which == 'p' else 0
             for item, (dx, dy) in zip(self._shadow + [self._label], ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3), (0, 0))):
-                hero.coords(item, self._x + self._w // 2 + self._shift + dx, self._y + (self._h - 9) // 2 + dy + lift)
+                hero.coords(item, self._x + self._bw // 2 + self._shift + dx, self._y + (self._bh - 9) // 2 + dy + lift)
             hero.itemconfigure(self._label, fill='#9b94a6' if which == 'd' else '#ffffff')
 
         def configure(self, cnf=None, **kw):
