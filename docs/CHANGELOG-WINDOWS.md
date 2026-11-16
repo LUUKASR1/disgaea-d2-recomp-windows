@@ -1,3 +1,7 @@
+# 1.0.9 — Prévia europeia + núcleo Android (prévia)
+
+- O log da compilação Android agora mostra as mensagens do compilador (antes ficavam de fora).
+
 # 1.0.8 — Prévia europeia + núcleo Android (prévia)
 
 - Corrige "Preparar núcleo Android": usa a ferramenta do launcher atual (a pasta de preparação antiga não a tinha) e avisa quando a preparação do jogo é de uma versão incompatível.

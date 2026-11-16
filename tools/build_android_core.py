@@ -25,7 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def run(command, cwd=None, env=None):
     print('+', ' '.join(map(str, command)), flush=True)
-    subprocess.run(list(map(str, command)), cwd=cwd, env=env, check=True)
+    # stdout/stderr are passed explicitly: the windowed launcher has no usable standard handles to inherit.
+    subprocess.run(list(map(str, command)), cwd=cwd, env=env, check=True, stdout=sys.stdout, stderr=sys.stderr)
 
 
 def sha1_of(path):
