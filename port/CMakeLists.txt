@@ -262,7 +262,7 @@ if(PORT_ENABLE_SPU)
     endif()
 endif()
 
-add_executable(${PROJECT_NAME}
+set(D2_GAME_SOURCES
     main.cpp
     stubs.cpp
     src/d2_psn.cpp
@@ -279,6 +279,18 @@ add_executable(${PROJECT_NAME}
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
+if(ANDROID)
+    # Android loads the game core as a shared library (libd2core.so) from the app; main() becomes
+    # d2_game_main() and android/core/d2_core_entry.cpp is the exported entry point.
+    add_library(${PROJECT_NAME} SHARED ${D2_GAME_SOURCES}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../android/core/d2_core_entry.cpp")
+    set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS "main=d2_game_main")
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME d2core)
+    find_library(D2_ANDROID_LOG_LIB log)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${D2_ANDROID_LOG_LIB})
+else()
+    add_executable(${PROJECT_NAME} ${D2_GAME_SOURCES})
+endif()
 if(D2_APPEARANCE_WRAPPERS)
     target_sources(${PROJECT_NAME} PRIVATE src/d2_appearance_trace.cpp)
 endif()
