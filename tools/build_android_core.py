@@ -71,11 +71,13 @@ def ensure_ndk(work, given):
 
 
 def read_text(path):
-    return Path(path).read_text(encoding='utf-8', newline='')
+    with open(path, encoding='utf-8', newline='') as handle:
+        return handle.read()
 
 
 def write_text(path, text):
-    Path(path).write_text(text, encoding='utf-8', newline='')
+    with open(path, 'w', encoding='utf-8', newline='') as handle:
+        handle.write(text)
 
 
 def prepare_sdk(source, destination):
