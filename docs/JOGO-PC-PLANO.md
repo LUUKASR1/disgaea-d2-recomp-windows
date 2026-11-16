@@ -44,7 +44,7 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 | Estilo de ampliação / filtro de textura | Média | Anisotrópico/bilinear/nearest por sampler são simples; "estilos" (pixel art etc.) são shaders. |
 | Ampliação de textura, ícones de itens, texto e personagens em HD | Média | Via **pacote de texturas**: substituir texturas por hash (como RPCS3/Dolphin). Os PNG em alta vêm de fora (feitos pelo usuário ou pela comunidade). Texto/ícones do jogo são texturas, então entram no mesmo sistema. |
 | Ampliação por IA | Média, offline | Rodar um modelo (ex.: ESRGAN) em tempo real é pesado; o caminho realista é uma ferramenta que gera o pacote de texturas antes de jogar. |
-| Contorno nos personagens | Baixa/Média | Um contorno por detecção de bordas na imagem toda é fácil; só nos personagens exige separar os desenhos deles. |
+| Contorno nos personagens | F1 > Filtros > "Contorno nos personagens" (Desligado/Leve/Médio/Forte), DX12, **confirmado pelo usuário**. Sprites indexados (B8 + paleta 256x1, 3–96 vértices, shader 2003CB89) são redesenhados 8x deslocados com a silhueta alfa em preto. Com a opção ligada o log traz tabela `[outline] tex`. Overrides: `D2_OUTLINE_VS`, `D2_OUTLINE_TEX0`. Vulkan: pendente. |
 | HDR | Média | Swapchain HDR10 + tone mapping; depende do monitor/Windows. |
 | Vídeos em HD | Baixa | Os vídeos são os do disco; só melhora trocando por arquivos em maior qualidade. |
 | Jogar com mouse e teclado | Média | Teclado já funciona como controle e as teclas são remapeáveis na aba CONTROLES do F1 (feito, testado). Mouse como "mão" dentro do jogo exige o jogo aceitar ponteiro (estruturas do jogo ainda não mapeadas). |
