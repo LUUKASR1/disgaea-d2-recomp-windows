@@ -68,6 +68,7 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 ## Etapa 5/6 (em andamento)
 - Pausar ao perder o foco: D3D12 (F1 > Sistema > "Pausar ao perder o foco", padrão ligado, `pause_focus=` no settings.ini) e Vulkan (sempre; `D2_PAUSE_UNFOCUSED=0` desliga). Log `[D2FOCUS]`.
 - Avisos estilo Steam (cartão que sobe do canto inferior direito, cores do overlay): captura salva e controle conectado/desconectado (XInput), D3D12 e Vulkan. Vulkan: pendente.
+- Real-ESRGAN: `Ampliar-Texturas-IA.bat` baixa o programa oficial (~45 MB) na 1ª vez, amplia em lotes de 24 (retomável) e cai para Lanczos se o Real-ESRGAN falhar. Fluxo, download, extração e lotes testados com um executável simulado; a execução real depende de GPU Vulkan.
 - Ícone do jogo e versão: `port/app.rc` (ícone `windows/assets/launcher.ico` + bloco de versão), gerado no build com caminho absoluto (windres). Aparece na janela, barra de tarefas, Explorer e atalho. Sem compilador de recursos o jogo compila sem ícone.
 - DPI/multi-monitor: o processo é "per-monitor DPI aware v2" (pixels reais em monitores com 125%/150%, sem imagem borrada). A tela cheia já usa o monitor onde a janela está.
 - Instalador: **não há instalador do jogo** de propósito. O executável e o código gerado vêm do disco do próprio jogador e ficam locais (não podem ser redistribuídos). O que se distribui é o launcher (`windows/installer.iss`); o jogo é compilado na máquina do jogador e o atalho vem de `Criar-Atalho-Jogo.bat` / `DisgaeaD2Recomp.exe --create-shortcut`.
