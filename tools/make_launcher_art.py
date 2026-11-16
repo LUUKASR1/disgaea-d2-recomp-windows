@@ -141,7 +141,7 @@ def make_logo(path):
     print('logo', logo.size)
 
 
-SLIDES = [7, 2, 4, 5, 1]  # indexes into the sorted screenshot folder: title, city, battle target, attack, room
+SLIDES = [2, 4, 5, 6, 1]  # indexes into the sorted screenshot folder: city, battle target, attack, miss, room
 W, H = 760, 430
 PANEL_BOX = (14, 14, 366, 416)  # frosted glass panel baked into each slide
 
@@ -175,8 +175,8 @@ def make_sidebar():
     img = gradient(w, h, (255, 255, 255), (214, 224, 250)).convert('RGBA')
     orbs = Image.new('RGBA', (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(orbs)
-    d.ellipse((-70, 360, 150, 580), fill=(255, 201, 92, 90))
-    d.ellipse((90, 700, 300, 910), fill=(255, 120, 150, 70))
+    d.ellipse((-70, 300, 150, 500), fill=(255, 201, 92, 90))
+    d.ellipse((90, 760, 300, 970), fill=(255, 120, 150, 70))
     d.ellipse((-40, 1040, 190, 1270), fill=(150, 170, 255, 90))
     img.alpha_composite(orbs.filter(ImageFilter.GaussianBlur(38)))
     ImageDraw.Draw(img).line((w - 1, 0, w - 1, h), fill=(255, 255, 255, 255), width=1)
