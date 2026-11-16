@@ -557,6 +557,16 @@ static void activate(int act, int dir)
 
 /* ---- drawing ----------------------------------------------------------------------------------------------- */
 
+/* Window/taskbar icon from the exe's icon resource (id 1, see app.rc). */
+static void d2_set_window_icon(HWND w)
+{
+    HINSTANCE hi = GetModuleHandleW(nullptr);
+    HICON big = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+    HICON small_icon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+    if (w && big) SendMessageW(w, WM_SETICON, ICON_BIG, (LPARAM)big);
+    if (w && small_icon) SendMessageW(w, WM_SETICON, ICON_SMALL, (LPARAM)small_icon);
+}
+
 static COLORREF rgb(int r, int g, int b) { return RGB(r, g, b); }
 static COLORREF mix(COLORREF a, COLORREF b, double t)
 {
@@ -1448,6 +1458,7 @@ static void attach()
     EnumThreadWindows(GetCurrentThreadId(), find_game_window, (LPARAM)&found);
     if (!found) { fprintf(stderr, "[d3d12][ui] options panel unavailable: window not found\n"); return; }
     game = found;
+    d2_set_window_icon(game);
     load_config();
     apply_keymap();
     apply_post();

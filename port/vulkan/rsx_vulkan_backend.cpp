@@ -1373,6 +1373,15 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height,
   g.vsync = g_settings.vsync;
   try {
     g.hwnd = create_window(g_settings.width, g_settings.height, title);
+#ifdef D2_VULKAN_GAME_BACKEND
+    if (g.hwnd) { // window/taskbar icon from the exe's icon resource (id 1, see app.rc)
+      HINSTANCE hi = GetModuleHandleW(nullptr);
+      HICON big = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+      HICON small_icon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+      if (big) SendMessageW(g.hwnd, WM_SETICON, ICON_BIG, (LPARAM)big);
+      if (small_icon) SendMessageW(g.hwnd, WM_SETICON, ICON_SMALL, (LPARAM)small_icon);
+    }
+#endif
     if (!g.hwnd) {
       std::fprintf(stderr, "[vulkan] window creation failed\n");
       return -1;
