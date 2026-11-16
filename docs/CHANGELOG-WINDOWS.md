@@ -1,3 +1,7 @@
+# 1.0.3 — Prévia europeia (BLES01939)
+
+- Perfil europeu experimental (ISO BLES01939 + EBOOT.elf descriptografado), separado do americano. Pré-lançamento.
+
 # 1.0.2 — Stable / DirectX 12
 
 - Launcher com tema claro em vidro, menu lateral cartoon (amarelo/vermelho), novo logo Win Port e carrossel de 5 capturas de gameplay. O jogo não mudou.

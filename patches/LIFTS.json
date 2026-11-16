@@ -59,6 +59,13 @@
       "recomp": "src/recomp-140",
       "out": "out-140",
       "spu": "spu-140"
+    },
+    "eu": {
+      "elf": "work/eu/EBOOT.elf",
+      "elf_sha256": "0257bc3ab36a63f55b0a8722fa54f7d5278a568941bdff7817934a891fcb0cbb",
+      "recomp": "src/recomp-eu",
+      "out": "out-eu",
+      "spu": "spu-eu"
     }
   },
   "python": ">=3.11 (verified with 3.14.5)",

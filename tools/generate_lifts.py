@@ -11,7 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--sdk', type=Path, default=ROOT / 'ps3recomp')
-parser.add_argument('--version', choices=['100', '140', 'all'], default='all')
+parser.add_argument('--version', choices=['100', '140', 'eu', 'all'], default='all')
 parser.add_argument('--elf', type=Path, help='ELF input override (requires one version)')
 parser.add_argument('--port-dir', type=Path, default=ROOT / 'port', help='output tree, also supports external storage')
 parser.add_argument('--spu-only', action='store_true', help='Regenerate only embedded SPU extraction/lifts')
@@ -19,7 +19,7 @@ parser.add_argument('--allow-sdk-worktree', action='store_true',
                     help='Development only: record the current SDK revision/diff instead of requiring SDK.lock')
 args = parser.parse_args()
 if args.elf and args.version == 'all':
-    parser.error('--elf requires --version 100 or 140')
+    parser.error('--elf requires --version 100, 140 or eu')
 manifest = json.loads((ROOT / 'patches/LIFTS.json').read_text())
 lock = json.loads((ROOT / 'patches' / manifest['sdk_lock']).read_text())
 sdk = args.sdk.resolve()
@@ -33,7 +33,7 @@ if args.allow_sdk_worktree:
                        diff_sha256=hashlib.sha256(diff).hexdigest(), development_worktree=True)
 elif git('write-tree') != lock['tree'] or git('diff', '--name-only'):
     sys.exit('SDK differs from SDK.lock; use tools/bootstrap_sdk.sh with a new directory')
-versions = list(manifest['versions']) if args.version == 'all' else [args.version]
+versions = [v for v in manifest['versions'] if v != 'eu'] if args.version == 'all' else [args.version]  # 'eu' (BLES01939) only on request
 inputs = {}
 for version in versions:
     config = manifest['versions'][version]

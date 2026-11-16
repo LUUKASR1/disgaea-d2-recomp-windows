@@ -408,6 +408,25 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         return filedialog.askopenfilename(title='Selecionar ISO de Disgaea D2 USA',
             filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')], **options)
 
+    def prepare_europe():
+        iso = filedialog.askopenfilename(title='ISO de Disgaea D2 Europa (BLES01939)',
+            filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
+        if not iso: return
+        elf = filedialog.askopenfilename(title='EBOOT.elf descriptografado (Europa)',
+            filetypes=[('EBOOT.elf', '*.elf *.ELF'), ('Todos os arquivos', '*.*')])
+        if not elf: return
+        auto_backup_saves()
+        def work():
+            backend.prepare_eu(iso, elf)
+            events.put(('eu_ready', ''))
+        task(work)
+
+    def use_profile(name):
+        def work():
+            backend.activate_profile(name)
+            events.put(('eu_ready', ''))
+        task(work)
+
     def choose_iso():
         """Glass picker first; the plain system dialog if the custom window cannot open for any reason."""
         try:
@@ -715,6 +734,12 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     def open_path(path):
         path.mkdir(parents=True, exist_ok=True)
         os.startfile(path)
+    europe = card(page)
+    label(europe, 'VERSÃO EUROPEIA (BLES01939) — PRÉVIA', 12, GOLD, True)
+    label(europe, 'Use a ISO europeia e o EBOOT.elf descriptografado do seu disco. A primeira preparação compila o jogo e pode demorar bastante. Os perfis americano e europeu ficam salvos separadamente.', 10, MUTED)
+    button(europe, 'Preparar versão europeia', prepare_europe)
+    button(europe, 'Usar perfil europeu', lambda: use_profile('eu100'))
+    button(europe, 'Usar perfil americano', lambda: use_profile('us140'))
     button(page, 'Abrir pasta de saves', open_saves)
     button(page, 'Como usar meu save', save_help)
     button(page, 'Backups de saves', manage_saves)
@@ -783,6 +808,12 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
                     widget.configure(state='readonly' if isinstance(widget, ttk.Combobox) else 'normal')
                 download_button.configure(state='normal' if update_state['url'] else 'disabled')
                 update_summary()
+            elif kind == 'eu_ready':
+                config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
+                ready = True
+                eu = config.get('profile') == 'eu100'
+                build_status.set('PRÉVIA EUROPEIA (BLES01939)' if eu else 'BUILD LOCAL DISPONÍVEL')
+                status.set('Perfil europeu ativo. Clique em Jogar.' if eu else 'Perfil americano ativo. Clique em Jogar.')
             elif kind == 'prepared':
                 config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
                 folder.set(config.get('game_root', ''))

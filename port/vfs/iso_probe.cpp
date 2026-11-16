@@ -29,7 +29,7 @@ static ProbeResult probe(const std::filesystem::path& image) {
         d2::vfs::IsoVfs disc(image);
         report << "Mounted backend=" << disc.BackendName() << '\n';
         const auto title = disc.TitleId();
-        if (title != "BLUS31313") throw std::runtime_error("Este port requer BLUS31313; ISO selecionada: " + title);
+        if (title != "BLUS31313" && title != "BLES01939") throw std::runtime_error("Este port requer BLUS31313 (EUA) ou BLES01939 (Europa); ISO selecionada: " + title);
         report << "ISO filesystem OK; TITLE_ID=" << title << '\n';
         const auto check = [&](const std::string& path) {
             auto file = disc.Open(path);
@@ -62,7 +62,7 @@ static int prepareMetadata(const std::filesystem::path& image, const std::filesy
     if (checked.status) return checked.status;
     try {
         d2::vfs::IsoVfs disc(image);
-        if (disc.TitleId() != "BLUS31313") throw std::runtime_error("ISO alterada durante verificacao.");
+        if (disc.TitleId() != "BLUS31313" && disc.TitleId() != "BLES01939") throw std::runtime_error("ISO alterada durante verificacao.");
         auto bytes = disc.GetFileBytes("/PS3_GAME/PARAM.SFO", 1024 * 1024);
         const auto folder = root / "PS3_GAME";
         const auto target = folder / "PARAM.SFO";

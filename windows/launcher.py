@@ -18,12 +18,25 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '1.0.2' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
+VERSION = '1.0.3' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
     'DisgaeaD2Recomp-Graphics-Preview' if (ROOT / 'vendor/graphics.json').is_file() else 'DisgaeaD2Recomp-Standalone' if _standalone else 'DisgaeaD2Recomp-ISO-Clean' if _clean_iso else 'DisgaeaD2Recomp')
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
+# European disc/update executable (BLES01939). Same code layout as the US 1.00 build; preview support.
+EU_ELF_SHA = '0257bc3ab36a63f55b0a8722fa54f7d5278a568941bdff7817934a891fcb0cbb'
+PROFILE_FILES = {'us140': ('port/build-windows-140/DisgaeaD2Recomp.exe', 'work/v140/EBOOT.elf'),
+                 'eu100': ('port/build-windows-eu/DisgaeaD2Recomp.exe', 'work/eu/EBOOT.elf')}
+
+
+def profile_name(config):
+    return 'eu100' if config.get('profile') == 'eu100' else 'us140'
+
+
+def profile_files(config, repo):
+    exe, elf = PROFILE_FILES[profile_name(config)]
+    return Path(repo) / exe, Path(repo) / elf
 RPCS3_URL = 'https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-2ba2f75bcea7ef6bdd687046c7fcfb790faf9853/rpcs3-v0.0.43-20284-2ba2f75b_win64_msvc.7z'
 RPCS3_SHA = '8914810c74508b0e53c6b6cb39d4ed334ecee99639973062d259b1481bfa1720'
 FIRMWARE_URL = 'http://dus01.ps3.update.playstation.net/update/ps3/image/us/2026_0318_a2b60b6ac1d2e49e230144345616927c/PS3UPDAT.PUP'
@@ -518,6 +531,26 @@ class Backend:
         inputs_record.unlink(missing_ok=True)
         self.notify('Preparação concluída.')
 
+    def prepare_eu(self, image, elf):
+        """Preview: build the European (BLES01939) game from the user's ISO and decrypted EBOOT.elf, in its own workspace."""
+        image, elf = Path(image).resolve(), Path(elf).resolve()
+        if image.suffix.lower() != '.iso' or not image.is_file():
+            raise ValueError('Selecione uma ISO existente da versão europeia (BLES01939).')
+        if not elf.is_file() or digest(elf) != EU_ELF_SHA:
+            raise ValueError('O EBOOT.elf não é o executável europeu suportado (BLES01939). Descriptografe o EBOOT.BIN do seu disco.')
+        game = self.prepare_iso_source(image)
+        env = self.compiler_environment()
+        repo = self.home / ('builds/eu-' + uuid.uuid4().hex)
+        self.notify('Prévia europeia: preparando fontes e compilando. Pode demorar bastante.')
+        shutil.copytree(ROOT / 'payload', repo)
+        self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env, label='Preparar SDK Windows')
+        self.run([sys.executable, repo / 'tools/build_windows.py', '--profile', 'eu100', '--elf', elf,
+                  '--json-include', ROOT / 'vendor/include', '--jobs', '4', '--iso-vfs'], env,
+                 label='Gerar e compilar jogo europeu (prévia)')
+        self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(self.home / 'hdd0'), iso_path=str(image),
+                       native_iso=True, standalone=self.standalone, profile='eu100'))
+        self.notify('Prévia europeia pronta.')
+
     def prepare_and_play(self, folder, packages=(), firmware=None, on_prepared=None):
         self.prepare(folder, packages, firmware)
         if on_prepared:
@@ -589,9 +622,32 @@ class Backend:
     def save(self, config):
         self.home.mkdir(parents=True, exist_ok=True)
         target = self.home / 'build-atual.json'
+        # Keep the US setup when another profile (EU preview) becomes the active one.
+        if target.is_file() and profile_name(config) != 'us140':
+            try:
+                if profile_name(json.loads(target.read_text(encoding='utf-8'))) == 'us140':
+                    shutil.copyfile(target, self.home / 'build-atual-us140.json')
+            except (OSError, ValueError):
+                pass
         temporary = target.with_suffix('.tmp')
-        temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+        text = json.dumps(config, ensure_ascii=False, indent=2)
+        temporary.write_text(text, encoding='utf-8')
         temporary.replace(target)
+        (self.home / ('build-atual-' + profile_name(config) + '.json')).write_text(text, encoding='utf-8')
+
+    def activate_profile(self, name):
+        """Make the saved US 1.40 or EU preview preparation the active one (no rebuild)."""
+        if name not in PROFILE_FILES:
+            raise ValueError('Perfil desconhecido.')
+        source = self.home / ('build-atual-' + name + '.json')
+        if not source.is_file():
+            raise RuntimeError('Nenhuma preparação salva para este perfil.' if name == 'eu100' else
+                               'Nenhuma preparação americana salva. Selecione a ISO e a atualização USA 1.40.')
+        config = json.loads(source.read_text(encoding='utf-8'))
+        repo = Path(config['workspace'])
+        if not profile_files(config, repo)[0].is_file():
+            raise RuntimeError('A build deste perfil não está mais disponível. Prepare novamente.')
+        self.save(config)
 
     def play_iso(self, image):
         image = Path(image).resolve()
@@ -603,7 +659,7 @@ class Backend:
             raise RuntimeError('Prepare o jogo USA 1.40 primeiro no launcher atual. Este teste reutiliza a preparacao existente.')
         if config.get('native_iso'):
             metadata = self.prepare_iso_source(image)
-            self.play(iso_path=image, iso_executable=Path(config['workspace']) / 'port/build-windows-140/DisgaeaD2Recomp.exe', iso_root=metadata)
+            self.play(iso_path=image, iso_executable=profile_files(config, config['workspace'])[0], iso_root=metadata)
             return
         source = ROOT / 'payload'
         identity = build_source_signature(source) + digest(source / 'tools/build_iso_preview.py') + str(Path(config['workspace']).resolve())
@@ -630,11 +686,12 @@ class Backend:
     def graphics_runtime(self, config):
         source = ROOT / 'payload'
         identity = build_source_signature(source) + digest(source / 'tools/build_iso_preview.py') + str(Path(config['workspace']).resolve())
+        if profile_name(config) != 'us140': identity += profile_name(config)
         key = hashlib.sha256(identity.encode()).hexdigest()[:24]
         output = self.home / 'graphics-builds' / key
         env = self.compiler_environment()
         self.run([sys.executable, source / 'tools/build_iso_preview.py', '--source', source,
-                  '--workspace', config['workspace'], '--preview', output,
+                  '--workspace', config['workspace'], '--preview', output, '--profile', profile_name(config),
                   '--json-include', ROOT / 'vendor/include'], env, label='Preparar runtime gráfico separado')
         return output / 'build/DisgaeaD2Recomp.exe'
 
@@ -643,7 +700,7 @@ class Backend:
         repo = Path(config['workspace'])
         if iso_path is None and config.get('iso_path'):
             iso_path = Path(config['iso_path'])
-            iso_executable = repo / 'port/build-windows-140/DisgaeaD2Recomp.exe'
+            iso_executable = profile_files(config, repo)[0]
         if self.home.name == 'DisgaeaD2Recomp-Graphics-Preview':
             iso_executable = self.graphics_runtime(config)
         if iso_path is None:
@@ -664,7 +721,7 @@ class Backend:
         player_env.pop('D2_GAME_ISO', None)
         if iso_root is not None:
             player_env['PS3_VFS_ROOT'] = str(iso_root)
-        write_player_config(iso_executable or repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf',
+        write_player_config(iso_executable or profile_files(config, repo)[0], profile_files(config, repo)[1],
                             repo, iso_path, player_env, os.environ, profile['clear'])
         session = None
         self.last_capture_report = None
@@ -693,7 +750,7 @@ class Backend:
             thread.start()
         log = self.home / 'logs' / (('jogo-ISO-' if iso_path else 'jogo-') + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6] + '.log')
         try:
-            command = [iso_executable or repo / 'port/build-windows-140/DisgaeaD2Recomp.exe', repo / 'work/v140/EBOOT.elf']
+            command = [iso_executable or profile_files(config, repo)[0], profile_files(config, repo)[1]]
             if iso_path: command += ['--iso', Path(iso_path)]
             self.run(command, env, cwd=repo,
                      label='Executar jogo nativo', log_path=log, on_started=on_started)
@@ -764,7 +821,7 @@ def main():
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         if OFFICIAL_RELEASE:
-            if VERSION != '1.0.2' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+            if VERSION != '1.0.3' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
                 raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
