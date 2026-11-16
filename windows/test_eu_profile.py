@@ -60,6 +60,16 @@ class EuropeanProfileTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 backend.prepare_eu(iso, elf)
 
+    def test_folder_must_be_european_game(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            elf = Path(tmp) / 'EBOOT.elf'
+            elf.write_bytes(b'x')
+            folder = Path(tmp) / 'game'
+            folder.mkdir()
+            backend = launcher.Backend(lambda message: None, home=Path(tmp) / 'home')
+            with self.assertRaises(ValueError):  # wrong executable is refused first
+                backend.prepare_eu(folder, elf)
+
 
 if __name__ == '__main__':
     unittest.main()

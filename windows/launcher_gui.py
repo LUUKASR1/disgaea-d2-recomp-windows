@@ -409,15 +409,21 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')], **options)
 
     def prepare_europe():
-        iso = filedialog.askopenfilename(title='ISO de Disgaea D2 Europa (BLES01939)',
-            filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
-        if not iso: return
+        use_folder = messagebox.askyesnocancel('Versão europeia',
+            'Usar a pasta do jogo (PS3_GAME)?\nSim = pasta do jogo. Não = imagem ISO.')
+        if use_folder is None: return
+        if use_folder:
+            source = filedialog.askdirectory(title='Pasta do jogo europeu (BLES01939) ou PS3_GAME')
+        else:
+            source = filedialog.askopenfilename(title='ISO de Disgaea D2 Europa (BLES01939)',
+                filetypes=[('Imagem ISO', '*.iso'), ('Todos os arquivos', '*.*')])
+        if not source: return
         elf = filedialog.askopenfilename(title='EBOOT.elf descriptografado (Europa)',
             filetypes=[('EBOOT.elf', '*.elf *.ELF'), ('Todos os arquivos', '*.*')])
         if not elf: return
         auto_backup_saves()
         def work():
-            backend.prepare_eu(iso, elf)
+            backend.prepare_eu(source, elf)
             events.put(('eu_ready', ''))
         task(work)
 
@@ -736,7 +742,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         os.startfile(path)
     europe = card(page)
     label(europe, 'VERSÃO EUROPEIA (BLES01939) — PRÉVIA', 12, GOLD, True)
-    label(europe, 'Use a ISO europeia e o EBOOT.elf descriptografado do seu disco. A primeira preparação compila o jogo e pode demorar bastante. Os perfis americano e europeu ficam salvos separadamente.', 10, MUTED)
+    label(europe, 'Use a pasta do jogo ou a ISO europeia e o EBOOT.elf descriptografado do seu disco. A primeira preparação compila o jogo e pode demorar bastante. Os perfis americano e europeu ficam salvos separadamente.', 10, MUTED)
     button(europe, 'Preparar versão europeia', prepare_europe)
     button(europe, 'Usar perfil europeu', lambda: use_profile('eu100'))
     button(europe, 'Usar perfil americano', lambda: use_profile('us140'))

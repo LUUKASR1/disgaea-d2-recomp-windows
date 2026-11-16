@@ -1,6 +1,6 @@
-# 1.0.3 — Prévia europeia (BLES01939)
+# 1.0.4 — Prévia europeia (BLES01939)
 
-- Perfil europeu experimental (ISO BLES01939 + EBOOT.elf descriptografado), separado do americano. Pré-lançamento.
+- Perfil europeu experimental (pasta do jogo ou ISO BLES01939 + EBOOT.elf descriptografado), separado do americano. Pré-lançamento.
 
 # 1.0.2 — Stable / DirectX 12
 

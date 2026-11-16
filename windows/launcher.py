@@ -18,7 +18,7 @@ import uuid
 
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 OFFICIAL_RELEASE = (ROOT / 'vendor/official-release.json').is_file()
-VERSION = '1.0.3' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
+VERSION = '1.0.4' if OFFICIAL_RELEASE else '0.1.51-vulkan-mixed-sequence-preview'
 _standalone = '--standalone-test' in sys.argv or (ROOT / 'vendor/standalone.json').is_file()
 _clean_iso = '--iso-clean-test' in sys.argv or (getattr(sys, 'frozen', False) and 'ISO-Clean' in Path(sys.executable).stem)
 HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
@@ -531,24 +531,36 @@ class Backend:
         inputs_record.unlink(missing_ok=True)
         self.notify('Preparação concluída.')
 
-    def prepare_eu(self, image, elf):
-        """Preview: build the European (BLES01939) game from the user's ISO and decrypted EBOOT.elf, in its own workspace."""
-        image, elf = Path(image).resolve(), Path(elf).resolve()
-        if image.suffix.lower() != '.iso' or not image.is_file():
-            raise ValueError('Selecione uma ISO existente da versão europeia (BLES01939).')
+    def prepare_eu(self, source, elf):
+        """Preview: build the European (BLES01939) game from the user's game folder or ISO plus decrypted EBOOT.elf."""
+        source, elf = Path(source).resolve(), Path(elf).resolve()
+        folder_mode = source.is_dir()
+        if not folder_mode and (source.suffix.lower() != '.iso' or not source.is_file()):
+            raise ValueError('Selecione a pasta do jogo europeu (BLES01939) ou uma ISO existente.')
         if not elf.is_file() or digest(elf) != EU_ELF_SHA:
             raise ValueError('O EBOOT.elf não é o executável europeu suportado (BLES01939). Descriptografe o EBOOT.BIN do seu disco.')
-        game = self.prepare_iso_source(image)
+        if folder_mode:
+            game = self.check_game_files(source)
+            sfo = (game / 'PS3_GAME/PARAM.SFO').read_bytes()
+            if b'BLES01939' not in sfo:
+                raise ValueError('A pasta selecionada não é Disgaea D2 europeu (BLES01939).')
+        else:
+            game = self.prepare_iso_source(source)
         env = self.compiler_environment()
         repo = self.home / ('builds/eu-' + uuid.uuid4().hex)
         self.notify('Prévia europeia: preparando fontes e compilando. Pode demorar bastante.')
         shutil.copytree(ROOT / 'payload', repo)
         self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env, label='Preparar SDK Windows')
-        self.run([sys.executable, repo / 'tools/build_windows.py', '--profile', 'eu100', '--elf', elf,
-                  '--json-include', ROOT / 'vendor/include', '--jobs', '4', '--iso-vfs'], env,
-                 label='Gerar e compilar jogo europeu (prévia)')
-        self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(self.home / 'hdd0'), iso_path=str(image),
-                       native_iso=True, standalone=self.standalone, profile='eu100'))
+        command = [sys.executable, repo / 'tools/build_windows.py', '--profile', 'eu100', '--elf', elf,
+                   '--json-include', ROOT / 'vendor/include', '--jobs', '4']
+        if not folder_mode:
+            command.append('--iso-vfs')
+        self.run(command, env, label='Gerar e compilar jogo europeu (prévia)')
+        hdd = self.home / 'hdd0'
+        hdd.mkdir(parents=True, exist_ok=True)
+        self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd),
+                       iso_path=None if folder_mode else str(source), native_iso=not folder_mode,
+                       standalone=self.standalone, profile='eu100'))
         self.notify('Prévia europeia pronta.')
 
     def prepare_and_play(self, folder, packages=(), firmware=None, on_prepared=None):
@@ -821,7 +833,7 @@ def main():
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         if OFFICIAL_RELEASE:
-            if VERSION != '1.0.3' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
+            if VERSION != '1.0.4' or not _standalone or HOME.name != 'DisgaeaD2Recomp-Graphics-Preview':
                 raise RuntimeError('Official release identity/profile mismatch')
         (HOME / 'self-test-ok.txt').parent.mkdir(parents=True, exist_ok=True)
         (HOME / 'self-test-ok.txt').write_text('OK')
