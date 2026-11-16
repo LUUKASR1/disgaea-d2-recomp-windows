@@ -917,21 +917,96 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch, bool hidden
     tr::ui_text_outline(14.f * s, 10.f * s, text, 22.f * s, shown >= 55 ? Color{0.55f, 1.f, 0.65f, 1.f} : gold, ink, 1.5f * s);
   }
   {
-    // Confirmation of a saved screenshot, a few seconds at the top of the screen.
+    // Notices (screenshot saved, controller plugged/unplugged): a card that slides up from the bottom-right corner,
+    // Steam style, in the menu's colours. Same behaviour as the DirectX 12 notices.
+    struct Notice { std::string title, text; int kind; }; // kind: 0 screenshot, 1 controller connected, 2 disconnected
+    static std::vector<Notice> queue;
+    static bool active = false;
+    static Notice cur;
+    static auto t0 = std::chrono::steady_clock::now();
     static unsigned seen = 0;
-    static auto until = std::chrono::steady_clock::now();
-    static std::string toast;
     char path[520] = {};
     const unsigned n = d2_screenshot_last(path, sizeof path);
     if (n != seen) {
       seen = n;
       const char *base = std::strrchr(path, '\\');
-      toast = std::string(L("Captura salva: ", "Screenshot saved: ")) + (base ? base + 1 : path);
-      until = now + std::chrono::milliseconds(3500);
+      if (queue.size() < 6) queue.push_back({L("Captura salva", "Screenshot saved"), base ? base + 1 : path, 0});
     }
-    if (now < until && !toast.empty()) {
-      const float fs2 = 22.f * s, tw = tr::ui_text_width(toast.c_str(), fs2);
-      tr::ui_text_outline((float(w) - tw) * 0.5f, 12.f * s, toast.c_str(), fs2, gold, ink, 2.f * s);
+    { // controller hot-plug through XInput, polled twice a second
+      typedef DWORD(WINAPI * GetStateFn)(DWORD, void *);
+      static GetStateFn get = nullptr;
+      static bool tried = false, primed = false;
+      static unsigned mask = 0;
+      static auto next = std::chrono::steady_clock::now();
+      if (now >= next) {
+        next = now + std::chrono::milliseconds(500);
+        if (!tried) {
+          tried = true;
+          for (const wchar_t *dll : {L"xinput1_4.dll", L"xinput1_3.dll", L"xinput9_1_0.dll"})
+            if (HMODULE m = LoadLibraryW(dll)) { get = (GetStateFn)GetProcAddress(m, "XInputGetState"); if (get) break; }
+        }
+        if (get) {
+          unsigned cur_mask = 0;
+          char state[32];
+          for (DWORD i = 0; i < 4; i++) if (get(i, state) == ERROR_SUCCESS) cur_mask |= 1u << i;
+          if (!primed) primed = true;
+          else if (cur_mask != mask) {
+            for (int i = 0; i < 4; i++) {
+              const std::string who = std::string(L("Jogador ", "Player ")) + std::to_string(i + 1);
+              if ((cur_mask & ~mask) & (1u << i) && queue.size() < 6) queue.push_back({L("Controle conectado", "Controller connected"), who, 1});
+              else if ((mask & ~cur_mask) & (1u << i) && queue.size() < 6) queue.push_back({L("Controle desconectado", "Controller disconnected"), who, 2});
+            }
+          }
+          mask = cur_mask;
+        }
+      }
+    }
+    if (!active && !queue.empty()) {
+      cur = queue.front();
+      queue.erase(queue.begin());
+      active = true;
+      t0 = now;
+    }
+    if (active) {
+      const double ms = std::chrono::duration<double, std::milli>(now - t0).count();
+      const double in = 320.0, hold = 3800.0, out = 320.0, total = in + hold + out;
+      if (ms >= total) active = false;
+      else {
+        auto ease = [](double t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t); };
+        double pr = 1.0;
+        if (ms < in) pr = ease(ms / in);
+        else if (ms > total - out) pr = 1.0 - ease((ms - (total - out)) / out);
+        const float cw2 = std::min(400.f * s, float(w) - 36.f * s), chh = 84.f * s, margin = 18.f * s;
+        const float x = float(w) - cw2 - margin, y = float(h) - (chh + margin) * float(pr); // slides up from below the bottom edge
+        const float bd = std::max(2.f, 2.f * s);
+        tr::ui_rect(x, y, cw2, chh, pink);
+        tr::ui_gradient(x + bd, y + bd, cw2 - 2 * bd, chh - 2 * bd, {0.22f, 0.09f, 0.36f, 1.f}, {0.06f, 0.04f, 0.16f, 1.f});
+        const bool off = cur.kind == 2;
+        tr::ui_gradient(x + bd, y + bd, chh - bd, chh - 2 * bd, off ? Color{0.47f, 0.24f, 0.51f, 1.f} : Color{0.78f, 0.16f, 0.45f, 1.f},
+                        off ? Color{0.20f, 0.10f, 0.31f, 1.f} : Color{0.36f, 0.08f, 0.40f, 1.f});
+        const Color ic = off ? Color{0.75f, 0.69f, 0.84f, 1.f} : gold;
+        const float cx = x + chh * 0.5f, cy = y + chh * 0.5f, u = chh / 84.f;
+        if (cur.kind == 0) { // camera
+          tr::ui_rect(cx - 20 * u, cy - 11 * u, 40 * u, 28 * u, ic);
+          tr::ui_rect(cx - 9 * u, cy - 17 * u, 18 * u, 8 * u, ic);
+          tr::ui_rect(cx - 8 * u, cy - 4 * u, 16 * u, 14 * u, {0.22f, 0.09f, 0.36f, 1.f});
+          tr::ui_rect(cx - 4 * u, cy, 8 * u, 6 * u, ic);
+        } else { // game controller
+          tr::ui_rect(cx - 22 * u, cy - 10 * u, 44 * u, 22 * u, ic);
+          tr::ui_rect(cx - 22 * u, cy + 6 * u, 10 * u, 12 * u, ic);
+          tr::ui_rect(cx + 12 * u, cy + 6 * u, 10 * u, 12 * u, ic);
+          const Color dark{0.22f, 0.09f, 0.36f, 1.f};
+          tr::ui_rect(cx - 16 * u, cy - 3 * u, 10 * u, 3 * u, dark);
+          tr::ui_rect(cx - 12.5f * u, cy - 6.5f * u, 3 * u, 10 * u, dark);
+          tr::ui_rect(cx + 8 * u, cy - 5 * u, 4 * u, 4 * u, dark);
+          tr::ui_rect(cx + 14 * u, cy - 1 * u, 4 * u, 4 * u, dark);
+        }
+        const float tx = x + chh + 14.f * s, room = cw2 - chh - 26.f * s;
+        tr::ui_text_outline(tx, y + 12.f * s, cur.title.c_str(), 22.f * s, gold, ink, 1.8f * s);
+        std::string line = cur.text;
+        while (line.size() > 4 && tr::ui_text_width(line.c_str(), 17.f * s) > room) line = line.substr(0, line.size() - 2) + "\342\200\246";
+        tr::ui_text_outline(tx, y + 46.f * s, line.c_str(), 17.f * s, {0.91f, 0.86f, 1.f, 1.f}, ink, 1.4f * s);
+      }
     }
   }
   if (dialog) return; // system dialog on top: the F1 menu and hints wait

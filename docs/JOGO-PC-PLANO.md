@@ -67,4 +67,4 @@ Trocar DirectX 12 ↔ Vulkan sem reiniciar o jogo (ver lista de desejos: troca c
 
 ## Etapa 5/6 (em andamento)
 - Pausar ao perder o foco: D3D12 (F1 > Sistema > "Pausar ao perder o foco", padrão ligado, `pause_focus=` no settings.ini) e Vulkan (sempre; `D2_PAUSE_UNFOCUSED=0` desliga). Log `[D2FOCUS]`.
-- Avisos estilo Steam (cartão que sobe do canto inferior direito, cores do overlay): captura salva e controle conectado/desconectado (XInput), D3D12. Vulkan: pendente.
+- Avisos estilo Steam (cartão que sobe do canto inferior direito, cores do overlay): captura salva e controle conectado/desconectado (XInput), D3D12 e Vulkan. Vulkan: pendente.
