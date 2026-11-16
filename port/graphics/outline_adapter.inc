@@ -27,7 +27,9 @@ static u32 d2_outline_vs_hash(const D3D12DrawRecord* dr)
 static int d2_outline_is_character(const D3D12DrawRecord* dr, u32 d)
 {
     static int dbg = -1; static u32 seen = 0, picked = 0, frames = 0;
-    if (dbg < 0) { const char* e = getenv("D2_OUTLINE_DEBUG"); dbg = e && *e && *e != '0'; }
+    if (dbg < 0) { const char* e = getenv("D2_OUTLINE_DEBUG"); dbg = (e && *e && *e != '0') ? 1 : 0; }
+    /* Diagnostics are on with D2_OUTLINE_DEBUG=1, or whenever the outline option is on in F1. */
+    const int dbgon = dbg || d2_graphics_outline_level() > 0;
     static u32 evs = 0, etex = 0, einit = 0;
     if (!einit) { einit = 1; const char* a = getenv("D2_OUTLINE_VS"); const char* b = getenv("D2_OUTLINE_TEX0");
                   if (a && *a) evs = (u32)strtoul(a, NULL, 16); if (b && *b) etex = (u32)strtoul(b, NULL, 16); }
@@ -35,7 +37,7 @@ static int d2_outline_is_character(const D3D12DrawRecord* dr, u32 d)
     int ok = dr->is_vp && !dr->is_clear && !dr->rt_off && !dr->rt_mrt[0] && dr->fp_addr &&
              (evs ? (d2_outline_vs_hash(dr) == evs && (!etex || dr->tex[0].raw == etex)) : d2_outline_vs_hash(dr) == D2_OUTLINE_VS) && dr->vertex_count >= 3 && dr->vertex_count <= 96 &&
              hud < s_d3d.draw_count && d < hud;
-    if (dbg) {
+    if (dbgon) {
         /* Per-texture table: which atlas/texture each draw samples, its format and size, and the draw sizes. */
         static struct { u32 vs, raw, w, h, fmt, w1, h1, fmt1, n, vmin, vmax; } sig[16]; static int nsig = 0;
         if (dr->is_vp && !dr->is_clear) {
