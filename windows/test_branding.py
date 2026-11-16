@@ -14,7 +14,7 @@ class BrandingTests(unittest.TestCase):
         self.assertIn(kind, (4, 6))  # PNG grayscale/RGB with alpha.
 
     def test_cartoon_button_states_and_logo_exist_with_alpha(self):
-        for name, size in (('play', (340, 84)), ('iso', (164, 60)), ('gear', (164, 60)), ('small', (170, 46))):
+        for name, size in (('play', (340, 84)), ('iso', (164, 60)), ('gear', (164, 60)), ('small', (170, 46)), ('nav', (176, 48)), ('navs', (176, 48))):
             for state in 'nhpd':
                 data = (Path(__file__).parent / ('assets/btn-%s-%s.png' % (name, state))).read_bytes()
                 self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
@@ -23,6 +23,13 @@ class BrandingTests(unittest.TestCase):
         logo = (Path(__file__).parent / 'assets/logo-disgaea.png').read_bytes()
         self.assertEqual(struct.unpack('>II', logo[16:24])[0], 336)
         self.assertIn(logo[25], (4, 6))
+
+    def test_home_slides_and_glass_sidebar_exist(self):
+        for number in range(1, 6):
+            data = (Path(__file__).parent / ('assets/hero-%d.png' % number)).read_bytes()
+            self.assertEqual(struct.unpack('>II', data[16:24]), (760, 430))
+        data = (Path(__file__).parent / 'assets/sidebar-glass.png').read_bytes()
+        self.assertEqual(struct.unpack('>II', data[16:24]), (220, 1400))
 
     def test_icon_has_valid_small_and_large_windows_entries(self):
         data = (Path(__file__).parent / 'assets/launcher.ico').read_bytes()

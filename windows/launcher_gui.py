@@ -13,8 +13,119 @@ from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_
 from launcher_i18n import LANGUAGES, Localizer, Dialogs, load_language, save_language, text_variable_class, widget_bindings
 from controls_guide import build_controls_guide
 
-BG, PANEL, CARD = '#130e1d', '#21152c', '#2b1c38'
-TEXT, MUTED, RED, GOLD = '#fff2e6', '#b7a7c5', '#c32d55', '#ffb16a'
+BG, PANEL, CARD = '#f4f7fd', '#e4eafa', '#ffffff'
+TEXT, MUTED, RED, GOLD = '#1d2547', '#667396', '#e0314f', '#c26a00'
+EDGE = '#cdd7ee'
+
+
+class CartoonButton(tk.Button):
+    """A real (never shown) Tk button used as the model, drawn as a cartoon button on a canvas.
+
+    The hidden button keeps text translation, enabling/disabling and tests working through the normal widget API;
+    the canvas items are only the view. `alt` = (kind, edge) is the look used while the button is selected.
+    """
+    SHADOW = ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3), (0, 0))
+
+    def __init__(self, canvas, art, x, y, kind, text, command, size, edge, shift=0, alt=None):
+        super().__init__(canvas, text=text, command=command)
+        self._cv, self._art, self._x, self._y, self._shift = canvas, art, x, y, shift
+        self._base, self._alt, self._selected = (kind, edge), alt, False
+        self._kind, self._edge = kind, edge
+        self._bw, self._bh = art[kind + 'n'].width(), art[kind + 'n'].height()
+        self._image = canvas.create_image(x, y, image=art[kind + 'n'], anchor='nw')
+        font = ('Segoe UI Black', size)
+        self._shadow = [canvas.create_text(0, 0, text=self._shown(text), fill=edge, font=font) for _ in self.SHADOW[:-1]]
+        self._label = canvas.create_text(0, 0, text=self._shown(text), fill='#ffffff', font=font)
+        self._look = 'n'
+        self._layout(0)
+
+    @staticmethod
+    def _shown(text):
+        return text.lstrip('▶ ').strip()
+
+    def _layout(self, lift):
+        cx, cy = self._x + self._bw // 2 + self._shift, self._y + (self._bh - 9) // 2 + lift
+        for item, (dx, dy) in zip(self._shadow + [self._label], self.SHADOW):
+            self._cv.coords(item, cx + dx, cy + dy)
+
+    def contains(self, px, py):
+        return self._x <= px < self._x + self._bw and self._y <= py < self._y + self._bh - 8
+
+    def look(self, which):
+        self._look = which
+        self._cv.itemconfigure(self._image, image=self._art[self._kind + which])
+        self._layout(2 if which == 'p' else 0)
+        self._cv.itemconfigure(self._label, fill='#c9cddc' if which == 'd' else '#ffffff')
+
+    def select(self, selected):
+        if self._alt is None or selected == self._selected:
+            return
+        self._selected = selected
+        self._kind, edge = self._alt if selected else self._base
+        for item in self._shadow:
+            self._cv.itemconfigure(item, fill=edge)
+        self.look('n')
+
+    def configure(self, cnf=None, **kw):
+        result = super().configure(cnf, **kw) if (cnf or kw) else super().configure()
+        if hasattr(self, '_label'):
+            if 'text' in kw:
+                for item in self._shadow + [self._label]:
+                    self._cv.itemconfigure(item, text=self._shown(kw['text']))
+            if 'state' in kw:
+                self.look('d' if kw['state'] == 'disabled' else 'n')
+        return result
+    config = configure
+
+    def enabled(self):
+        return str(self['state']) != 'disabled'
+
+
+def wire_cartoon(canvas):
+    """Hover/press/click handling for the CartoonButtons of one canvas; returns the list to append them to."""
+    items, state = [], {'hover': None, 'down': None}
+
+    def hit(event):
+        return next((item for item in items if item.contains(event.x, event.y)), None)
+
+    def rest(item):
+        item.look('n')
+
+    def motion(event):
+        found, previous = hit(event), state['hover']
+        if previous is not found:
+            if previous is not None and previous.enabled() and state['down'] is not previous:
+                rest(previous)
+            state['hover'] = found
+        if found is not None and found.enabled() and state['down'] is None:
+            found.look('h')
+        canvas.configure(cursor='hand2' if found is not None and found.enabled() else '')
+
+    def leave(event):
+        for item in items:
+            if item.enabled(): rest(item)
+        state['hover'] = None
+        canvas.configure(cursor='')
+
+    def press(event):
+        found = hit(event)
+        if found is not None and found.enabled():
+            state['down'] = found
+            found.look('p')
+
+    def release(event):
+        pressed, state['down'] = state['down'], None
+        if pressed is None or not pressed.enabled():
+            return
+        inside = pressed.contains(event.x, event.y)
+        pressed.look('h' if inside else 'n')
+        if inside:
+            pressed.invoke()
+    canvas.bind('<Motion>', motion)
+    canvas.bind('<Leave>', leave)
+    canvas.bind('<ButtonPress-1>', press)
+    canvas.bind('<ButtonRelease-1>', release)
+    return items
 
 
 def run_gui(Backend, home, version, firmware_present, preview=False, official=False):
@@ -130,30 +241,52 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
 
     def button(parent, text, command, primary=False, while_playing=False):
         widget = tk.Button(parent, text=text, command=command, bg=RED if primary else CARD,
-                           fg=TEXT, activebackground='#d34259' if primary else '#303042', activeforeground=TEXT,
-                           disabledforeground='#747080', bd=0, relief='flat', cursor='hand2',
+                           fg='#ffffff' if primary else TEXT, activebackground='#ec4a66' if primary else '#e6ecfb',
+                           activeforeground='#ffffff' if primary else TEXT, highlightthickness=1,
+                           highlightbackground=RED if primary else EDGE, disabledforeground='#a0a8bf', bd=0, relief='flat', cursor='hand2',
                            font=('Segoe UI', 12, 'bold' if primary else 'normal'), padx=20, pady=9)
         widget.pack(anchor='w', pady=4)
         if not while_playing: buttons.append(widget)
         return widget
 
     def card(parent):
-        widget = tk.Frame(parent, bg=CARD, padx=20, pady=14)
+        widget = tk.Frame(parent, bg=CARD, padx=20, pady=14, highlightthickness=1, highlightbackground=EDGE)
         widget.pack(fill='x', pady=9)
         return widget
 
-    sidebar = tk.Frame(app, bg=PANEL, width=220, padx=22, pady=16)
+    art = {}
+    for name in ('play', 'iso', 'gear', 'small', 'nav', 'navs'):
+        for state in 'nhpd':
+            art[name + state] = tk.PhotoImage(file=str(assets / ('btn-%s-%s.png' % (name, state))))
+    hero_images = [tk.PhotoImage(file=str(assets / ('hero-%d.png' % number))) for number in range(1, 6)]
+    logo_game, pill_image = tk.PhotoImage(file=str(assets / 'logo-disgaea.png')), tk.PhotoImage(file=str(assets / 'pill.png'))
+    sidebar_glass = tk.PhotoImage(file=str(assets / 'sidebar-glass.png'))
+    app._home_art = (art, hero_images, logo_game, pill_image, sidebar_glass)
+
+    sidebar = tk.Canvas(app, width=220, bg=PANEL, highlightthickness=0)
     sidebar.pack(side='left', fill='y')
-    sidebar.pack_propagate(False)
-    tk.Label(sidebar, image=sidebar_image, bg=PANEL, bd=0).pack(anchor='center', pady=(0, 8))
-    label(sidebar, 'DISGAEA D2', 17, TEXT, True)
-    label(sidebar, 'WIN PORT', 12, GOLD, True)
-    label(sidebar, 'Idioma / Language', 9, MUTED)
+    sidebar.create_image(0, 0, image=sidebar_glass, anchor='nw')
+
+    def tint(y):
+        red, green, blue = sidebar_glass.get(110, max(0, min(int(y), sidebar_glass.height() - 1)))
+        return '#%02x%02x%02x' % (red, green, blue)
+
+    def side_label(text, y, size=11, color=TEXT, bold=False, wrap=176, anchor='nw', x=22):
+        widget = tk.Label(sidebar, text=text, bg=tint(y + 12), fg=color, font=('Segoe UI', size, 'bold' if bold else 'normal'),
+                          anchor='w', justify='left', wraplength=wrap)
+        window = sidebar.create_window(x, y, window=widget, anchor=anchor)
+        return widget, window
+
+    sidebar.create_window(110, 12, window=tk.Label(sidebar, image=sidebar_image, bg=tint(76), bd=0), anchor='n')
+    side_label('DISGAEA D2', 148, 17, TEXT, True)
+    side_label('WIN PORT', 182, 12, GOLD, True)
+    side_label('Idioma / Language', 212, 9, MUTED)
     language_choice = tk.StringVar(value=LANGUAGES[translate.language])
     language_combo = ttk.Combobox(sidebar, textvariable=language_choice,
         values=tuple(LANGUAGES.values()), state='readonly', style='D2.TCombobox', width=19)
-    language_combo.pack(anchor='w', pady=(0, 4)); entries.append(language_combo)
-    tk.Frame(sidebar, bg=RED, height=3).pack(fill='x', pady=(8, 12))
+    sidebar.create_window(22, 234, window=language_combo, anchor='nw'); entries.append(language_combo)
+    sidebar.create_rectangle(22, 280, 198, 283, fill=RED, outline='')
+    side_cartoon = wire_cartoon(sidebar)
     main = tk.Frame(app, bg=BG, padx=28, pady=24)
     main.pack(side='right', fill='both', expand=True)
     footer = tk.Frame(main, bg=PANEL, padx=16, pady=12)
@@ -173,7 +306,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         active_page[0] = name
         canvases[name].yview_moveto(0)
         for key, widget in nav_buttons.items():
-            widget.configure(bg=RED if key == name else PANEL)
+            widget.select(key == name)
 
     for name in ('Início', 'Vídeo', 'Controles', 'Preparação', 'Arquivos e suporte'):
         page = tk.Frame(content, bg=BG)
@@ -188,12 +321,16 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         body.bind('<Configure>', lambda event, c=canvas: c.configure(scrollregion=c.bbox('all')))
         canvas.bind('<Configure>', lambda event, c=canvas, i=item: c.itemconfigure(i, width=event.width))
         bodies[name], canvases[name] = body, canvas
-        nav = tk.Button(sidebar, text=name, command=lambda n=name: show(n), bg=PANEL, fg=TEXT,
-                        activebackground=RED, activeforeground=TEXT, font=('Segoe UI', 11), bd=0,
-                        anchor='w', padx=14, pady=8, cursor='hand2')
-        nav.pack(fill='x', pady=3)
+        nav = CartoonButton(sidebar, art, 22, 294 + 52 * len(nav_buttons), 'nav', name, lambda n=name: show(n), 10, '#704006',
+                            shift=0, alt=('navs', '#56102a'))
+        side_cartoon.append(nav)
         nav_buttons[name] = nav
-    label(sidebar, 'WINDOWS x64\n' + version + '\nLUUKASR1 • ' + ('Stable / DX12' if official else 'Experimental'), 9, MUTED)
+    footer_label, footer_window = side_label('WINDOWS x64\n' + version + '\nLUUKASR1 • ' + ('Stable / DX12' if official else 'Experimental'), 600, 9, MUTED, anchor='sw', x=22)
+
+    def place_footer(event):
+        sidebar.coords(footer_window, 22, max(event.height, 640) - 14)
+        footer_label.configure(bg=tint(max(event.height, 640) - 40))
+    sidebar.bind('<Configure>', place_footer, add='+')
 
     def get_settings():
         return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
@@ -379,116 +516,26 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
 
     page = bodies['Início']
     label(page, variable=update_status, size=10, color=GOLD)
-    art = {}
-    for name in ('play', 'iso', 'gear', 'small'):
-        for state in 'nhpd':
-            art[name + state] = tk.PhotoImage(file=str(assets / ('btn-%s-%s.png' % (name, state))))
-    hero_images = [tk.PhotoImage(file=str(assets / ('hero-%d.png' % number))) for number in (1, 2, 3, 4)]
-    logo_game, pill_image = tk.PhotoImage(file=str(assets / 'logo-disgaea.png')), tk.PhotoImage(file=str(assets / 'pill.png'))
-    app._home_art = (art, hero_images, logo_game, pill_image)
     # Home: in-game screenshot banner with the Disgaea logo and cartoon buttons drawn on the canvas. Each CartoonButton is also a real
     # (never shown) Tk button, so text translation, enabling/disabling and tests keep working through the normal widget API.
     hero = tk.Canvas(page, width=760, height=430, bg=BG, highlightthickness=0)
     hero.pack(anchor='w', pady=(0, 10))
     hero_image = hero.create_image(0, 0, image=hero_images[0], anchor='nw')
-    hero.create_image(24, 14, image=logo_game, anchor='nw')
-    hero.create_image(28, 186, image=pill_image, anchor='nw')
-    pill_text = hero.create_text(44, 203, anchor='w', fill=GOLD, font=('Segoe UI', 9, 'bold'), text='')
-    hero_dots = [hero.create_oval(0, 0, 0, 0, fill=MUTED, outline='') for _ in hero_images]
+    hero.create_image(22, 26, image=logo_game, anchor='nw')
+    hero.create_image(20, 196, image=pill_image, anchor='nw')
+    pill_text = hero.create_text(36, 213, anchor='w', fill=GOLD, font=('Segoe UI', 9, 'bold'), text='')
+    hero_dots = [hero.create_oval(0, 0, 0, 0, fill='#ffffff', outline='#3a3a4a') for _ in hero_images]
     for position, dot in enumerate(hero_dots):
-        hero.coords(dot, 700 + position * 14 - 4, 398, 700 + position * 14 + 4, 406)
-    hero_state = {'index': 0, 'hover': None, 'down': None}
+        x0 = 740 - 14 * (len(hero_images) - position)
+        hero.coords(dot, x0 - 5, 402, x0 + 5, 412)
+        hero.tag_bind(dot, '<Button-1>', lambda event, i=position: hero_show(i))
+    hero_state = {'index': 0}
 
-    class CartoonButton(tk.Button):
-        def __init__(self, x, y, kind, text, command, size, edge, shift=0):
-            super().__init__(hero, text=text, command=command)
-            self._x, self._y, self._kind, self._edge, self._shift, self._size = x, y, kind, edge, shift, size
-            self._bw, self._bh = art[kind + 'n'].width(), art[kind + 'n'].height()
-            self._image = hero.create_image(x, y, image=art[kind + 'n'], anchor='nw')
-            cx, cy = x + self._bw // 2 + shift, y + (self._bh - 9) // 2
-            self._shadow = [hero.create_text(cx + dx, cy + dy, text=self._shown(text), fill=edge, font=('Segoe UI Black', size))
-                            for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3))]
-            self._label = hero.create_text(cx, cy, text=self._shown(text), fill='#ffffff', font=('Segoe UI Black', size))
-            self._look = 'n'
+    cartoon = wire_cartoon(hero)
 
-        @staticmethod
-        def _shown(text):
-            return text.lstrip('▶ ').strip()
-
-        def contains(self, px, py):
-            return self._x <= px < self._x + self._bw and self._y <= py < self._y + self._bh - 8
-
-        def look(self, which):
-            if which == self._look:
-                return
-            self._look = which
-            hero.itemconfigure(self._image, image=art[self._kind + which])
-            lift = 2 if which == 'p' else 0
-            for item, (dx, dy) in zip(self._shadow + [self._label], ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2), (0, 3), (0, 0))):
-                hero.coords(item, self._x + self._bw // 2 + self._shift + dx, self._y + (self._bh - 9) // 2 + dy + lift)
-            hero.itemconfigure(self._label, fill='#9b94a6' if which == 'd' else '#ffffff')
-
-        def configure(self, cnf=None, **kw):
-            result = super().configure(cnf, **kw) if (cnf or kw) else super().configure()
-            if hasattr(self, '_label'):
-                if 'text' in kw:
-                    for item in self._shadow + [self._label]:
-                        hero.itemconfigure(item, text=self._shown(kw['text']))
-                if 'state' in kw:
-                    self.look('d' if kw['state'] == 'disabled' else 'n')
-            return result
-        config = configure
-
-        def enabled(self):
-            return str(self['state']) != 'disabled'
-
-    cartoon = []
-
-    def hero_hit(event):
-        for item in cartoon:
-            if item.contains(event.x, event.y):
-                return item
-        return None
-
-    def hero_motion(event):
-        hit = hero_hit(event)
-        previous = hero_state['hover']
-        if previous is not hit:
-            if previous is not None and previous.enabled() and hero_state['down'] is not previous:
-                previous.look('n')
-            hero_state['hover'] = hit
-        if hit is not None and hit.enabled() and hero_state['down'] is None:
-            hit.look('h')
-        hero.configure(cursor='hand2' if hit is not None and hit.enabled() else '')
-
-    def hero_leave(event):
-        for item in cartoon:
-            if item.enabled(): item.look('n')
-        hero_state['hover'] = None
-        hero.configure(cursor='')
-
-    def hero_press(event):
-        hit = hero_hit(event)
-        if hit is not None and hit.enabled():
-            hero_state['down'] = hit
-            hit.look('p')
-
-    def hero_release(event):
-        pressed, hero_state['down'] = hero_state['down'], None
-        if pressed is None or not pressed.enabled():
-            return
-        inside = pressed.contains(event.x, event.y)
-        pressed.look('h' if inside else 'n')
-        if inside:
-            pressed.invoke()
-    hero.bind('<Motion>', hero_motion)
-    hero.bind('<Leave>', hero_leave)
-    hero.bind('<ButtonPress-1>', hero_press)
-    hero.bind('<ButtonRelease-1>', hero_release)
-
-    play_button = CartoonButton(28, 230, 'play', '▶  JOGAR DISGAEA D2', play, 17, '#56102a', shift=26)
-    iso_button = CartoonButton(28, 324, 'iso', 'Escolher ISO' if clean else 'Jogar pela ISO (experimental)', play_iso, 11, '#101a62', shift=14)
-    video_button = CartoonButton(204, 324, 'gear', 'Configurações', lambda: show('Vídeo'), 11, '#101a62', shift=14)
+    play_button = CartoonButton(hero, art, 20, 238, 'play', '▶  JOGAR DISGAEA D2', play, 17, '#56102a', shift=26)
+    iso_button = CartoonButton(hero, art, 20, 326, 'iso', 'Escolher ISO' if clean else 'Jogar pela ISO (experimental)', play_iso, 11, '#101a62', shift=14)
+    video_button = CartoonButton(hero, art, 196, 326, 'gear', 'Configurações', lambda: show('Vídeo'), 11, '#101a62', shift=14)
     cartoon.extend([play_button, iso_button, video_button])
     buttons.extend([play_button, iso_button, video_button])
 
@@ -501,7 +548,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         hero_state['index'] = index
         hero.itemconfigure(hero_image, image=hero_images[index])
         for position, dot in enumerate(hero_dots):
-            hero.itemconfigure(dot, fill=GOLD if position == index else '#6f6280')
+            hero.itemconfigure(dot, fill='#ffb000' if position == index else '#ffffff')
 
     def hero_next():
         try:
@@ -535,7 +582,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     info = card(page)
     label(info, variable=summary, size=11)
 
-    refresh_controls = build_controls_guide(bodies['Controles'], translate)
+    refresh_controls = build_controls_guide(bodies['Controles'], translate, (BG, CARD, TEXT, MUTED, GOLD, '#ffffff'))
 
     page = bodies['Vídeo']
     label(page, 'EXIBIÇÃO', 10, GOLD, True)
