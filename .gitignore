@@ -30,8 +30,10 @@
 !/work/RECON.md
 !/port/
 /port/*
+!/port/vulkan/
 !/port/CMakeLists.txt
 !/port/main.cpp
+!/port/d2_d3d12_options.inc
 !/port/stubs.cpp
 !/port/config.toml
 !/port/run.sh
@@ -160,3 +162,41 @@
 !/.github/
 !/.github/workflows/
 !/.github/workflows/windows-launcher.yml
+
+# Asset-free UDF reader and native regression fixtures (generated ISO files stay out).
+!/port/vfs/
+!/port/vfs/**
+/port/vfs/build*/
+*.iso
+!/.github/workflows/iso-vfs.yml
+!/.github/workflows/iso-launcher.yml
+/build-iso-vfs/
+/ci-tools/
+
+# Native graphics sources and audited upstream FSR headers.
+!/.gitattributes
+!/port/graphics/
+!/port/graphics/**
+/port/graphics/build*/
+!/.github/workflows/graphics.yml
+/build-graphics/
+
+# Launcher translation catalog (source only).
+!/windows/locales/
+/windows/locales/*
+!/windows/locales/en.json
+
+# Vulkan M1 probe
+build-vulkan-m1/
+vulkan-m1-log.txt
+
+.venv/
+ps3recomp/
+compilar-vulkan-log.txt
+ultimo-log-vulkan.txt
+port-140-windows-generated/
+port/build-windows-140.falhou/
+vulkan-dump/
+vulkan-shader-cache/
+build-vulkan-m2/
+vulkan-m2-log.txt

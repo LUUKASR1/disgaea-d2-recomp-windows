@@ -1,22 +1,53 @@
 """Launcher-owned presentation settings; no game or save mutations."""
 import json
+import tempfile
 from pathlib import Path
 import time
+import math
 
 RESOLUTIONS = ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')
-DEFAULTS = {'resolution': '1280x720', 'mode': 'windowed', 'vsync': False}
+REFRESH_RATES = ('native', '60', '75', '120', '144', '165', '180')
+GRAPHICS_APIS = {'d3d12': 'DirectX 12', 'vulkan': 'Vulkan'}
+RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
+DEFAULTS = {'graphics_api': 'd3d12', 'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
+            'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
+            'hud_after_upscale': False, 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
 
 
 def validate_settings(value):
     if not isinstance(value, dict):
         raise ValueError('Configurações de vídeo inválidas.')
     result = {name: value.get(name, default) for name, default in DEFAULTS.items()}
+    if not isinstance(result['graphics_api'], str) or result['graphics_api'] not in GRAPHICS_APIS:
+        raise ValueError('API gráfica inválida. Selecione DirectX 12 ou Vulkan.')
     if result['resolution'] not in RESOLUTIONS:
         raise ValueError('Selecione uma resolução da lista.')
     if result['mode'] not in ('windowed', 'borderless'):
         raise ValueError('Modo de exibição inválido.')
     if type(result['vsync']) is not bool:
         raise ValueError('VSync deve estar ligado ou desligado.')
+    for name in ('fps_unlimited', 'vrr'):
+        if type(result[name]) is not bool:
+            raise ValueError('Taxa máxima e VRR devem estar ligados ou desligados.')
+    # User validation showed fixed-step game acceleration when flips were uncapped.
+    result['fps_unlimited'] = False
+    if result['refresh_rate'] not in REFRESH_RATES:
+        raise ValueError('Selecione uma taxa de atualização da lista.')
+    if result['render_resolution'] not in RENDER_RESOLUTIONS:
+        raise ValueError('Resolução interna inválida.')
+    if result['upscaler'] not in ('native', 'fsr1'):
+        raise ValueError('DLSS/FSR temporal ainda indisponível nesta versão.')
+    sharp = result['fsr_sharpness']
+    if type(sharp) not in (int, float) or not math.isfinite(sharp) or not 0 <= sharp <= 1:
+        raise ValueError('Nitidez FSR deve estar entre 0 e 1.')
+    if result['frame_generation'] is not False:
+        raise ValueError('Frame generation ainda indisponível nesta versão.')
+    if type(result['hud_after_upscale']) is not bool:
+        raise ValueError('HUD após upscaling deve estar ligada ou desligada.')
+    rw, rh = map(int, ('1280x720' if result['render_resolution'] == 'native' else result['render_resolution']).split('x'))
+    ow, oh = map(int, result['resolution'].split('x'))
+    if result['upscaler'] == 'fsr1' and (rw > ow or rh > oh):
+        raise ValueError('FSR 1 requer resolução interna menor ou igual à saída.')
     return result
 
 
@@ -41,9 +72,28 @@ def save_settings(home, value):
     return result
 
 
-def display_environment(inherited, settings):
+def display_environment(inherited, settings, home=None):
     env = inherited.copy()
-    env['D2_PRESENT_INTERVAL'] = '1' if validate_settings(settings)['vsync'] else '0'
+    value = validate_settings(settings)
+    env['D2_GRAPHICS_API'] = value['graphics_api']
+    if value['graphics_api'] == 'vulkan':
+        # Experimental, opt-in, never silent: the game falls back to DirectX 12 with a visible
+        # message if this build has no Vulkan backend or Vulkan cannot start.
+        env['D2_VULKAN_EXPERIMENTAL'] = '1'
+        env['D2_VULKAN_FALLBACK'] = 'd3d12'
+        base = Path(home) if home else Path(env.get('LOCALAPPDATA') or tempfile.gettempdir())
+        env.setdefault('D2_VULKAN_CACHE_DIR', str(base / 'vulkan-shader-cache'))
+    else:
+        for key in ('D2_VULKAN_EXPERIMENTAL', 'D2_VULKAN_FALLBACK'):
+            env.pop(key, None)
+    env['D2_PRESENT_INTERVAL'] = '1' if value['vsync'] else '0'
+    rw, rh = ('1280x720' if value['render_resolution'] == 'native' else value['render_resolution']).split('x')
+    ow, oh = value['resolution'].split('x')
+    env.update(D2_RENDER_WIDTH=rw, D2_RENDER_HEIGHT=rh, D2_OUTPUT_WIDTH=ow, D2_OUTPUT_HEIGHT=oh,
+               D2_UPSCALER=value['upscaler'], D2_FSR_SHARPNESS=str(value['fsr_sharpness']),
+               D2_HUD_AFTER_UPSCALE='1' if value['hud_after_upscale'] else '0',
+               D2_MAX_REFRESH='0', D2_REFRESH_RATE=value['refresh_rate'],
+               D2_GCM_UNLIMITED='1' if value['fps_unlimited'] else '0', D2_VRR='1' if value['vrr'] else '0')
     return env
 
 

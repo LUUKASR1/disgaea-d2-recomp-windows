@@ -45,6 +45,27 @@
 #include <stdlib.h>
 #include <string.h>
 #include <atomic>
+#ifdef _WIN32
+#include "graphics/backend_choice.h"
+#include <shlobj.h>
+#include <fcntl.h>
+#include <io.h>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <algorithm>
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shell32.lib")
+#endif
+#ifdef D2_ENABLE_ISO_VFS
+#include "iso_runtime.h"
+#include <filesystem>
+#include <string>
+#ifdef _WIN32
+#include <shellapi.h>
+#endif
+#endif
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #include "sys_overlay.h"
@@ -124,10 +145,21 @@ unsigned cellGcm_flip_request_count(void);
 extern "C" int  rsx_d3d12_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_d3d12_backend_present(void);
 extern "C" int  rsx_d3d12_backend_pump_messages(void);
-#  define rsx_backend_init    rsx_d3d12_backend_init
+#  ifdef D2_VULKAN_GAME_BACKEND
+extern "C" int  rsx_vulkan_backend_init(uint32_t w, uint32_t h, const char* title);
+extern "C" void rsx_vulkan_backend_present(void);
+extern "C" int  rsx_vulkan_backend_pump_messages(void);
+static bool d2_use_vulkan(void) {
+    return d2::graphics::requested_api(getenv("D2_GRAPHICS_API")) == d2::graphics::Api::vulkan;
+}
+#    define rsx_backend_init(w, h, t) (d2_use_vulkan() ? rsx_vulkan_backend_init((w), (h), (t)) : rsx_d3d12_backend_init((w), (h), (t)))
+#    define RSX_BACKEND_NAME    (d2_use_vulkan() ? "Vulkan (experimental)" : "D3D12")
+#  else
+#    define rsx_backend_init    rsx_d3d12_backend_init
+#    define RSX_BACKEND_NAME    "D3D12"
+#  endif
 #  define rsx_backend_present rsx_d3d12_backend_present
 #  define rsx_backend_pump    rsx_d3d12_backend_pump_messages
-#  define RSX_BACKEND_NAME    "D3D12"
 #elif defined(__APPLE__)
 extern "C" int  rsx_metal_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_metal_backend_present(void);
@@ -290,6 +322,7 @@ static void d2_runtime_cpu(double elapsed)
 #ifdef _WIN32
 #include "d2_loop_frame.h"
 #include "d2_windows_shutdown.h" /* D2_WINDOWS_SHUTDOWN_V1 */
+#include "d2_d3d12_options.inc" /* D2_D3D12_OPTIONS_V1: F1 panel of the DirectX 12 window */
 #endif
 static DWORD WINAPI frame_clock(LPVOID)
 {
@@ -298,7 +331,44 @@ static DWORD WINAPI frame_clock(LPVOID)
     const char* title = getenv("PS3_TITLE");
     if (!title || !*title) title = "ps3recomp";
 
+#ifdef _WIN32
+    /* DirectX 12: turn the options saved in the F1 panel (output size, internal resolution, upscaler) into the
+     * renderer's environment before it starts. */
+#  ifdef D2_VULKAN_GAME_BACKEND
+    if (!d2_use_vulkan()) d2opt::prepare();
+#  else
+    d2opt::prepare();
+#  endif
+#endif
     int rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
+#if defined(_WIN32) && defined(D2_VULKAN_GAME_BACKEND)
+    // Explicit (never silent) fallback: Vulkan could not start and the launcher asked for DirectX 12 instead.
+    if (!rsx_ok && d2_use_vulkan()) {
+        const char* fallback = getenv("D2_VULKAN_FALLBACK");
+        if (fallback && strcmp(fallback, "d3d12") == 0) {
+            fprintf(stderr, "[graphics] Vulkan failed to start; falling back to DirectX 12 (explicit fallback).\n");
+            _putenv_s("D2_GRAPHICS_API", "d3d12");
+            MessageBoxA(nullptr,
+                "Vulkan nao iniciou neste computador.\nO jogo vai usar DirectX 12.\n\n"
+                "Vulkan failed to start on this computer.\nThe game will use DirectX 12.",
+                "Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+            d2opt::prepare();
+            rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
+        }
+    }
+    if (rsx_ok && d2_use_vulkan()) {
+        s_backend_present = rsx_vulkan_backend_present;
+        s_backend_pump = rsx_vulkan_backend_pump_messages;
+    }
+#endif
+#ifdef _WIN32
+    /* DirectX 12 has no panel of its own: attach the F1 options panel to its window. */
+#  ifdef D2_VULKAN_GAME_BACKEND
+    if (rsx_ok && !d2_use_vulkan()) d2opt::attach();
+#  else
+    if (rsx_ok) d2opt::attach();
+#  endif
+#endif
     fprintf(stderr, "[rsx] %s backend init %s\n", RSX_BACKEND_NAME,
             rsx_ok ? "OK -- window open" : "FAILED");
 #ifdef __APPLE__
@@ -501,14 +571,310 @@ extern "C" void d2_settings_init(void);
 extern "C" int d2_settings_self_test(void);
 #endif
 
+/* ---------------------------------------------------------------------------
+ * Standalone start (Windows): double-click the .exe like any PC game.
+ *
+ * The launcher writes DisgaeaD2.ini next to this executable every time it runs the game (paths of the prepared
+ * data plus the environment it uses). With no command-line arguments the .exe reads that file, applies it and
+ * starts by itself: no launcher window, no console, log in %LOCALAPPDATA%\DisgaeaD2Recomp\logs. Format, one
+ * entry per line (UTF-8): eboot=<path>, cwd=<path>, iso=<path>, env.<NAME>=<value>, unset.<NAME>.
+ * --------------------------------------------------------------------------*/
+#ifdef _WIN32
+static std::wstring d2_widen(const std::string& s)
+{
+    if (s.empty()) return std::wstring();
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
+    std::wstring w((size_t)(n > 0 ? n : 0), L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n);
+    return w;
+}
+
+/* What the C runtime would have put into argv for a path (the ELF loader opens it with narrow fopen). */
+static std::string d2_ansi(const std::wstring& w)
+{
+    if (w.empty()) return std::string();
+    int n = WideCharToMultiByte(CP_ACP, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s((size_t)(n > 0 ? n : 0), '\0');
+    if (n > 0) WideCharToMultiByte(CP_ACP, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+
+static void d2_message(const wchar_t* text)
+{
+    MessageBoxW(nullptr, text, L"Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+}
+
+static std::filesystem::path d2_exe_path()
+{
+    wchar_t module[MAX_PATH * 2] = {};
+    GetModuleFileNameW(nullptr, module, (DWORD)(sizeof module / sizeof module[0]));
+    return std::filesystem::path(module);
+}
+
+/* "DisgaeaD2Recomp.exe --create-shortcut": puts a "Disgaea D2" shortcut on the desktop. */
+static int d2_create_shortcut()
+{
+    const std::filesystem::path exe = d2_exe_path();
+    int rc = 1;
+    if (SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
+        IShellLinkW* link = nullptr;
+        if (SUCCEEDED(CoCreateInstance(__uuidof(ShellLink), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IShellLinkW),
+                                       (void**)&link)) && link) {
+            link->SetPath(exe.c_str());
+            link->SetWorkingDirectory(exe.parent_path().c_str());
+            link->SetDescription(L"Disgaea D2");
+            link->SetIconLocation(exe.c_str(), 0);
+            IPersistFile* file = nullptr;
+            if (SUCCEEDED(link->QueryInterface(__uuidof(IPersistFile), (void**)&file)) && file) {
+                wchar_t desktop[MAX_PATH] = {};
+                if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_DESKTOPDIRECTORY, nullptr, 0, desktop))) {
+                    const std::wstring target = std::wstring(desktop) + L"\\Disgaea D2.lnk";
+                    if (SUCCEEDED(file->Save(target.c_str(), TRUE))) rc = 0;
+                }
+                file->Release();
+            }
+            link->Release();
+        }
+        CoUninitialize();
+    }
+    d2_message(rc == 0 ? L"Atalho \"Disgaea D2\" criado na Área de Trabalho.\n\nShortcut \"Disgaea D2\" created on the desktop."
+                       : L"Não foi possível criar o atalho.\n\nCould not create the shortcut.");
+    return rc;
+}
+
+/* Keep the log folder small: the newest 20 standalone logs stay. */
+static void d2_prune_logs(const std::filesystem::path& dir)
+{
+    std::error_code ec;
+    std::vector<std::filesystem::path> logs;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        const std::wstring name = entry.path().filename().wstring();
+        if (name.rfind(L"jogo-", 0) == 0 && entry.path().extension() == L".log") logs.push_back(entry.path());
+    }
+    std::sort(logs.begin(), logs.end());
+    for (size_t i = 0; i + 20 < logs.size(); i++) std::filesystem::remove(logs[i], ec);
+}
+
+/* Applies DisgaeaD2.ini and silences the console. Returns false (after telling the player) when it cannot start. */
+static bool d2_standalone_start(std::string& eboot_ansi)
+{
+    const std::filesystem::path exe = d2_exe_path();
+    std::ifstream in(exe.parent_path() / L"DisgaeaD2.ini", std::ios::binary);
+    if (!in) {
+        d2_message(L"O Disgaea D2 ainda não foi preparado neste computador.\n\n"
+                   L"Abra o launcher uma vez e jogue por ele. Depois disso este programa abre direto, sem o launcher.\n\n"
+                   L"Disgaea D2 has not been prepared on this computer yet. Start it once from the launcher; "
+                   L"after that this program opens on its own.");
+        return false;
+    }
+    std::wstring eboot, cwd;
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (line.empty() || line[0] == '#') continue;
+        const size_t eq = line.find('=');
+        const std::string key = eq == std::string::npos ? line : line.substr(0, eq);
+        const std::string value = eq == std::string::npos ? std::string() : line.substr(eq + 1);
+        if (key == "eboot") eboot = d2_widen(value);
+        else if (key == "cwd") cwd = d2_widen(value);
+        else if (key == "iso") _wputenv_s(L"D2_GAME_ISO", d2_widen(value).c_str());
+        else if (key.rfind("env.", 0) == 0 && key.size() > 4) _wputenv_s(d2_widen(key.substr(4)).c_str(), d2_widen(value).c_str());
+        else if (key.rfind("unset.", 0) == 0 && key.size() > 6) _wputenv_s(d2_widen(key.substr(6)).c_str(), L"");
+    }
+    std::error_code ec;
+    if (eboot.empty() || !std::filesystem::exists(std::filesystem::path(eboot), ec)) {
+        d2_message(L"Os arquivos preparados do jogo não foram encontrados (a pasta foi movida ou apagada?).\n\n"
+                   L"Abra o launcher e prepare o jogo de novo.\n\n"
+                   L"The prepared game files were not found. Open the launcher and prepare the game again.");
+        return false;
+    }
+    if (!cwd.empty()) SetCurrentDirectoryW(cwd.c_str());
+    if (!getenv("D2_CONSOLE")) { /* D2_CONSOLE=1 keeps the console for debugging */
+        wchar_t* local = nullptr;
+        size_t length = 0;
+        if (_wdupenv_s(&local, &length, L"LOCALAPPDATA") == 0 && local) {
+            const std::filesystem::path logs = std::filesystem::path(local) / L"DisgaeaD2Recomp" / L"logs";
+            free(local);
+            std::filesystem::create_directories(logs, ec);
+            SYSTEMTIME t;
+            GetLocalTime(&t);
+            wchar_t name[64];
+            swprintf(name, sizeof name / sizeof name[0], L"jogo-%04d%02d%02d-%02d%02d%02d.log", t.wYear, t.wMonth,
+                     t.wDay, t.wHour, t.wMinute, t.wSecond);
+            d2_prune_logs(logs);
+            FILE* out = nullptr;
+            if (_wfreopen_s(&out, (logs / name).c_str(), L"ab", stdout) == 0 && out) _dup2(_fileno(stdout), _fileno(stderr));
+        }
+        FreeConsole();
+    }
+    eboot_ansi = d2_ansi(eboot);
+    return true;
+}
+#endif
+
+
+/* ---- Graphics API chosen inside the game ---------------------------------------------------------------------
+ * The Vulkan options panel (SYSTEM tab) and F1 in the DirectX 12 window store "api=0|1" (0 DirectX 12, 1 Vulkan)
+ * in settings.ini and restart the game. The next start applies it here, before the backend is picked, so it wins
+ * over the launcher's D2_GRAPHICS_API. A restarted game waits for the previous process (D2_RESTART_WAIT_PID). */
+static std::wstring d2_settings_ini_path()
+{
+    std::wstring dir;
+    wchar_t* value = nullptr;
+    size_t length = 0;
+    if (_wdupenv_s(&value, &length, L"D2_SETTINGS_DIR") == 0 && value && *value) dir = value;
+    free(value);
+    if (dir.empty()) {
+        value = nullptr;
+        if (_wdupenv_s(&value, &length, L"LOCALAPPDATA") == 0 && value && *value) dir = std::wstring(value) + L"\\DisgaeaD2Recomp";
+        free(value);
+    }
+    if (dir.empty()) return std::wstring();
+    CreateDirectoryW(dir.c_str(), nullptr);
+    return dir + L"\\settings.ini";
+}
+
+static int d2_saved_api(void)
+{
+    const std::wstring path = d2_settings_ini_path();
+    if (path.empty()) return -1;
+    std::ifstream in(std::filesystem::path(path), std::ios::binary);
+    std::string line;
+    int api = -1;
+    while (std::getline(in, line)) {
+        if (line.rfind("api=", 0) == 0 && line.size() >= 5 && (line[4] == '0' || line[4] == '1')) api = line[4] - '0';
+    }
+    return api;
+}
+
+static void d2_write_saved_api(int api)
+{
+    const std::wstring path = d2_settings_ini_path();
+    if (path.empty()) return;
+    std::string text, line;
+    {
+        std::ifstream in(std::filesystem::path(path), std::ios::binary);
+        while (std::getline(in, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+            if (line.rfind("api=", 0) != 0 && !line.empty()) text += line + "\n";
+        }
+    }
+    text += "api=" + std::to_string(api) + "\n";
+    std::ofstream out(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
+    out << text;
+}
+
+#ifdef D2_VULKAN_GAME_BACKEND
+static void d2_apply_saved_api(void)
+{
+    const int api = d2_saved_api();
+    if (api == 0) {
+        _putenv_s("D2_GRAPHICS_API", "d3d12");
+    } else if (api == 1) {
+        _putenv_s("D2_GRAPHICS_API", "vulkan");
+        _putenv_s("D2_VULKAN_EXPERIMENTAL", "1");
+        _putenv_s("D2_VULKAN_FALLBACK", "d3d12");
+    }
+}
+#else
+static void d2_apply_saved_api(void) {}
+#endif
+
+/* Starts this program again with the same command line and closes this one through the normal shutdown (which
+ * waits for a save in progress). The new copy waits for this process to be gone. Unsaved progress is lost. */
+static void d2_restart_process(void)
+{
+    wchar_t exe[MAX_PATH * 2];
+    DWORD n = GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof exe / sizeof exe[0]));
+    if (n == 0 || n >= sizeof exe / sizeof exe[0]) return;
+    wchar_t pid[32];
+    swprintf(pid, sizeof pid / sizeof pid[0], L"%lu", (unsigned long)GetCurrentProcessId());
+    _wputenv_s(L"D2_RESTART_WAIT_PID", pid);
+    std::wstring command = GetCommandLineW();
+    STARTUPINFOW startup;
+    ZeroMemory(&startup, sizeof startup);
+    startup.cb = sizeof startup;
+    PROCESS_INFORMATION info;
+    ZeroMemory(&info, sizeof info);
+    fflush(nullptr);
+    if (!CreateProcessW(exe, &command[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &info)) {
+        _putenv_s("D2_RESTART_WAIT_PID", "");
+        fprintf(stderr, "[graphics] restart failed (error %lu)\n", (unsigned long)GetLastError());
+        return;
+    }
+    CloseHandle(info.hThread);
+    CloseHandle(info.hProcess);
+    ps3_host_request_stop(); /* the normal close path: waits for any save in progress, then ends the process */
+}
+
+extern "C" void d2_restart_with_api(int api)
+{
+    if (api >= 0) d2_write_saved_api(api); /* api < 0: restart with the same API (options that apply at start) */
+    d2_restart_process();
+}
+
+static void d2_wait_for_previous_instance(void)
+{
+    wchar_t* value = nullptr;
+    size_t length = 0;
+    if (_wdupenv_s(&value, &length, L"D2_RESTART_WAIT_PID") != 0 || !value) return;
+    const unsigned long pid = wcstoul(value, nullptr, 10);
+    free(value);
+    _putenv_s("D2_RESTART_WAIT_PID", "");
+    if (!pid) return;
+    HANDLE previous = OpenProcess(SYNCHRONIZE, FALSE, (DWORD)pid);
+    if (!previous) return;
+    WaitForSingleObject(previous, 30000);
+    CloseHandle(previous);
+}
+
+
 int main(int argc, char** argv)
 {
+#ifdef _WIN32
+    static std::string standalone_eboot;
+    static char* standalone_argv[2];
+    { // Per-monitor DPI awareness: real pixels on every monitor (no blurry bitmap scaling at 125%/150%), set before any window exists.
+        typedef BOOL(WINAPI * SetDpiCtx)(HANDLE);
+        if (HMODULE user = GetModuleHandleW(L"user32.dll"))
+            if (auto set = reinterpret_cast<SetDpiCtx>(reinterpret_cast<void*>(GetProcAddress(user, "SetProcessDpiAwarenessContext"))))
+                set(reinterpret_cast<HANDLE>(static_cast<intptr_t>(-4))); // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    }
+    d2_wait_for_previous_instance();
+    if (argc == 2 && strcmp(argv[1], "--create-shortcut") == 0) return d2_create_shortcut();
+    if (argc < 2) {
+        if (!d2_standalone_start(standalone_eboot)) return 2;
+        standalone_argv[0] = argv[0];
+        standalone_argv[1] = &standalone_eboot[0];
+        argv = standalone_argv;
+        argc = 2;
+    }
+    d2_apply_saved_api();
+    if (const char* error = d2::graphics::unavailable_reason(
+            d2::graphics::requested_api(getenv("D2_GRAPHICS_API")),
+            getenv("D2_VULKAN_EXPERIMENTAL"))) {
+        const char* fallback = getenv("D2_VULKAN_FALLBACK");
+        if (d2::graphics::requested_api(getenv("D2_GRAPHICS_API")) == d2::graphics::Api::vulkan &&
+            fallback && strcmp(fallback, "d3d12") == 0) {
+            // This build has no Vulkan backend: say so and use DirectX 12 (never a silent switch).
+            fprintf(stderr, "[graphics] %s Falling back to DirectX 12 (explicit fallback).\n", error);
+            _putenv_s("D2_GRAPHICS_API", "d3d12");
+            MessageBoxA(nullptr,
+                "Esta versao do jogo nao tem o backend Vulkan.\nO jogo vai usar DirectX 12.\n\n"
+                "This build has no Vulkan backend.\nThe game will use DirectX 12.",
+                "Disgaea D2", MB_OK | MB_ICONINFORMATION | MB_TASKMODAL);
+        } else {
+            fprintf(stderr, "[graphics] %s\n", error);
+            return 2;
+        }
+    }
+#endif
 #ifdef __APPLE__
     if (argc == 2 && strcmp(argv[1], "--settings-test") == 0) return d2_settings_self_test();
     d2_settings_init();
 #endif
     if (argc < 2) {
-        printf("usage: %s <PPU ELF>\n", argv[0]);
+        printf("usage: %s <PPU ELF> [--iso <decrypted ISO>]\n", argv[0]);
         return 2;
     }
 
@@ -527,6 +893,33 @@ int main(int argc, char** argv)
         fprintf(stderr, "ERROR: could not allocate the guest address space\n");
         return 1;
     }
+
+#ifdef D2_ENABLE_ISO_VFS
+    d2_iso_bind_memory(vm_base, UINT64_C(0x100000000));
+    std::string iso_path;
+#ifdef _WIN32
+    const wchar_t* selected_iso = _wgetenv(L"D2_GAME_ISO");
+    int wide_count = 0;
+    wchar_t** wide_args = CommandLineToArgvW(GetCommandLineW(), &wide_count);
+    if (argc == 4 && strcmp(argv[2], "--iso") == 0 && wide_args && wide_count == 4)
+        selected_iso = wide_args[3];
+    if (selected_iso && *selected_iso) {
+        auto utf8 = std::filesystem::path(selected_iso).u8string();
+        iso_path.assign(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+    }
+    if (wide_args) LocalFree(wide_args);
+#else
+    const char* selected_iso = getenv("D2_GAME_ISO");
+    if (argc == 4 && strcmp(argv[2], "--iso") == 0) selected_iso = argv[3];
+    if (selected_iso) iso_path = selected_iso;
+#endif
+    if (!iso_path.empty()) {
+        if (d2_iso_mount(iso_path.c_str()) != 0 || d2_iso_check_title("BLUS31313") != 0) {
+            fprintf(stderr, "ERROR: ISO mount: %s\n", d2_iso_last_error()); return 1;
+        }
+        fprintf(stderr, "[vfs] direct ISO mounted; updates/DLC/saves use existing HDD mounts\n");
+    }
+#endif
 
     uint32_t entry = ppu_load_elf(argv[1]);
     if (!entry) {

@@ -1,0 +1,50 @@
+name: Native ISO VFS
+on:
+  push:
+    paths:
+      - 'port/vfs/**'
+      - 'port/CMakeLists.txt'
+      - 'port/main.cpp'
+      - 'tools/check_iso_vfs.py'
+      - 'docs/ISO-VFS.md'
+      - '.github/workflows/iso-vfs.yml'
+  pull_request:
+    paths:
+      - 'port/vfs/**'
+      - 'port/CMakeLists.txt'
+      - 'port/main.cpp'
+      - 'tools/check_iso_vfs.py'
+      - 'docs/ISO-VFS.md'
+      - '.github/workflows/iso-vfs.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build native reader and execute synthetic UDF/SDK regressions
+        run: python tools/check_iso_vfs.py
+      - name: Preserve native test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IsoVfs-Test-Report-${{ matrix.os }}
+          path: build-iso-vfs/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+      - name: Preserve standalone Windows ISO checker
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2-ISO-Check-Windows-x64
+          path: iso-probe-windows/
+          if-no-files-found: error

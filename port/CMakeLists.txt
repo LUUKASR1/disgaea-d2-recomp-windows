@@ -13,6 +13,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(D2_ENABLE_ISO_VFS "Experimental direct UDF/ISO9660 ISO assets (decrypted images)" OFF)
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")
@@ -170,6 +172,11 @@ endif()
 # different reason. add_subdirectory hands all of that over with the target.
 add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
+include(graphics/integrate.cmake)
+option(D2_VULKAN_GAME_BACKEND "Build the experimental Vulkan RSX backend (M1: presentation only)" OFF)
+if(WIN32 AND D2_VULKAN_GAME_BACKEND)
+    include(vulkan/integrate.cmake)
+endif()
 
 # ---------------------------------------------------------------------------
 # The HLE NID table
@@ -210,6 +217,9 @@ set(PS3RECOMP_SCAFFOLD
     "${PS3RECOMP_DIR}/runtime/ppu/ppu_fs.cpp"
     "${PS3RECOMP_DIR}/runtime/ppu/ppu_sysprx.cpp"
 )
+if(D2_ENABLE_ISO_VFS)
+    include(vfs/integrate.cmake)
+endif()
 
 # ---------------------------------------------------------------------------
 # Lifted SPU images (optional)
@@ -304,11 +314,26 @@ endif()
 # app.rc carries the icon, the version block and the manifest, and needs a
 # resource compiler. Listing it as a source on a host that has none is not a
 # link error, it is a "no rule to make" for a file nothing can consume.
-if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app.rc")
-    target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/app.rc")
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app.rc" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../windows/assets/launcher.ico")
+    enable_language(RC OPTIONAL)
+    if(CMAKE_RC_COMPILER)
+        # windres resolves ICON paths from the build directory, so the .rc is generated with the icon's absolute path.
+        get_filename_component(D2_APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/../windows/assets/launcher.ico" ABSOLUTE)
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/app.rc" "${CMAKE_CURRENT_BINARY_DIR}/d2_app.rc" @ONLY)
+        target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/d2_app.rc")
+    else()
+        message(STATUS "No resource compiler found: the game exe is built without its icon")
+    endif()
 endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE D2_GAME_VERSION=${D2_GAME_VERSION})
+if(D2_ENABLE_ISO_VFS)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE D2_ENABLE_ISO_VFS=1)
+    target_link_libraries(${PROJECT_NAME} PRIVATE d2_iso_vfs)
+    if(WIN32)
+        target_link_libraries(${PROJECT_NAME} PRIVATE shell32)
+    endif()
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     "${RECOMP_DIR}"                            # the generated ppu_recomp.h
@@ -320,12 +345,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     "${PS3RECOMP_DIR}/runtime/platform"        # win32_compat.h and friends
     "${PS3RECOMP_DIR}/libs/video"
     "${PS3RECOMP_DIR}/libs/system"
+    "${PS3RECOMP_DIR}/libs/codec"              # stb_image_write (texture dump)
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ps3recomp_runtime
 )
+if(TARGET d2_vulkan_game)
+    target_link_libraries(${PROJECT_NAME} PRIVATE d2_vulkan_game)
+    if(D2_VULKAN_DXC_RC)
+        target_sources(${PROJECT_NAME} PRIVATE "${D2_VULKAN_DXC_RC}")
+    endif()
+endif()
 
 # The runtime is C++, and on Apple also Objective-C. Letting CMake infer the
 # link language from the generated C would leave the C++ standard library out.

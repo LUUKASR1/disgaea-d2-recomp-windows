@@ -23,6 +23,15 @@ conectado nessa porta e a janela do jogo tem foco.
 Este guia não acrescenta remapeamento nem seleção direta pelo mouse dentro do
 jogo. Os cliques do launcher funcionam normalmente.
 
+### Remapear o teclado (novo)
+
+Em **F1 → CONTROLES** (na janela do jogo) clique em uma ação e aperte a nova tecla;
+Esc cancela e o botão direito do mouse também. Se a tecla já era de outra ação, as
+duas trocam de lugar. As teclas ficam salvas em `settings.ini` (`key0`…`key13`) e só
+valem quando não há controle conectado (o controle XInput tem prioridade). F1, F11 e Esc
+são reservadas. O mouse dentro do jogo (selecionar casas e menus pelo ponteiro) continua
+não disponível, pelos motivos abaixo.
+
 ### Próxima etapa: ponteiro dentro do jogo
 
 A auditoria encontrou a leitura do controle no runtime e um gancho de

@@ -2,7 +2,6 @@
   "environment": {
     "D2_MOVIE_SKIP": "1",
     "SCREEN_AS_TEX": "0",
-    "PS3_SAVEDATA_UI": "headless",
     "D2_WINDOWS_GRAPHICS_IDLE": "1",
     "D2_PRESENT_INTERVAL": "0",
     "D2_GCM_IMMEDIATE": "1",
@@ -33,6 +32,8 @@
     "D2_BOOT_TRACE",
     "D2_CAPTURE_F8",
     "D2_CAPTURE_MASK_STATE",
+    "D2_SHADER_CORPUS",
+    "D2_DRAW_CAPTURE",
     "D2_FIFO_DETAIL",
     "D2_FIFO_SAMPLE",
     "D2_FRAME_LIGHT",

@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 4ef4dfa..015a95a 100644
+index 4ef4dfa9..015a95ad 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -48,12 +48,18 @@ list(FILTER HLE_SOURCES EXCLUDE REGEX "/tests/")
@@ -75,7 +75,7 @@ index 4ef4dfa..015a95a 100644
      # Real cl.exe -- clang-cl reports its id as Clang and is handled above.
      #
 diff --git a/libs/audio/cellAudio.c b/libs/audio/cellAudio.c
-index b51fb7c..0b533af 100644
+index b51fb7c4..0b533afe 100644
 --- a/libs/audio/cellAudio.c
 +++ b/libs/audio/cellAudio.c
 @@ -20,6 +20,25 @@
@@ -648,7 +648,7 @@ index b51fb7c..0b533af 100644
              s_notify_queues[i].in_use = 1;
 diff --git a/libs/audio/cellAudio_host.h b/libs/audio/cellAudio_host.h
 new file mode 100644
-index 0000000..ec0ddf1
+index 00000000..ec0ddf1f
 --- /dev/null
 +++ b/libs/audio/cellAudio_host.h
 @@ -0,0 +1,20 @@
@@ -674,7 +674,7 @@ index 0000000..ec0ddf1
 +#endif
 diff --git a/libs/audio/tests/test_audio_host_gain.c b/libs/audio/tests/test_audio_host_gain.c
 new file mode 100644
-index 0000000..86e51eb
+index 00000000..86e51eb5
 --- /dev/null
 +++ b/libs/audio/tests/test_audio_host_gain.c
 @@ -0,0 +1,48 @@
@@ -728,7 +728,7 @@ index 0000000..86e51eb
 +}
 diff --git a/libs/audio/tests/test_audio_wait.c b/libs/audio/tests/test_audio_wait.c
 new file mode 100644
-index 0000000..47bcc53
+index 00000000..47bcc537
 --- /dev/null
 +++ b/libs/audio/tests/test_audio_wait.c
 @@ -0,0 +1,146 @@
@@ -880,7 +880,7 @@ index 0000000..47bcc53
 +}
 diff --git a/libs/codec/avc_decoder.cpp b/libs/codec/avc_decoder.cpp
 new file mode 100644
-index 0000000..94091c3
+index 00000000..94091c37
 --- /dev/null
 +++ b/libs/codec/avc_decoder.cpp
 @@ -0,0 +1,192 @@
@@ -1078,7 +1078,7 @@ index 0000000..94091c3
 +extern "C" void avc_frame_release(AvcFrame* f) { std::free(f->yuv); f->yuv = nullptr; }
 diff --git a/libs/codec/avc_decoder.h b/libs/codec/avc_decoder.h
 new file mode 100644
-index 0000000..6bd4628
+index 00000000..6bd46287
 --- /dev/null
 +++ b/libs/codec/avc_decoder.h
 @@ -0,0 +1,25 @@
@@ -1109,7 +1109,7 @@ index 0000000..6bd4628
 +#endif
 diff --git a/libs/codec/avc_packet.h b/libs/codec/avc_packet.h
 new file mode 100644
-index 0000000..e2bac35
+index 00000000..e2bac354
 --- /dev/null
 +++ b/libs/codec/avc_packet.h
 @@ -0,0 +1,76 @@
@@ -1191,7 +1191,7 @@ index 0000000..e2bac35
 +#endif
 diff --git a/libs/codec/avc_sps.c b/libs/codec/avc_sps.c
 new file mode 100644
-index 0000000..81e2d70
+index 00000000..81e2d708
 --- /dev/null
 +++ b/libs/codec/avc_sps.c
 @@ -0,0 +1,131 @@
@@ -1328,7 +1328,7 @@ index 0000000..81e2d70
 +}
 diff --git a/libs/codec/avc_sps.h b/libs/codec/avc_sps.h
 new file mode 100644
-index 0000000..74df2c6
+index 00000000..74df2c6d
 --- /dev/null
 +++ b/libs/codec/avc_sps.h
 @@ -0,0 +1,18 @@
@@ -1351,7 +1351,7 @@ index 0000000..74df2c6
 +#endif
 +#endif
 diff --git a/libs/codec/cellAdec.c b/libs/codec/cellAdec.c
-index 3da7017..9e2cacc 100644
+index 3da70179..9e2cacce 100644
 --- a/libs/codec/cellAdec.c
 +++ b/libs/codec/cellAdec.c
 @@ -1,325 +1,151 @@
@@ -1805,7 +1805,7 @@ index 3da7017..9e2cacc 100644
 +    a->frames.pop_front(); return CELL_OK;
  }
 diff --git a/libs/codec/cellAdec.h b/libs/codec/cellAdec.h
-index 2282b24..b9a53d0 100644
+index 2282b242..b9a53d00 100644
 --- a/libs/codec/cellAdec.h
 +++ b/libs/codec/cellAdec.h
 @@ -44,12 +44,13 @@ extern "C" {
@@ -1846,7 +1846,7 @@ index 2282b24..b9a53d0 100644
  
  /* NOT a host function pointer. The guest's cbFunc is a guest EA naming an OPD,
 diff --git a/libs/codec/cellAtrac.c b/libs/codec/cellAtrac.c
-index 6138658..7dc0052 100644
+index 61386584..7dc0052b 100644
 --- a/libs/codec/cellAtrac.c
 +++ b/libs/codec/cellAtrac.c
 @@ -1,8 +1,8 @@
@@ -2473,7 +2473,7 @@ index 6138658..7dc0052 100644
      return CELL_OK;
  }
 diff --git a/libs/codec/cellAtrac.h b/libs/codec/cellAtrac.h
-index 3a473eb..8398493 100644
+index 3a473ebf..83984938 100644
 --- a/libs/codec/cellAtrac.h
 +++ b/libs/codec/cellAtrac.h
 @@ -22,16 +22,22 @@ extern "C" {
@@ -2514,7 +2514,7 @@ index 3a473eb..8398493 100644
  s32 cellAtracGetNextSample(u32 pHandle, u32 puiNextSample);
 diff --git a/libs/codec/cellAtrac_host.h b/libs/codec/cellAtrac_host.h
 new file mode 100644
-index 0000000..06bfd8a
+index 00000000..06bfd8a7
 --- /dev/null
 +++ b/libs/codec/cellAtrac_host.h
 @@ -0,0 +1,12 @@
@@ -2531,7 +2531,7 @@ index 0000000..06bfd8a
 +#endif
 +#endif
 diff --git a/libs/codec/cellDmux.c b/libs/codec/cellDmux.c
-index b055385..c218a55 100644
+index b0553858..c218a553 100644
 --- a/libs/codec/cellDmux.c
 +++ b/libs/codec/cellDmux.c
 @@ -1,290 +1,296 @@
@@ -3085,7 +3085,7 @@ index b055385..c218a55 100644
      return CELL_OK;
  }
 diff --git a/libs/codec/cellDmux.h b/libs/codec/cellDmux.h
-index 8f1ecf3..f024870 100644
+index 8f1ecf39..f0248706 100644
 --- a/libs/codec/cellDmux.h
 +++ b/libs/codec/cellDmux.h
 @@ -1,135 +1,59 @@
@@ -3262,7 +3262,7 @@ index 8f1ecf3..f024870 100644
 -#endif /* PS3RECOMP_CELL_DMUX_H */
 +#endif
 diff --git a/libs/codec/cellPamf.c b/libs/codec/cellPamf.c
-index 1b6275d..68f4163 100644
+index 1b6275d3..68f4163d 100644
 --- a/libs/codec/cellPamf.c
 +++ b/libs/codec/cellPamf.c
 @@ -11,51 +11,25 @@
@@ -3777,7 +3777,7 @@ index 1b6275d..68f4163 100644
      vm_write32((u32)(uintptr_t)ep + 0, be32(epData));
      vm_write32((u32)(uintptr_t)ep + 4, be32(epData + 4));
 diff --git a/libs/codec/cellPamf.h b/libs/codec/cellPamf.h
-index acf393c..fb4bcd8 100644
+index acf393ca..fb4bcd82 100644
 --- a/libs/codec/cellPamf.h
 +++ b/libs/codec/cellPamf.h
 @@ -19,11 +19,11 @@ extern "C" {
@@ -3873,7 +3873,7 @@ index acf393c..fb4bcd8 100644
  s32 cellPamfReaderGetPresentationEndTime(CellPamfReader* reader, u64* endTime);
  u32 cellPamfReaderGetMuxRateBound(CellPamfReader* reader);
 diff --git a/libs/codec/cellVdec.c b/libs/codec/cellVdec.c
-index 7adbb3e..3aff555 100644
+index 7adbb3e0..3aff5552 100644
 --- a/libs/codec/cellVdec.c
 +++ b/libs/codec/cellVdec.c
 @@ -1,307 +1,204 @@
@@ -4361,7 +4361,7 @@ index 7adbb3e..3aff555 100644
 +s32 cellVdecSetFrameRate(CellVdecHandle h, u32 code)
 +{ (void)code; return slot(h) ? CELL_OK : (s32)CELL_VDEC_ERROR_ARG; }
 diff --git a/libs/codec/cellVdec.h b/libs/codec/cellVdec.h
-index e3d1a6a..a45133b 100644
+index e3d1a6a9..a45133b7 100644
 --- a/libs/codec/cellVdec.h
 +++ b/libs/codec/cellVdec.h
 @@ -24,18 +24,18 @@ extern "C" {
@@ -4414,7 +4414,7 @@ index e3d1a6a..a45133b 100644
  
  typedef u32 (*CellVdecCbMsg)(CellVdecHandle handle, u32 msgType,
 diff --git a/libs/codec/cellVpost.c b/libs/codec/cellVpost.c
-index 4627934..42ac57e 100644
+index 4627934b..42ac57e2 100644
 --- a/libs/codec/cellVpost.c
 +++ b/libs/codec/cellVpost.c
 @@ -1,81 +1,102 @@
@@ -4589,7 +4589,7 @@ index 4627934..42ac57e 100644
 +{ return cellVpostOpen(cfg, res, handle); }
 +s32 cellVpostEnd(CellVpostHandle handle) { return cellVpostClose(handle); }
 diff --git a/libs/codec/cellVpost.h b/libs/codec/cellVpost.h
-index f3eccbd..968e297 100644
+index f3eccbd8..968e297c 100644
 --- a/libs/codec/cellVpost.h
 +++ b/libs/codec/cellVpost.h
 @@ -1,96 +1,51 @@
@@ -4724,7 +4724,7 @@ index f3eccbd..968e297 100644
 +#endif
 diff --git a/libs/codec/pamf_demux.c b/libs/codec/pamf_demux.c
 new file mode 100644
-index 0000000..5ecaafa
+index 00000000..5ecaafad
 --- /dev/null
 +++ b/libs/codec/pamf_demux.c
 @@ -0,0 +1,165 @@
@@ -4895,7 +4895,7 @@ index 0000000..5ecaafa
 +}
 diff --git a/libs/codec/pamf_demux.h b/libs/codec/pamf_demux.h
 new file mode 100644
-index 0000000..90bb9f4
+index 00000000..90bb9f46
 --- /dev/null
 +++ b/libs/codec/pamf_demux.h
 @@ -0,0 +1,22 @@
@@ -4923,7 +4923,7 @@ index 0000000..90bb9f4
 +#endif
 diff --git a/libs/codec/tests/test_atrac_stream_switch.c b/libs/codec/tests/test_atrac_stream_switch.c
 new file mode 100644
-index 0000000..5005b80
+index 00000000..5005b807
 --- /dev/null
 +++ b/libs/codec/tests/test_atrac_stream_switch.c
 @@ -0,0 +1,178 @@
@@ -5107,7 +5107,7 @@ index 0000000..5005b80
 +}
 diff --git a/libs/codec/tests/test_avc_packets.cpp b/libs/codec/tests/test_avc_packets.cpp
 new file mode 100644
-index 0000000..626d1eb
+index 00000000..626d1ebb
 --- /dev/null
 +++ b/libs/codec/tests/test_avc_packets.cpp
 @@ -0,0 +1,119 @@
@@ -5232,7 +5232,7 @@ index 0000000..626d1eb
 +}
 diff --git a/libs/codec/tests/test_avc_session.cpp b/libs/codec/tests/test_avc_session.cpp
 new file mode 100644
-index 0000000..309cff3
+index 00000000..309cff33
 --- /dev/null
 +++ b/libs/codec/tests/test_avc_session.cpp
 @@ -0,0 +1,81 @@
@@ -5318,7 +5318,7 @@ index 0000000..309cff3
 +    CFRelease(image); return 0;
 +}
 diff --git a/libs/codec/tests/test_cellAtrac.c b/libs/codec/tests/test_cellAtrac.c
-index 8cfd2ec..9a36435 100644
+index 8cfd2ec0..9a364351 100644
 --- a/libs/codec/tests/test_cellAtrac.c
 +++ b/libs/codec/tests/test_cellAtrac.c
 @@ -13,7 +13,7 @@
@@ -5454,7 +5454,7 @@ index 8cfd2ec..9a36435 100644
  }
 diff --git a/libs/codec/tests/test_dmux_handshake.cpp b/libs/codec/tests/test_dmux_handshake.cpp
 new file mode 100644
-index 0000000..7c1930e
+index 00000000..7c1930e3
 --- /dev/null
 +++ b/libs/codec/tests/test_dmux_handshake.cpp
 @@ -0,0 +1,86 @@
@@ -5546,7 +5546,7 @@ index 0000000..7c1930e
 +}
 diff --git a/libs/codec/tests/test_movie.cpp b/libs/codec/tests/test_movie.cpp
 new file mode 100644
-index 0000000..a425783
+index 00000000..a425783c
 --- /dev/null
 +++ b/libs/codec/tests/test_movie.cpp
 @@ -0,0 +1,203 @@
@@ -5755,7 +5755,7 @@ index 0000000..a425783
 +}
 diff --git a/libs/codec/tests/test_pamf.c b/libs/codec/tests/test_pamf.c
 new file mode 100644
-index 0000000..a9b6be0
+index 00000000..a9b6be0b
 --- /dev/null
 +++ b/libs/codec/tests/test_pamf.c
 @@ -0,0 +1,61 @@
@@ -5822,7 +5822,7 @@ index 0000000..a9b6be0
 +}
 diff --git a/libs/codec/tests/test_vpost.c b/libs/codec/tests/test_vpost.c
 new file mode 100644
-index 0000000..b979624
+index 00000000..b9796247
 --- /dev/null
 +++ b/libs/codec/tests/test_vpost.c
 @@ -0,0 +1,73 @@
@@ -5901,7 +5901,7 @@ index 0000000..b979624
 +}
 diff --git a/libs/codec/tests/test_vt_mock.cpp b/libs/codec/tests/test_vt_mock.cpp
 new file mode 100644
-index 0000000..c5b8727
+index 00000000..c5b8727e
 --- /dev/null
 +++ b/libs/codec/tests/test_vt_mock.cpp
 @@ -0,0 +1,71 @@
@@ -5978,7 +5978,7 @@ index 0000000..c5b8727
 +INTERPOSE(decode, VTDecompressionSessionDecodeFrame);
 diff --git a/libs/codec/video_convert.c b/libs/codec/video_convert.c
 new file mode 100644
-index 0000000..765e16c
+index 00000000..765e16c1
 --- /dev/null
 +++ b/libs/codec/video_convert.c
 @@ -0,0 +1,59 @@
@@ -6043,7 +6043,7 @@ index 0000000..765e16c
 +}
 diff --git a/libs/codec/video_convert.h b/libs/codec/video_convert.h
 new file mode 100644
-index 0000000..401fc8f
+index 00000000..401fc8f2
 --- /dev/null
 +++ b/libs/codec/video_convert.h
 @@ -0,0 +1,16 @@
@@ -6064,7 +6064,7 @@ index 0000000..401fc8f
 +#endif
 +#endif
 diff --git a/libs/filesystem/cellFs.c b/libs/filesystem/cellFs.c
-index 5166a47..0607f88 100644
+index 5166a47d..0607f882 100644
 --- a/libs/filesystem/cellFs.c
 +++ b/libs/filesystem/cellFs.c
 @@ -6,6 +6,7 @@
@@ -6131,7 +6131,7 @@ index 5166a47..0607f88 100644
  
      if (free_block_count) vm_write64((u32)(uintptr_t)free_block_count, free_blocks);
 diff --git a/libs/filesystem/edat.c b/libs/filesystem/edat.c
-index 64f0ff5..b5845f8 100644
+index 64f0ff5c..b5845f83 100644
 --- a/libs/filesystem/edat.c
 +++ b/libs/filesystem/edat.c
 @@ -24,6 +24,20 @@
@@ -6596,7 +6596,7 @@ index 64f0ff5..b5845f8 100644
 +    return edat_resolve_key(host_path, buf, cap, NULL);
  }
 diff --git a/libs/filesystem/edat.h b/libs/filesystem/edat.h
-index 36b2559..af62988 100644
+index 36b25592..af62988b 100644
 --- a/libs/filesystem/edat.h
 +++ b/libs/filesystem/edat.h
 @@ -14,13 +14,11 @@
@@ -6642,7 +6642,7 @@ index 36b2559..af62988 100644
   * RFC 4493 vectors. Returns 0 if both match. Run once on first use: silently
 diff --git a/libs/filesystem/tests/test_edat_cache.py b/libs/filesystem/tests/test_edat_cache.py
 new file mode 100644
-index 0000000..178d06d
+index 00000000..178d06df
 --- /dev/null
 +++ b/libs/filesystem/tests/test_edat_cache.py
 @@ -0,0 +1,117 @@
@@ -6764,7 +6764,7 @@ index 0000000..178d06d
 +        _, status = os.waitpid(child, 0); assert os.waitstatus_to_exitcode(status) == 0
 +    print('PASS: 160 concurrent thread resolves/opens plus 80 process resolves preserve completed descriptors', flush=True)
 diff --git a/libs/font/cellL10n.c b/libs/font/cellL10n.c
-index d1b4b1e..2dc48aa 100644
+index d1b4b1e5..2dc48aa4 100644
 --- a/libs/font/cellL10n.c
 +++ b/libs/font/cellL10n.c
 @@ -3,13 +3,20 @@
@@ -6936,7 +6936,7 @@ index d1b4b1e..2dc48aa 100644
 +    return mask ? mask : (1 << 16); /* ILLEGAL */
 +}
 diff --git a/libs/font/cellL10n.h b/libs/font/cellL10n.h
-index 7ac5aac..724556d 100644
+index 7ac5aac6..724556db 100644
 --- a/libs/font/cellL10n.h
 +++ b/libs/font/cellL10n.h
 @@ -108,6 +108,10 @@ s32 l10n_convert(u32 src_encoding, const void* src, u32 src_len,
@@ -6951,7 +6951,7 @@ index 7ac5aac..724556d 100644
  s32 UTF8Len(const u8* utf8);
  /* Single codepoint length in UTF-16 */
 diff --git a/libs/input/cellPad.c b/libs/input/cellPad.c
-index f2b4c11..268b3e6 100644
+index f2b4c119..7df993e9 100644
 --- a/libs/input/cellPad.c
 +++ b/libs/input/cellPad.c
 @@ -16,6 +16,10 @@
@@ -6987,7 +6987,87 @@ index f2b4c11..268b3e6 100644
  static int s_sdl_inited = 0;
  #endif
  
-@@ -272,7 +279,7 @@ static void pad_shutdown_backend(void)
+@@ -140,6 +147,28 @@ static int pad_host_window_focused(void)
+     return pid == GetCurrentProcessId();
+ }
+ 
++/* Keyboard fallback bindings (virtual-key codes), changeable at run time by the host
++ * application (in-game options menu) through ps3_pad_set_keyboard_map(). */
++#define PAD_KB_KEYS 14
++static volatile int s_kb_vk[PAD_KB_KEYS] = {
++    VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB };
++static const u16 s_kb_btn[PAD_KB_KEYS] = {
++    CELL_PAD_CTRL_UP, CELL_PAD_CTRL_DOWN, CELL_PAD_CTRL_LEFT, CELL_PAD_CTRL_RIGHT,
++    CELL_PAD_CTRL_CROSS, CELL_PAD_CTRL_CIRCLE, CELL_PAD_CTRL_SQUARE, CELL_PAD_CTRL_TRIANGLE,
++    CELL_PAD_CTRL_L1, CELL_PAD_CTRL_R1, CELL_PAD_CTRL_L2, CELL_PAD_CTRL_R2,
++    CELL_PAD_CTRL_START, CELL_PAD_CTRL_SELECT };
++/* Order: up, down, left, right, cross, circle, square, triangle, L1, R1, L2, R2, start, select.
++ * Entries outside 1..254 are ignored. */
++void ps3_pad_set_keyboard_map(const int* vk, int count)
++{
++    for (int i = 0; vk && i < count && i < PAD_KB_KEYS; i++)
++        if (vk[i] > 0 && vk[i] < 255) s_kb_vk[i] = vk[i];
++    printf("[cellPad] keyboard map:");
++    for (int i = 0; i < PAD_KB_KEYS; i++) printf(" %d", s_kb_vk[i]);
++    printf("\n");
++    fflush(stdout);
++}
++
+ static void pad_poll_keyboard(void)
+ {
+     static int off = -1;
+@@ -147,7 +176,11 @@ static void pad_poll_keyboard(void)
+     if (off) return;
+ 
+     PadHostState* hs = &s_host_state[0];
++    /* A real controller already feeds port 0: the keyboard is merged on top of it
++     * (either can play) instead of being ignored. */
++    const int controller = hs->connected;
+     if (!pad_host_window_focused()) {
++        if (controller) return;
+         /* Release everything on focus loss, or a key held while alt-tabbing
+          * would stay down forever. */
+         hs->buttons = 0;
+@@ -157,19 +190,26 @@ static void pad_poll_keyboard(void)
+         return;
+     }
+ 
+-    static const struct { int vk; u16 btn; } map[] = {
+-        { VK_UP,     CELL_PAD_CTRL_UP },      { VK_DOWN,  CELL_PAD_CTRL_DOWN },
+-        { VK_LEFT,   CELL_PAD_CTRL_LEFT },    { VK_RIGHT, CELL_PAD_CTRL_RIGHT },
+-        { 'Z',       CELL_PAD_CTRL_CROSS },   { 'X',      CELL_PAD_CTRL_CIRCLE },
+-        { 'A',       CELL_PAD_CTRL_SQUARE },  { 'S',      CELL_PAD_CTRL_TRIANGLE },
+-        { 'Q',       CELL_PAD_CTRL_L1 },      { 'W',      CELL_PAD_CTRL_R1 },
+-        { '1',       CELL_PAD_CTRL_L2 },      { '2',      CELL_PAD_CTRL_R2 },
+-        { VK_RETURN, CELL_PAD_CTRL_START },   { VK_TAB,   CELL_PAD_CTRL_SELECT },
+-    };
+-
+     u16 btns = 0;
+-    for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++)
+-        if (GetAsyncKeyState(map[i].vk) & 0x8000) btns |= map[i].btn;
++    for (unsigned i = 0; i < PAD_KB_KEYS; i++)
++        if (s_kb_vk[i] && (GetAsyncKeyState(s_kb_vk[i]) & 0x8000)) btns |= s_kb_btn[i];
++
++    if (controller) {
++        if (btns) {
++            hs->buttons |= btns;
++            if (abs((int)hs->analog_lx - 128) < 40)
++                hs->analog_lx = (u8)((btns & CELL_PAD_CTRL_LEFT) ? 0 : (btns & CELL_PAD_CTRL_RIGHT) ? 255 : hs->analog_lx);
++            if (abs((int)hs->analog_ly - 128) < 40)
++                hs->analog_ly = (u8)((btns & CELL_PAD_CTRL_UP) ? 0 : (btns & CELL_PAD_CTRL_DOWN) ? 255 : hs->analog_ly);
++            if (btns & CELL_PAD_CTRL_L2) hs->trigger_l2 = 255;
++            if (btns & CELL_PAD_CTRL_R2) hs->trigger_r2 = 255;
++        }
++        { static int said = 0;
++          if (!said && btns) { said = 1;
++              printf("[cellPad] keyboard merged with the connected controller on port 0\n");
++              fflush(stdout); } }
++        return;
++    }
+ 
+     hs->buttons   = btns;
+     hs->connected = 1;
+@@ -272,7 +312,7 @@ static void pad_shutdown_backend(void)
  static u8 pad_sdl_axis_to_u8(int raw)
  {
      /* SDL axis: -32768..32767 -> 0..255 with center at 128 */
@@ -6996,7 +7076,7 @@ index f2b4c11..268b3e6 100644
      if (val < 0) val = 0;
      if (val > 255) val = 255;
      return (u8)val;
-@@ -287,24 +294,63 @@ static u8 pad_sdl_trigger_to_u8(int raw)
+@@ -287,24 +327,63 @@ static u8 pad_sdl_trigger_to_u8(int raw)
      return (u8)val;
  }
  
@@ -7066,7 +7146,7 @@ index f2b4c11..268b3e6 100644
              }
              continue;
          }
-@@ -361,31 +407,34 @@ static void pad_poll_sdl2(void)
+@@ -361,31 +440,34 @@ static void pad_poll_sdl2(void)
  
  static void pad_init_backend(void)
  {
@@ -7115,7 +7195,7 @@ index f2b4c11..268b3e6 100644
  }
  
  #endif /* PAD_BACKEND_SDL2 */
-@@ -421,14 +470,9 @@ static unsigned long long pad_now_ms(void)
+@@ -421,14 +503,9 @@ static unsigned long long pad_now_ms(void)
  #endif
  }
  
@@ -7132,7 +7212,7 @@ index f2b4c11..268b3e6 100644
      /* A real pad streams reports at roughly this rate whether or not anything
       * changed, and libpad buffers them; a fresh sweep is a fresh report for
       * every port. cellPadGetData hands each one out exactly once. */
-@@ -437,10 +481,63 @@ static void pad_poll_backend(void)
+@@ -437,10 +514,63 @@ static void pad_poll_backend(void)
  #if PAD_BACKEND_XINPUT
      pad_poll_xinput();
  #elif PAD_BACKEND_SDL2
@@ -7143,7 +7223,8 @@ index f2b4c11..268b3e6 100644
  #endif
 +#endif
  #ifdef _WIN32
-     if (!s_host_state[0].connected) pad_poll_keyboard();
+-    if (!s_host_state[0].connected) pad_poll_keyboard();
++    pad_poll_keyboard(); /* keyboard on port 0, alone or merged with a connected controller */
 +#elif defined(__APPLE__)
 +    if (!s_host_state[0].connected && pad_macos_keyboard_enabled()) {
 +        PadHostState* hs = &s_host_state[0];
@@ -7196,7 +7277,7 @@ index f2b4c11..268b3e6 100644
  #endif
  }
  
-@@ -466,8 +563,16 @@ s32 cellPadInit(u32 max_connect)
+@@ -466,8 +596,16 @@ s32 cellPadInit(u32 max_connect)
      s_max_connect = max_connect > CELL_PAD_MAX_PORT_NUM ? CELL_PAD_MAX_PORT_NUM : max_connect;
      memset(s_port_setting, 0, sizeof(s_port_setting));
      memset(s_host_state, 0, sizeof(s_host_state));
@@ -7213,7 +7294,7 @@ index f2b4c11..268b3e6 100644
  
      /* Do an initial poll to detect connected controllers */
      pad_poll_backend();
-@@ -482,7 +587,11 @@ s32 cellPadEnd(void)
+@@ -482,7 +620,11 @@ s32 cellPadEnd(void)
      if (!s_pad_initialized)
          return CELL_PAD_ERROR_NOT_OPENED;
  
@@ -7225,7 +7306,7 @@ index f2b4c11..268b3e6 100644
  
      s_pad_initialized = 0;
      s_max_connect = 0;
-@@ -502,23 +611,9 @@ void cellPad_poll(void)
+@@ -502,23 +644,9 @@ void cellPad_poll(void)
   * were fixed.) These used to be redeclared here with a 64-bit address
   * parameter, which conflicts with the header now that it is included. */
  
@@ -7251,7 +7332,7 @@ index f2b4c11..268b3e6 100644
      /* YDKJ_INJECT_PAD: the game's wait loop polls the pad (cellPadSetActDirect /
       * GetData) -- if it's parked on a "press button" prompt after loading, no
       * host input means it waits forever. Inject a real button PULSE (CROSS+START+
-@@ -618,7 +713,7 @@ skip_inject: ;
+@@ -618,7 +746,7 @@ skip_inject: ;
       * LEFT 0x0080, RIGHT 0x0020, CROSS 0x4000, CIRCLE 0x2000, TRIANGLE 0x1000.
       * Legit input simulation on the same footing as PAD_AUTOPRESS/PAD_STICK. */
      { static int s_sc = -1;
@@ -7260,7 +7341,7 @@ index f2b4c11..268b3e6 100644
        static unsigned long long t0 = 0;   /* not ULONGLONG: this builds on POSIX too */
        if (s_sc < 0) {
            s_sc = 0;
-@@ -626,7 +721,7 @@ skip_inject: ;
+@@ -626,7 +754,7 @@ skip_inject: ;
            if (e && *e) {
                s_sc = 1; t0 = GetTickCount64();
                const char* p = e;
@@ -7269,7 +7350,7 @@ index f2b4c11..268b3e6 100644
                    double t = strtod(p, (char**)&p);
                    if (*p == ':') p++;
                    unsigned m = (unsigned)strtoul(p, (char**)&p, 0);
-@@ -644,14 +739,19 @@ skip_inject: ;
+@@ -644,14 +772,19 @@ skip_inject: ;
             * happens. Fire on the first poll at or after the event time and
             * hold it for a fixed number of polls, which is what a real press
             * looks like regardless of poll rate. */
@@ -7294,7 +7375,7 @@ index f2b4c11..268b3e6 100644
                    if (!said[i]) { said[i] = 1;
                        printf("[cellPad] PAD_SCRIPT t=%.1fs press 0x%04X\n", ev[i].t, ev[i].mask); }
                }
-@@ -797,6 +897,81 @@ skip_inject: ;
+@@ -797,6 +930,81 @@ skip_inject: ;
      }  /* end connected block */
  
  emit:
@@ -7376,7 +7457,7 @@ index f2b4c11..268b3e6 100644
      /* A non-zero len means "here is a CHANGE packet" -- the constant is literally
       * named CELL_PAD_LEN_CHANGE_DEFAULT. Hardware reports len = 0 once the port
       * has nothing new, and titles DRAIN on that: The Simpsons Arcade Game's
-@@ -829,6 +1004,16 @@ emit:
+@@ -829,6 +1037,16 @@ emit:
              else                        s_data_fresh[port_no] = 0;
          }
      }
@@ -7393,7 +7474,7 @@ index f2b4c11..268b3e6 100644
      {
          unsigned int ea = (unsigned int)(uintptr_t)data_guest;
          vm_write32((unsigned long long)ea + 0, (unsigned int)data->len);   /* len (s32) */
-@@ -838,6 +1023,15 @@ emit:
+@@ -838,6 +1056,15 @@ emit:
      return CELL_OK;
  }
  
@@ -7409,7 +7490,7 @@ index f2b4c11..268b3e6 100644
  /* cellPadGetInfo (v1 API, NID 0x3AAAD464) — used by PSL1GHT's ioPadGetInfo.
   * Layout (RPCS3 cellPad.h CellPadInfo, all big-endian):
   *   +0x00 u32 max_connect        +0x04 u32 now_connect   +0x08 u32 system_info
-@@ -993,15 +1187,16 @@ s32 cellPadPeriphGetInfo(CellPadPeriphInfo* info_guest)
+@@ -993,15 +1220,16 @@ s32 cellPadPeriphGetInfo(CellPadPeriphInfo* info_guest)
  
  s32 cellPadSetPortSetting(u32 port_no, u32 port_setting)
  {
@@ -7430,7 +7511,7 @@ index f2b4c11..268b3e6 100644
      return CELL_OK;
  }
 diff --git a/libs/input/cellPad.h b/libs/input/cellPad.h
-index 89c58ab..bf378e9 100644
+index 89c58ab6..bf378e98 100644
 --- a/libs/input/cellPad.h
 +++ b/libs/input/cellPad.h
 @@ -177,7 +177,12 @@ s32 cellPadInit(u32 max_connect);
@@ -7448,7 +7529,7 @@ index 89c58ab..bf378e9 100644
  s32 cellPadGetInfo2(CellPadInfo2* info);
 diff --git a/libs/input/pad_macos.h b/libs/input/pad_macos.h
 new file mode 100644
-index 0000000..a2ee445
+index 00000000..a2ee4454
 --- /dev/null
 +++ b/libs/input/pad_macos.h
 @@ -0,0 +1,18 @@
@@ -7472,7 +7553,7 @@ index 0000000..a2ee445
 +#endif
 diff --git a/libs/input/pad_macos.m b/libs/input/pad_macos.m
 new file mode 100644
-index 0000000..bd134bd
+index 00000000..bd134bdd
 --- /dev/null
 +++ b/libs/input/pad_macos.m
 @@ -0,0 +1,116 @@
@@ -7594,7 +7675,7 @@ index 0000000..bd134bd
 +}
 diff --git a/libs/input/tests/test_pad_macos.m b/libs/input/tests/test_pad_macos.m
 new file mode 100644
-index 0000000..de6381f
+index 00000000..de6381fe
 --- /dev/null
 +++ b/libs/input/tests/test_pad_macos.m
 @@ -0,0 +1,197 @@
@@ -7797,7 +7878,7 @@ index 0000000..de6381f
 +}
 diff --git a/libs/input/tests/test_pad_overlay.m b/libs/input/tests/test_pad_overlay.m
 new file mode 100644
-index 0000000..ff52cba
+index 00000000..ff52cba8
 --- /dev/null
 +++ b/libs/input/tests/test_pad_overlay.m
 @@ -0,0 +1,114 @@
@@ -7916,7 +7997,7 @@ index 0000000..ff52cba
 +    }
 +}
 diff --git a/libs/misc/cellGameExec.c b/libs/misc/cellGameExec.c
-index f03f1da..6b8fb74 100644
+index f03f1dae..6b8fb746 100644
 --- a/libs/misc/cellGameExec.c
 +++ b/libs/misc/cellGameExec.c
 @@ -5,6 +5,7 @@
@@ -7942,7 +8023,7 @@ index f03f1da..6b8fb74 100644
  {
      printf("[cellGameExec] GetBootGameInfo() -> DISC\n");
 diff --git a/libs/misc/cellGameExec.h b/libs/misc/cellGameExec.h
-index ef9abf2..da043a1 100644
+index ef9abf2e..da043a1a 100644
 --- a/libs/misc/cellGameExec.h
 +++ b/libs/misc/cellGameExec.h
 @@ -48,6 +48,7 @@ s32 cellGameGetExitParam(CellGameExecBootParam* param);
@@ -7954,7 +8035,7 @@ index ef9abf2..da043a1 100644
  
  #ifdef __cplusplus
 diff --git a/libs/network/sceNp.c b/libs/network/sceNp.c
-index 6260452..d111ae3 100644
+index 6260452d..d111ae34 100644
 --- a/libs/network/sceNp.c
 +++ b/libs/network/sceNp.c
 @@ -73,6 +73,7 @@ s32 sceNpTerm(void)
@@ -7966,7 +8047,7 @@ index 6260452..d111ae3 100644
  
      if (!s_np_initialized)
 diff --git a/libs/network/sceNpTrophy.c b/libs/network/sceNpTrophy.c
-index d99e8ac..a89954c 100644
+index d99e8aca..a89954c5 100644
 --- a/libs/network/sceNpTrophy.c
 +++ b/libs/network/sceNpTrophy.c
 @@ -53,6 +53,7 @@ typedef struct {
@@ -8091,7 +8172,7 @@ index d99e8ac..a89954c 100644
  
      if (!s_trophy_initialized)
 diff --git a/libs/network/sceNpTrophy.h b/libs/network/sceNpTrophy.h
-index 48faefd..609c439 100644
+index 48faefdc..609c439d 100644
 --- a/libs/network/sceNpTrophy.h
 +++ b/libs/network/sceNpTrophy.h
 @@ -118,6 +118,7 @@ s32 sceNpTrophyCreateContext(SceNpTrophyContext* context,
@@ -8103,7 +8184,7 @@ index 48faefd..609c439 100644
  
  /* Real ABI: (context, handle, statusCb, arg, options).  statusCb is a guest
 diff --git a/libs/sync/cellSync.c b/libs/sync/cellSync.c
-index 8c70d74..7ba79c6 100644
+index 8c70d74c..7ba79c63 100644
 --- a/libs/sync/cellSync.c
 +++ b/libs/sync/cellSync.c
 @@ -7,6 +7,7 @@
@@ -8141,7 +8222,7 @@ index 8c70d74..7ba79c6 100644
  }
  
 diff --git a/libs/system/cellGame.c b/libs/system/cellGame.c
-index 071b9ec..834c163 100644
+index 071b9ecd..834c163c 100644
 --- a/libs/system/cellGame.c
 +++ b/libs/system/cellGame.c
 @@ -14,6 +14,7 @@
@@ -8925,7 +9006,7 @@ index 071b9ec..834c163 100644
 +    return result;
 +}
 diff --git a/libs/system/cellGame.h b/libs/system/cellGame.h
-index b7dfd50..ebdaa8d 100644
+index b7dfd503..ebdaa8d9 100644
 --- a/libs/system/cellGame.h
 +++ b/libs/system/cellGame.h
 @@ -144,6 +144,7 @@ void cellGame_set_content_path(const char* path);
@@ -8946,7 +9027,7 @@ index b7dfd50..ebdaa8d 100644
  
  s32 cellGameGetParamString(s32 id, char* buf, u32 bufsize);
 diff --git a/libs/system/cellMsgDialog.c b/libs/system/cellMsgDialog.c
-index d1fa7b2..03aac4d 100644
+index d1fa7b2d..03aac4df 100644
 --- a/libs/system/cellMsgDialog.c
 +++ b/libs/system/cellMsgDialog.c
 @@ -1,372 +1,156 @@
@@ -9431,7 +9512,7 @@ index d1fa7b2..03aac4d 100644
 +    ReleaseSRWLockExclusive(&s_dialog_lock);
  }
 diff --git a/libs/system/cellMsgDialog.h b/libs/system/cellMsgDialog.h
-index 632e646..c211625 100644
+index 632e6460..c211625b 100644
 --- a/libs/system/cellMsgDialog.h
 +++ b/libs/system/cellMsgDialog.h
 @@ -22,8 +22,8 @@ extern "C" {
@@ -9477,7 +9558,7 @@ index 632e646..c211625 100644
  
  s32 cellMsgDialogAbort(void);
 diff --git a/libs/system/cellRtc.c b/libs/system/cellRtc.c
-index d1e776c..9b1f25d 100644
+index d1e776ca..9b1f25d1 100644
 --- a/libs/system/cellRtc.c
 +++ b/libs/system/cellRtc.c
 @@ -341,6 +341,13 @@ s32 cellRtcTickAddSeconds(CellRtcTick* pTick0, const CellRtcTick* pTick1, s64 iA
@@ -9495,7 +9576,7 @@ index d1e776c..9b1f25d 100644
  {
      if (!pTick0 || !pTick1)
 diff --git a/libs/system/cellRtc.h b/libs/system/cellRtc.h
-index 6392ccd..50da43a 100644
+index 6392ccd4..50da43ae 100644
 --- a/libs/system/cellRtc.h
 +++ b/libs/system/cellRtc.h
 @@ -66,6 +66,7 @@ s32 cellRtcTickAddDays(CellRtcTick* pTick0, const CellRtcTick* pTick1, s32 iAdd)
@@ -9507,7 +9588,7 @@ index 6392ccd..50da43a 100644
  
  s32 cellRtcConvertLocalTimeToUtc(const CellRtcTick* pLocalTime, CellRtcTick* pUtc);
 diff --git a/libs/system/cellSaveData.c b/libs/system/cellSaveData.c
-index 79ea8ca..81c251c 100644
+index 79ea8cab..81c251c1 100644
 --- a/libs/system/cellSaveData.c
 +++ b/libs/system/cellSaveData.c
 @@ -2,7 +2,7 @@
@@ -11119,7 +11200,7 @@ index 79ea8ca..81c251c 100644
 +    return rc;
 +}
 diff --git a/libs/system/cellSaveData.h b/libs/system/cellSaveData.h
-index 53bbaf8..332b1e4 100644
+index 53bbaf8a..332b1e4d 100644
 --- a/libs/system/cellSaveData.h
 +++ b/libs/system/cellSaveData.h
 @@ -14,6 +14,8 @@
@@ -11233,7 +11314,7 @@ index 53bbaf8..332b1e4 100644
  #endif
 diff --git a/libs/system/param_sfo.h b/libs/system/param_sfo.h
 new file mode 100644
-index 0000000..2ae4552
+index 00000000..2ae45523
 --- /dev/null
 +++ b/libs/system/param_sfo.h
 @@ -0,0 +1,156 @@
@@ -11395,7 +11476,7 @@ index 0000000..2ae4552
 +#endif
 diff --git a/libs/system/savedata_sfo.h b/libs/system/savedata_sfo.h
 new file mode 100644
-index 0000000..2ef9b6f
+index 00000000..2ef9b6f1
 --- /dev/null
 +++ b/libs/system/savedata_sfo.h
 @@ -0,0 +1,67 @@
@@ -11467,7 +11548,7 @@ index 0000000..2ef9b6f
 +}
 +#endif
 diff --git a/libs/system/sysPrxForUser.c b/libs/system/sysPrxForUser.c
-index f6e4e31..83a3c9d 100644
+index f6e4e31f..83a3c9d5 100644
 --- a/libs/system/sysPrxForUser.c
 +++ b/libs/system/sysPrxForUser.c
 @@ -25,6 +25,7 @@
@@ -11480,7 +11561,7 @@ index f6e4e31..83a3c9d 100644
   * -----------------------------------------------------------------------*/
 diff --git a/libs/system/sys_overlay.c b/libs/system/sys_overlay.c
 new file mode 100644
-index 0000000..3bc1217
+index 00000000..3bc12179
 --- /dev/null
 +++ b/libs/system/sys_overlay.c
 @@ -0,0 +1,231 @@
@@ -11717,7 +11798,7 @@ index 0000000..3bc1217
 +}
 diff --git a/libs/system/sys_overlay.h b/libs/system/sys_overlay.h
 new file mode 100644
-index 0000000..9c7217b
+index 00000000..9c7217bc
 --- /dev/null
 +++ b/libs/system/sys_overlay.h
 @@ -0,0 +1,43 @@
@@ -11766,7 +11847,7 @@ index 0000000..9c7217b
 +#endif
 diff --git a/libs/system/tests/overlay_headless_pad.c b/libs/system/tests/overlay_headless_pad.c
 new file mode 100644
-index 0000000..bbc2042
+index 00000000..bbc20428
 --- /dev/null
 +++ b/libs/system/tests/overlay_headless_pad.c
 @@ -0,0 +1,4 @@
@@ -11775,7 +11856,7 @@ index 0000000..bbc2042
 +u16 ps3_pad_host_buttons(void) { return 0; }
 +void ps3_pad_overlay_capture(int active) { (void)active; }
 diff --git a/libs/system/tests/test_dialog_callbacks.c b/libs/system/tests/test_dialog_callbacks.c
-index 1cb09ad..3025b4f 100644
+index 1cb09add..3025b4f2 100644
 --- a/libs/system/tests/test_dialog_callbacks.c
 +++ b/libs/system/tests/test_dialog_callbacks.c
 @@ -1,6 +1,9 @@
@@ -11789,7 +11870,7 @@ index 1cb09ad..3025b4f 100644
  #include <stdlib.h>
  uint8_t* vm_base;
 diff --git a/libs/system/tests/test_game_paths.c b/libs/system/tests/test_game_paths.c
-index b46bc4f..5d2f3c2 100644
+index b46bc4f7..5d2f3c28 100644
 --- a/libs/system/tests/test_game_paths.c
 +++ b/libs/system/tests/test_game_paths.c
 @@ -15,24 +15,41 @@ void spu_lockline_lock(void) {}
@@ -11838,7 +11919,7 @@ index b46bc4f..5d2f3c2 100644
  }
 diff --git a/libs/system/tests/test_gamedata_roundtrip.c b/libs/system/tests/test_gamedata_roundtrip.c
 new file mode 100644
-index 0000000..b497768
+index 00000000..b4977681
 --- /dev/null
 +++ b/libs/system/tests/test_gamedata_roundtrip.c
 @@ -0,0 +1,152 @@
@@ -11995,7 +12076,7 @@ index 0000000..b497768
 +    return 0;
 +}
 diff --git a/libs/system/tests/test_savedata_fixed.c b/libs/system/tests/test_savedata_fixed.c
-index c6bdb67..284ecdf 100644
+index c6bdb67d..284ecdfa 100644
 --- a/libs/system/tests/test_savedata_fixed.c
 +++ b/libs/system/tests/test_savedata_fixed.c
 @@ -1,5 +1,6 @@
@@ -12028,7 +12109,7 @@ index c6bdb67..284ecdf 100644
      assert(cellSaveData_set_scratch_region(0x100001, 0x20000) == CELL_SAVEDATA_ERROR_PARAM);
      assert(cellSaveData_set_scratch_region(0xFFFF0000, 0x20000) == CELL_SAVEDATA_ERROR_PARAM);
 diff --git a/libs/system/tests/test_savedata_io.c b/libs/system/tests/test_savedata_io.c
-index d5925e1..97c6c85 100644
+index d5925e12..97c6c855 100644
 --- a/libs/system/tests/test_savedata_io.c
 +++ b/libs/system/tests/test_savedata_io.c
 @@ -1,5 +1,6 @@
@@ -12051,7 +12132,7 @@ index d5925e1..97c6c85 100644
      strcpy((char*)vm_base + 0x340, "DATA.BIN");
 diff --git a/libs/system/tests/test_savedata_overlay.c b/libs/system/tests/test_savedata_overlay.c
 new file mode 100644
-index 0000000..0f8ddc3
+index 00000000..0f8ddc30
 --- /dev/null
 +++ b/libs/system/tests/test_savedata_overlay.c
 @@ -0,0 +1,71 @@
@@ -12128,7 +12209,7 @@ index 0000000..0f8ddc3
 +}
 diff --git a/libs/system/tests/test_savedata_transaction.c b/libs/system/tests/test_savedata_transaction.c
 new file mode 100644
-index 0000000..001a882
+index 00000000..001a8825
 --- /dev/null
 +++ b/libs/system/tests/test_savedata_transaction.c
 @@ -0,0 +1,133 @@
@@ -12267,7 +12348,7 @@ index 0000000..001a882
 +}
 diff --git a/libs/system/tests/test_sys_overlay.c b/libs/system/tests/test_sys_overlay.c
 new file mode 100644
-index 0000000..2e07a6b
+index 00000000..2e07a6b6
 --- /dev/null
 +++ b/libs/system/tests/test_sys_overlay.c
 @@ -0,0 +1,175 @@
@@ -12447,7 +12528,7 @@ index 0000000..2e07a6b
 +    puts("[P-test] guest-pointer dialogs, deferred sysutil callback/results, error/progress, abort/no callback: PASS");
 +}
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
-index cdb0464..02b26ab 100644
+index cdb04646..02b26abd 100644
 --- a/libs/video/cellGcmSys.c
 +++ b/libs/video/cellGcmSys.c
 @@ -24,6 +24,8 @@ static u32 s_gcm_context_ea = 0;
@@ -14217,7 +14298,7 @@ index cdb0464..02b26ab 100644
 +    cellGcm_fifo_kick();
  }
 diff --git a/libs/video/cellGcmSys.h b/libs/video/cellGcmSys.h
-index 9684667..0ab8fd8 100644
+index 96846675..0ab8fd86 100644
 --- a/libs/video/cellGcmSys.h
 +++ b/libs/video/cellGcmSys.h
 @@ -245,6 +245,12 @@ u32 cellGcmGetFlipStatus(void);
@@ -14264,7 +14345,7 @@ index 9684667..0ab8fd8 100644
  CellGcmTileInfo* cellGcmGetTileInfo(u8 index);
 diff --git a/libs/video/cellGcm_fifo_snapshot.h b/libs/video/cellGcm_fifo_snapshot.h
 new file mode 100644
-index 0000000..38e0f82
+index 00000000..38e0f826
 --- /dev/null
 +++ b/libs/video/cellGcm_fifo_snapshot.h
 @@ -0,0 +1,187 @@
@@ -14456,7 +14537,7 @@ index 0000000..38e0f82
 +    ReleaseSRWLockExclusive(&s_host_copy_lock);
 +}
 diff --git a/libs/video/cellResc.c b/libs/video/cellResc.c
-index f039abf..9b797b3 100644
+index f039abfc..9b797b35 100644
 --- a/libs/video/cellResc.c
 +++ b/libs/video/cellResc.c
 @@ -7,6 +7,8 @@
@@ -14676,7 +14757,7 @@ index f039abf..9b797b3 100644
  
  s32 cellRescSetPalInterpolateDropFlexRatio(float ratio)
 diff --git a/libs/video/cellResc.h b/libs/video/cellResc.h
-index 1fcd485..7d1fdff 100644
+index 1fcd485d..7d1fdfff 100644
 --- a/libs/video/cellResc.h
 +++ b/libs/video/cellResc.h
 @@ -20,10 +20,10 @@ extern "C" {
@@ -14715,7 +14796,7 @@ index 1fcd485..7d1fdff 100644
  s32 cellRescSetVBlankHandler(void (*handler)(u32));
 diff --git a/libs/video/d2_constant_pair.h b/libs/video/d2_constant_pair.h
 new file mode 100644
-index 0000000..7e771fd
+index 00000000..7e771fd5
 --- /dev/null
 +++ b/libs/video/d2_constant_pair.h
 @@ -0,0 +1,82 @@
@@ -14803,7 +14884,7 @@ index 0000000..7e771fd
 +#endif
 diff --git a/libs/video/d2_depth_stencil_windows.h b/libs/video/d2_depth_stencil_windows.h
 new file mode 100644
-index 0000000..bce0b39
+index 00000000..bce0b391
 --- /dev/null
 +++ b/libs/video/d2_depth_stencil_windows.h
 @@ -0,0 +1,101 @@
@@ -14910,7 +14991,7 @@ index 0000000..bce0b39
 +#endif
 diff --git a/libs/video/d2_fifo_frame_time.h b/libs/video/d2_fifo_frame_time.h
 new file mode 100644
-index 0000000..779037f
+index 00000000..779037f9
 --- /dev/null
 +++ b/libs/video/d2_fifo_frame_time.h
 @@ -0,0 +1,38 @@
@@ -14954,7 +15035,7 @@ index 0000000..779037f
 +#endif
 diff --git a/libs/video/d2_fifo_sample.h b/libs/video/d2_fifo_sample.h
 new file mode 100644
-index 0000000..62cdb69
+index 00000000..62cdb690
 --- /dev/null
 +++ b/libs/video/d2_fifo_sample.h
 @@ -0,0 +1,55 @@
@@ -15015,7 +15096,7 @@ index 0000000..62cdb69
 +#endif
 diff --git a/libs/video/d2_fp_const_cache.h b/libs/video/d2_fp_const_cache.h
 new file mode 100644
-index 0000000..86d446b
+index 00000000..86d446ba
 --- /dev/null
 +++ b/libs/video/d2_fp_const_cache.h
 @@ -0,0 +1,69 @@
@@ -15090,7 +15171,7 @@ index 0000000..86d446b
 +#endif
 diff --git a/libs/video/d2_frame_light.h b/libs/video/d2_frame_light.h
 new file mode 100644
-index 0000000..98ee401
+index 00000000..98ee4018
 --- /dev/null
 +++ b/libs/video/d2_frame_light.h
 @@ -0,0 +1,106 @@
@@ -15202,7 +15283,7 @@ index 0000000..98ee401
 +#endif
 diff --git a/libs/video/d2_gcm_ready_wake.h b/libs/video/d2_gcm_ready_wake.h
 new file mode 100644
-index 0000000..970b4b3
+index 00000000..970b4b3b
 --- /dev/null
 +++ b/libs/video/d2_gcm_ready_wake.h
 @@ -0,0 +1,18 @@
@@ -15226,7 +15307,7 @@ index 0000000..970b4b3
 +#endif
 diff --git a/libs/video/d2_pollen_batch.h b/libs/video/d2_pollen_batch.h
 new file mode 100644
-index 0000000..b6be719
+index 00000000..b6be719c
 --- /dev/null
 +++ b/libs/video/d2_pollen_batch.h
 @@ -0,0 +1,72 @@
@@ -15304,7 +15385,7 @@ index 0000000..b6be719
 +#endif
 diff --git a/libs/video/d2_vertex_context.h b/libs/video/d2_vertex_context.h
 new file mode 100644
-index 0000000..f910227
+index 00000000..f9102278
 --- /dev/null
 +++ b/libs/video/d2_vertex_context.h
 @@ -0,0 +1,44 @@
@@ -15354,7 +15435,7 @@ index 0000000..f910227
 +#endif
 diff --git a/libs/video/d2_vp_direct.h b/libs/video/d2_vp_direct.h
 new file mode 100644
-index 0000000..c874ded
+index 00000000..c874deda
 --- /dev/null
 +++ b/libs/video/d2_vp_direct.h
 @@ -0,0 +1,28 @@
@@ -15387,7 +15468,7 @@ index 0000000..c874ded
 +}
 +#endif
 diff --git a/libs/video/rsx_commands.c b/libs/video/rsx_commands.c
-index 9e66d6e..4fd16ed 100644
+index 9e66d6e9..4fd16ed8 100644
 --- a/libs/video/rsx_commands.c
 +++ b/libs/video/rsx_commands.c
 @@ -84,6 +84,15 @@ void rsx_state_init(rsx_state* state)
@@ -15558,7 +15639,7 @@ index 9e66d6e..4fd16ed 100644
  /* ---------------------------------------------------------------------------
   * Command buffer parsing
 diff --git a/libs/video/rsx_commands.h b/libs/video/rsx_commands.h
-index bd655fe..63c3a1e 100644
+index bd655fe8..63c3a1e5 100644
 --- a/libs/video/rsx_commands.h
 +++ b/libs/video/rsx_commands.h
 @@ -273,6 +273,14 @@ typedef struct rsx_state {
@@ -15577,7 +15658,7 @@ index bd655fe..63c3a1e 100644
      /* Culling */
      int cull_face_enable;
 diff --git a/libs/video/rsx_d3d12_backend.c b/libs/video/rsx_d3d12_backend.c
-index 68929ed..93389ae 100644
+index 68929ed2..93389aee 100644
 --- a/libs/video/rsx_d3d12_backend.c
 +++ b/libs/video/rsx_d3d12_backend.c
 @@ -38,6 +38,9 @@
@@ -16914,7 +16995,7 @@ index 68929ed..93389ae 100644
  {
      MSG msg;
 diff --git a/libs/video/rsx_dispatch.c b/libs/video/rsx_dispatch.c
-index d105230..33168b9 100644
+index d105230b..33168b9d 100644
 --- a/libs/video/rsx_dispatch.c
 +++ b/libs/video/rsx_dispatch.c
 @@ -171,6 +171,13 @@ void rsx_dispatch_init(rsx_dispatch* rsx, const rsx_dispatch_sink* sink)
@@ -16932,7 +17013,7 @@ index d105230..33168b9 100644
      mark_class(rsx, M_VERTEX_BEGIN_END,  1, RSX_DSP_CLASS_EXEC);
      mark_class(rsx, M_VB_VERTEX_BATCH,   1, RSX_DSP_CLASS_EXEC);
 diff --git a/libs/video/rsx_draw_engine.c b/libs/video/rsx_draw_engine.c
-index 5c50e4a..c563a8e 100644
+index 5c50e4a9..c563a8e4 100644
 --- a/libs/video/rsx_draw_engine.c
 +++ b/libs/video/rsx_draw_engine.c
 @@ -135,6 +135,7 @@ static struct {
@@ -17507,7 +17588,7 @@ index 5c50e4a..c563a8e 100644
       * whose SPU-built command lists bind NV4097 elsewhere would otherwise
       * store its state in the wrong register bank.  Standard NV4097 methods
 diff --git a/libs/video/rsx_draw_engine.h b/libs/video/rsx_draw_engine.h
-index fa8b57d..716fc98 100644
+index fa8b57da..716fc986 100644
 --- a/libs/video/rsx_draw_engine.h
 +++ b/libs/video/rsx_draw_engine.h
 @@ -199,6 +199,12 @@ typedef struct rsx_draw_backend {
@@ -17556,7 +17637,7 @@ index fa8b57d..716fc98 100644
  void rsx_draw_engine_flush(void);
 diff --git a/libs/video/rsx_host_settings.h b/libs/video/rsx_host_settings.h
 new file mode 100644
-index 0000000..e7654c4
+index 00000000..e7654c41
 --- /dev/null
 +++ b/libs/video/rsx_host_settings.h
 @@ -0,0 +1,41 @@
@@ -17602,7 +17683,7 @@ index 0000000..e7654c4
 +#endif
 +#endif
 diff --git a/libs/video/rsx_metal_backend.h b/libs/video/rsx_metal_backend.h
-index aee795c..d767a85 100644
+index aee795c9..d767a852 100644
 --- a/libs/video/rsx_metal_backend.h
 +++ b/libs/video/rsx_metal_backend.h
 @@ -35,6 +35,14 @@ int  rsx_metal_backend_pump_messages(void);
@@ -17621,7 +17702,7 @@ index aee795c..d767a85 100644
  /* --- test hooks ---------------------------------------------------------- */
  
 diff --git a/libs/video/rsx_metal_backend.m b/libs/video/rsx_metal_backend.m
-index d04b34e..fbe4fee 100644
+index d04b34e3..fbe4fee5 100644
 --- a/libs/video/rsx_metal_backend.m
 +++ b/libs/video/rsx_metal_backend.m
 @@ -46,13 +46,16 @@
@@ -18881,7 +18962,7 @@ index d04b34e..fbe4fee 100644
 +int rsx_metal_backend_submission_ok(void) { return !s_eng_active || s_eng_last_submission != 0; }
 diff --git a/libs/video/rsx_metal_overlay.h b/libs/video/rsx_metal_overlay.h
 new file mode 100644
-index 0000000..90f87b5
+index 00000000..90f87b52
 --- /dev/null
 +++ b/libs/video/rsx_metal_overlay.h
 @@ -0,0 +1,14 @@
@@ -18901,7 +18982,7 @@ index 0000000..90f87b5
 +#endif
 diff --git a/libs/video/rsx_metal_overlay.m b/libs/video/rsx_metal_overlay.m
 new file mode 100644
-index 0000000..2ff24a6
+index 00000000..2ff24a6a
 --- /dev/null
 +++ b/libs/video/rsx_metal_overlay.m
 @@ -0,0 +1,335 @@
@@ -19241,7 +19322,7 @@ index 0000000..2ff24a6
 +    ps3_overlay_set_renderer(0);
 +}
 diff --git a/libs/video/rsx_vertex_compact.c b/libs/video/rsx_vertex_compact.c
-index 4334f16..44d480c 100644
+index 4334f169..44d480c7 100644
 --- a/libs/video/rsx_vertex_compact.c
 +++ b/libs/video/rsx_vertex_compact.c
 @@ -5,6 +5,9 @@
@@ -19363,7 +19444,7 @@ index 4334f16..44d480c 100644
  {
      value ^= value >> 33;
 diff --git a/libs/video/rsx_vertex_compact.h b/libs/video/rsx_vertex_compact.h
-index ad21361..15690ad 100644
+index ad213615..15690adb 100644
 --- a/libs/video/rsx_vertex_compact.h
 +++ b/libs/video/rsx_vertex_compact.h
 @@ -116,6 +116,10 @@ void rsx_vertex_fetch_plan_prepare(
@@ -19379,7 +19460,7 @@ index ad21361..15690ad 100644
   * remains valid until the next call using the same remap object. */
 diff --git a/libs/video/tests/test_metal_overlay.m b/libs/video/tests/test_metal_overlay.m
 new file mode 100644
-index 0000000..85b6b4f
+index 00000000..85b6b4f2
 --- /dev/null
 +++ b/libs/video/tests/test_metal_overlay.m
 @@ -0,0 +1,96 @@
@@ -19480,7 +19561,7 @@ index 0000000..85b6b4f
 +    }
 +}
 diff --git a/libs/video/tests/test_rsx_draw_engine.c b/libs/video/tests/test_rsx_draw_engine.c
-index 704ccef..d766563 100644
+index 704ccefd..d7665632 100644
 --- a/libs/video/tests/test_rsx_draw_engine.c
 +++ b/libs/video/tests/test_rsx_draw_engine.c
 @@ -84,6 +84,7 @@ typedef struct {
@@ -19648,7 +19729,7 @@ index 704ccef..d766563 100644
      test_scissor();
 diff --git a/runtime/platform/guest_poll.c b/runtime/platform/guest_poll.c
 new file mode 100644
-index 0000000..995fb82
+index 00000000..995fb826
 --- /dev/null
 +++ b/runtime/platform/guest_poll.c
 @@ -0,0 +1,437 @@
@@ -20091,7 +20172,7 @@ index 0000000..995fb82
 +int ps3_spu_poll_idle_graphics(int image_id) { (void)image_id; return 0; }
 diff --git a/runtime/platform/guest_poll.h b/runtime/platform/guest_poll.h
 new file mode 100644
-index 0000000..9417a22
+index 00000000..9417a223
 --- /dev/null
 +++ b/runtime/platform/guest_poll.h
 @@ -0,0 +1,52 @@
@@ -20149,7 +20230,7 @@ index 0000000..9417a22
 +#endif
 diff --git a/runtime/platform/tests/test_guest_poll.c b/runtime/platform/tests/test_guest_poll.c
 new file mode 100644
-index 0000000..810fed1
+index 00000000..810fed12
 --- /dev/null
 +++ b/runtime/platform/tests/test_guest_poll.c
 @@ -0,0 +1,98 @@
@@ -20253,7 +20334,7 @@ index 0000000..810fed1
 +}
 diff --git a/runtime/platform/tests/test_guest_poll_filter.c b/runtime/platform/tests/test_guest_poll_filter.c
 new file mode 100644
-index 0000000..06cd2b7
+index 00000000..06cd2b79
 --- /dev/null
 +++ b/runtime/platform/tests/test_guest_poll_filter.c
 @@ -0,0 +1,293 @@
@@ -20551,7 +20632,7 @@ index 0000000..06cd2b7
 +    return 0;
 +}
 diff --git a/runtime/platform/tests/test_win32_compat.c b/runtime/platform/tests/test_win32_compat.c
-index 8f199fe..dc67cee 100644
+index 8f199fe0..dc67cee2 100644
 --- a/runtime/platform/tests/test_win32_compat.c
 +++ b/runtime/platform/tests/test_win32_compat.c
 @@ -262,6 +262,145 @@ static void test_semaphores(void)
@@ -20712,7 +20793,7 @@ index 8f199fe..dc67cee 100644
      test_init_once();
 diff --git a/runtime/platform/thread_lifecycle.h b/runtime/platform/thread_lifecycle.h
 new file mode 100644
-index 0000000..7f1a7b7
+index 00000000..7f1a7b7b
 --- /dev/null
 +++ b/runtime/platform/thread_lifecycle.h
 @@ -0,0 +1,46 @@
@@ -20763,7 +20844,7 @@ index 0000000..7f1a7b7
 +#endif
 +#endif
 diff --git a/runtime/platform/win32_compat.c b/runtime/platform/win32_compat.c
-index 11a7480..e6b823c 100644
+index 11a74804..e6b823c7 100644
 --- a/runtime/platform/win32_compat.c
 +++ b/runtime/platform/win32_compat.c
 @@ -10,8 +10,8 @@
@@ -21006,7 +21087,7 @@ index 11a7480..e6b823c 100644
      return result;
 diff --git a/runtime/ppu/d2_sample_exact.h b/runtime/ppu/d2_sample_exact.h
 new file mode 100644
-index 0000000..009c0c3
+index 00000000..009c0c32
 --- /dev/null
 +++ b/runtime/ppu/d2_sample_exact.h
 @@ -0,0 +1,17 @@
@@ -21028,7 +21109,7 @@ index 0000000..009c0c3
 +}
 +#endif
 diff --git a/runtime/ppu/ppu_fs.cpp b/runtime/ppu/ppu_fs.cpp
-index e8f6c2b..6385820 100644
+index e8f6c2bd..6385820b 100644
 --- a/runtime/ppu/ppu_fs.cpp
 +++ b/runtime/ppu/ppu_fs.cpp
 @@ -17,6 +17,12 @@
@@ -21420,7 +21501,7 @@ index e8f6c2b..6385820 100644
      /* Register by the literal import NID: LBP imports 0xB1840B53 for
       * cellFsSdataOpen, which ps3_compute_nid("cellFsSdataOpen") does NOT match
 diff --git a/runtime/ppu/ppu_hle.cpp b/runtime/ppu/ppu_hle.cpp
-index acbaf12..1655114 100644
+index acbaf126..1655114e 100644
 --- a/runtime/ppu/ppu_hle.cpp
 +++ b/runtime/ppu/ppu_hle.cpp
 @@ -106,6 +106,7 @@ extern "C" uint64_t ppu_guest_call(uint32_t opd,
@@ -21440,7 +21521,7 @@ index acbaf12..1655114 100644
      /* YDKJ_TUNERFIX (at the top so it wins over any registered handler): the
       * profiler-presence query sysPrxForUser 0xE0998DBF, called by libsre
 diff --git a/runtime/ppu/ppu_loader.cpp b/runtime/ppu/ppu_loader.cpp
-index e73a151..148dfb9 100644
+index e73a1512..148dfb98 100644
 --- a/runtime/ppu/ppu_loader.cpp
 +++ b/runtime/ppu/ppu_loader.cpp
 @@ -20,10 +20,12 @@
@@ -22409,7 +22490,7 @@ index e73a151..148dfb9 100644
  }
 -
 diff --git a/runtime/ppu/ppu_memory.h b/runtime/ppu/ppu_memory.h
-index b3bc534..171197b 100644
+index b3bc534d..171197b6 100644
 --- a/runtime/ppu/ppu_memory.h
 +++ b/runtime/ppu/ppu_memory.h
 @@ -16,7 +16,17 @@
@@ -22516,7 +22597,7 @@ index b3bc534..171197b 100644
 +
  #endif /* PPU_MEMORY_H */
 diff --git a/runtime/ppu/ppu_sysprx.cpp b/runtime/ppu/ppu_sysprx.cpp
-index f2d6d7d..f91b65d 100644
+index f2d6d7d3..f91b65de 100644
 --- a/runtime/ppu/ppu_sysprx.cpp
 +++ b/runtime/ppu/ppu_sysprx.cpp
 @@ -16,9 +16,16 @@
@@ -23127,7 +23208,7 @@ index f2d6d7d..f91b65d 100644
      ps3_hle_register_ctx(0xFDB8F926u, "netFreethreadContext",   hle_net_zero);
 diff --git a/runtime/ppu/tests/test_codec_callbacks.cpp b/runtime/ppu/tests/test_codec_callbacks.cpp
 new file mode 100644
-index 0000000..3d40ced
+index 00000000..3d40ced5
 --- /dev/null
 +++ b/runtime/ppu/tests/test_codec_callbacks.cpp
 @@ -0,0 +1,67 @@
@@ -23200,7 +23281,7 @@ index 0000000..3d40ced
 +}
 diff --git a/runtime/ppu/tests/test_loader_validation.cpp b/runtime/ppu/tests/test_loader_validation.cpp
 new file mode 100644
-index 0000000..c2fa5f0
+index 00000000..c2fa5f06
 --- /dev/null
 +++ b/runtime/ppu/tests/test_loader_validation.cpp
 @@ -0,0 +1,103 @@
@@ -23309,7 +23390,7 @@ index 0000000..c2fa5f0
 +}
 diff --git a/runtime/ppu/tests/test_lwcond.cpp b/runtime/ppu/tests/test_lwcond.cpp
 new file mode 100644
-index 0000000..662cee8
+index 00000000..662cee87
 --- /dev/null
 +++ b/runtime/ppu/tests/test_lwcond.cpp
 @@ -0,0 +1,171 @@
@@ -23486,7 +23567,7 @@ index 0000000..662cee8
 +}
 diff --git a/runtime/ppu/tests/test_runner_failures.py b/runtime/ppu/tests/test_runner_failures.py
 new file mode 100644
-index 0000000..a6602d5
+index 00000000..a6602d5d
 --- /dev/null
 +++ b/runtime/ppu/tests/test_runner_failures.py
 @@ -0,0 +1,34 @@
@@ -23525,7 +23606,7 @@ index 0000000..a6602d5
 +        assert required in log.read_text(), (name, log)
 +        print(f'PASS: {name} host exit={result.returncode}; {required}')
 diff --git a/runtime/prx/prx_loader.c b/runtime/prx/prx_loader.c
-index 9cc3670..8a165c4 100644
+index 9cc36701..8a165c4b 100644
 --- a/runtime/prx/prx_loader.c
 +++ b/runtime/prx/prx_loader.c
 @@ -9,6 +9,7 @@
@@ -23641,7 +23722,7 @@ index 9cc3670..8a165c4 100644
      fprintf(stderr,
              "[prx] loaded %-12s base=0x%08X size=%u (0x%X) funcs=%u/%llu exports=%u\n",
 diff --git a/runtime/prx/prx_loader.h b/runtime/prx/prx_loader.h
-index 0c19daa..2b469e1 100644
+index 0c19daa0..2b469e15 100644
 --- a/runtime/prx/prx_loader.h
 +++ b/runtime/prx/prx_loader.h
 @@ -111,6 +111,11 @@ uint8_t* prx_image_load_file(const char* path, uint32_t* out_size);
@@ -23657,7 +23738,7 @@ index 0c19daa..2b469e1 100644
  uint32_t prx_export_registry_count(void);
  
 diff --git a/runtime/ps3_log.h b/runtime/ps3_log.h
-index 4b7df8c..3bd9fc9 100644
+index 4b7df8c5..3bd9fc93 100644
 --- a/runtime/ps3_log.h
 +++ b/runtime/ps3_log.h
 @@ -1,48 +1,40 @@
@@ -23736,7 +23817,7 @@ index 4b7df8c..3bd9fc9 100644
 +
  #endif /* PS3_LOG_H */
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 0b235d0..6c0a71e 100644
+index 0b235d02..6c0a71e7 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -21,9 +21,9 @@
@@ -23912,7 +23993,7 @@ index 0b235d0..6c0a71e 100644
      { static int _n = 0; if (_n++ < 4)
          fprintf(stderr, "[spu-smc] microstep img=%d runaway (4096 steps from 0x%05X)\n",
 diff --git a/runtime/spu/spu_coherency.c b/runtime/spu/spu_coherency.c
-index 7ac619f..9399e9b 100644
+index 7ac619f3..9399e9bf 100644
 --- a/runtime/spu/spu_coherency.c
 +++ b/runtime/spu/spu_coherency.c
 @@ -10,6 +10,7 @@
@@ -23967,7 +24048,7 @@ index 7ac619f..9399e9b 100644
      for (int i = 0; i < SPU_COH_MAX_CTX; i++) {
          spu_context* c = s_coh_ctxs[i];
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index 8d8e4aa..213a246 100644
+index 8d8e4aac..213a2468 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -16,6 +16,10 @@
@@ -24059,7 +24140,7 @@ index 8d8e4aa..213a246 100644
                        ctx->gpr[0]._u32[0] & SPU_LS_MASK);
      if (__builtin_expect(g_spu_smc_watch != 0, 0))
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
-index 90f3221..42d7a28 100644
+index 90f3221e..42d7a284 100644
 --- a/runtime/spu/spu_dma.h
 +++ b/runtime/spu/spu_dma.h
 @@ -16,6 +16,7 @@
@@ -24196,7 +24277,7 @@ index 90f3221..42d7a28 100644
      /* Mark tag as in-progress */
      mfc->tag_completed &= ~(1u << tag);
 diff --git a/runtime/spu/spu_drain.c b/runtime/spu/spu_drain.c
-index 931d3b3..8964ac9 100644
+index 931d3b34..8964ac95 100644
 --- a/runtime/spu/spu_drain.c
 +++ b/runtime/spu/spu_drain.c
 @@ -59,7 +59,10 @@ unsigned spu_recent_pcs(uint32_t* out, unsigned max)
@@ -24212,7 +24293,7 @@ index 931d3b3..8964ac9 100644
      spu_check_stack_reset(ctx, (void (*)(spu_context*))fn);
      /* A SPURS job returning to LS 0 is finished -- its crt tail-jumps to the
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index 0fca7f5..0878c2a 100644
+index 0fca7f55..0878c2a2 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -17,6 +17,11 @@
@@ -24639,7 +24720,7 @@ index 0fca7f5..0878c2a 100644
  static inline u128 spu_chd(u128 a, int i7){ return spu_chd_pos((int)a._u32[0]+i7); }
  static inline u128 spu_cwd(u128 a, int i7){ return spu_cwd_pos((int)a._u32[0]+i7); }
 diff --git a/runtime/spu/spu_interp.c b/runtime/spu/spu_interp.c
-index e9f59de..af55785 100644
+index e9f59deb..af55785a 100644
 --- a/runtime/spu/spu_interp.c
 +++ b/runtime/spu/spu_interp.c
 @@ -410,6 +410,8 @@ uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32_t sto
@@ -24652,7 +24733,7 @@ index e9f59de..af55785 100644
               * the SPU queue number to its out-mailbox, stops, and lv2 replies
               * with {CELL_OK, data1, data2, data3} in the in-mailbox -- which is
 diff --git a/runtime/spu/spu_lifted_thread.c b/runtime/spu/spu_lifted_thread.c
-index 945829d..3915645 100644
+index 945829dc..39156458 100644
 --- a/runtime/spu/spu_lifted_thread.c
 +++ b/runtime/spu/spu_lifted_thread.c
 @@ -2,6 +2,9 @@
@@ -24720,7 +24801,7 @@ index 945829d..3915645 100644
      if (d->img_ea) spu_deploy_image(ctx, d->img_ea);
  
 diff --git a/runtime/spu/spu_lifted_thread.h b/runtime/spu/spu_lifted_thread.h
-index 5805cdb..36c5a4b 100644
+index 5805cdb3..36c5a4bc 100644
 --- a/runtime/spu/spu_lifted_thread.h
 +++ b/runtime/spu/spu_lifted_thread.h
 @@ -44,9 +44,10 @@ typedef struct spu_lifted_thread_result {
@@ -24737,7 +24818,7 @@ index 5805cdb..36c5a4b 100644
  /* Bring `ctx` up to the state lv2 hands a freshly started SPU thread: image
   * deployed into local store, arguments in r3..r6, pc at the entry, and the
 diff --git a/runtime/spu/spu_raw.c b/runtime/spu/spu_raw.c
-index f6dc8be..06feb37 100644
+index f6dc8bef..06feb37a 100644
 --- a/runtime/spu/spu_raw.c
 +++ b/runtime/spu/spu_raw.c
 @@ -687,7 +687,15 @@ static void hle_raw_spu_image_load(ppu_context* ctx)
@@ -24758,7 +24839,7 @@ index f6dc8be..06feb37 100644
  void sys_raw_spu_init(lv2_syscall_table* tbl)
  {
 diff --git a/runtime/spu/tests/test_spu_lifted_start.c b/runtime/spu/tests/test_spu_lifted_start.c
-index 326e421..ea1e7d1 100644
+index 326e4211..ea1e7d17 100644
 --- a/runtime/spu/tests/test_spu_lifted_start.c
 +++ b/runtime/spu/tests/test_spu_lifted_start.c
 @@ -38,7 +38,7 @@
@@ -24845,7 +24926,7 @@ index 326e421..ea1e7d1 100644
  void sys_raw_spu_init(lv2_syscall_table* t) { (void)t; }
 diff --git a/runtime/spu/tests/test_spu_register_cache.c b/runtime/spu/tests/test_spu_register_cache.c
 new file mode 100644
-index 0000000..cfc0614
+index 00000000..cfc06149
 --- /dev/null
 +++ b/runtime/spu/tests/test_spu_register_cache.c
 @@ -0,0 +1,50 @@
@@ -24901,7 +24982,7 @@ index 0000000..cfc0614
 +}
 diff --git a/runtime/spu/tests/test_spu_register_cache.py b/runtime/spu/tests/test_spu_register_cache.py
 new file mode 100644
-index 0000000..c24db55
+index 00000000..c24db552
 --- /dev/null
 +++ b/runtime/spu/tests/test_spu_register_cache.py
 @@ -0,0 +1,45 @@
@@ -24951,7 +25032,7 @@ index 0000000..c24db55
 +subprocess.run(cmd, check=True)
 +subprocess.run([str(a.work / 'cache-test')], check=True)
 diff --git a/runtime/spu/tests/test_spu_shufb.c b/runtime/spu/tests/test_spu_shufb.c
-index 98fa95f..bae3fc2 100644
+index 98fa95f7..bae3fc2a 100644
 --- a/runtime/spu/tests/test_spu_shufb.c
 +++ b/runtime/spu/tests/test_spu_shufb.c
 @@ -1,16 +1,33 @@
@@ -25005,7 +25086,7 @@ index 98fa95f..bae3fc2 100644
  }
 diff --git a/runtime/spu/tests/test_spu_vector_lanes.c b/runtime/spu/tests/test_spu_vector_lanes.c
 new file mode 100644
-index 0000000..5241148
+index 00000000..5241148d
 --- /dev/null
 +++ b/runtime/spu/tests/test_spu_vector_lanes.c
 @@ -0,0 +1,38 @@
@@ -25049,7 +25130,7 @@ index 0000000..5241148
 +}
 diff --git a/runtime/spu/tests/test_spu_vectors.c b/runtime/spu/tests/test_spu_vectors.c
 new file mode 100644
-index 0000000..f576adb
+index 00000000..f576adba
 --- /dev/null
 +++ b/runtime/spu/tests/test_spu_vectors.c
 @@ -0,0 +1,56 @@
@@ -25110,7 +25191,7 @@ index 0000000..f576adb
 +    return 0;
 +}
 diff --git a/runtime/syscalls/lv2_register.c b/runtime/syscalls/lv2_register.c
-index 1506841..8d8c467 100644
+index 15068417..8d8c4675 100644
 --- a/runtime/syscalls/lv2_register.c
 +++ b/runtime/syscalls/lv2_register.c
 @@ -10,6 +10,7 @@
@@ -25313,7 +25394,7 @@ index 1506841..8d8c467 100644
  }
  
 diff --git a/runtime/syscalls/sys_cond.c b/runtime/syscalls/sys_cond.c
-index 45235ea..0e8ae74 100644
+index 45235ea6..0e8ae743 100644
 --- a/runtime/syscalls/sys_cond.c
 +++ b/runtime/syscalls/sys_cond.c
 @@ -11,11 +11,24 @@
@@ -25359,7 +25440,7 @@ index 45235ea..0e8ae74 100644
      struct sys_cond_waiter** link = &c->waiters;
      while (*link != &waiter) link = &(*link)->next;
 diff --git a/runtime/syscalls/sys_event.c b/runtime/syscalls/sys_event.c
-index 4240edf..ed78484 100644
+index 4240edf2..ed784848 100644
 --- a/runtime/syscalls/sys_event.c
 +++ b/runtime/syscalls/sys_event.c
 @@ -10,6 +10,7 @@
@@ -25456,7 +25537,7 @@ index 4240edf..ed78484 100644
       * *(r29+0x24) (a completion counter the SPU would increment) reaches the target
       * *(r29). Since we don't yet run the SPU workload, satisfy that counter so the
 diff --git a/runtime/syscalls/sys_event.h b/runtime/syscalls/sys_event.h
-index 14c6425..fb79d59 100644
+index 14c64255..fb79d59c 100644
 --- a/runtime/syscalls/sys_event.h
 +++ b/runtime/syscalls/sys_event.h
 @@ -159,6 +159,9 @@ int sys_event_queue_push_by_id(uint32_t queue_id,
@@ -25470,7 +25551,7 @@ index 14c6425..fb79d59 100644
  uint32_t sys_event_find_queue_by_key(uint64_t key);
  
 diff --git a/runtime/syscalls/sys_fs.c b/runtime/syscalls/sys_fs.c
-index 489f8a5..a3bf157 100644
+index 489f8a5a..a3bf157c 100644
 --- a/runtime/syscalls/sys_fs.c
 +++ b/runtime/syscalls/sys_fs.c
 @@ -89,8 +89,33 @@ static void fs_normalize_sep(char* p) {
@@ -25587,7 +25668,7 @@ index 489f8a5..a3bf157 100644
  
      /* Find free fd slot */
 diff --git a/runtime/syscalls/sys_fs.h b/runtime/syscalls/sys_fs.h
-index dbe84c4..d21a821 100644
+index dbe84c4b..d21a8219 100644
 --- a/runtime/syscalls/sys_fs.h
 +++ b/runtime/syscalls/sys_fs.h
 @@ -70,10 +70,10 @@ extern "C" {
@@ -25616,7 +25697,7 @@ index dbe84c4..d21a821 100644
  /* Syscall handlers */
  int64_t sys_fs_open(ppu_context* ctx);
 diff --git a/runtime/syscalls/sys_ppu_thread.c b/runtime/syscalls/sys_ppu_thread.c
-index fb3906a..07ffda0 100644
+index fb3906ae..07ffda01 100644
 --- a/runtime/syscalls/sys_ppu_thread.c
 +++ b/runtime/syscalls/sys_ppu_thread.c
 @@ -2,6 +2,8 @@
@@ -25706,7 +25787,7 @@ index fb3906a..07ffda0 100644
  #endif
      }
 diff --git a/runtime/syscalls/sys_ppu_thread.h b/runtime/syscalls/sys_ppu_thread.h
-index a297bf5..f1f0f98 100644
+index a297bf5c..f1f0f981 100644
 --- a/runtime/syscalls/sys_ppu_thread.h
 +++ b/runtime/syscalls/sys_ppu_thread.h
 @@ -71,6 +71,12 @@ typedef struct ppu_thread_info {
@@ -25723,7 +25804,7 @@ index a297bf5..f1f0f98 100644
  extern ppu_thread_info g_ppu_threads[PPU_THREAD_MAX];
  
 diff --git a/runtime/syscalls/sys_semaphore.c b/runtime/syscalls/sys_semaphore.c
-index 19ecafc..74bc6e2 100644
+index 19ecafc8..74bc6e20 100644
 --- a/runtime/syscalls/sys_semaphore.c
 +++ b/runtime/syscalls/sys_semaphore.c
 @@ -9,6 +9,7 @@
@@ -25744,7 +25825,7 @@ index 19ecafc..74bc6e2 100644
      /* PS3_BREADCRUMB: every 500th wait, dump the per-tid indirect-call breadcrumb
       * table. Fires reliably DURING the loader hang (respump spins sem16 waits),
 diff --git a/runtime/syscalls/sys_timer.c b/runtime/syscalls/sys_timer.c
-index d8f4081..3aa2179 100644
+index d8f40814..3aa2179b 100644
 --- a/runtime/syscalls/sys_timer.c
 +++ b/runtime/syscalls/sys_timer.c
 @@ -2,6 +2,7 @@
@@ -25765,7 +25846,7 @@ index d8f4081..3aa2179 100644
          (unsigned long long)usec, (unsigned long long)ctx->lr, (unsigned long long)ctx->cia); }
      /* PS3_POLLTOP=<seconds>: name the usleep poll sites.
 diff --git a/templates/project/CMakeLists.txt b/templates/project/CMakeLists.txt
-index 5fca857..5013088 100644
+index 5fca8570..50130886 100644
 --- a/templates/project/CMakeLists.txt
 +++ b/templates/project/CMakeLists.txt
 @@ -90,6 +90,8 @@ if(EXISTS "${RECOMP_DIR}/ppu_hle_nids.cpp")
@@ -25786,7 +25867,7 @@ index 5fca857..5013088 100644
      message(STATUS "HLE NID table:   generated (every module)")
  endif()
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
-index 6632ac1..4fe86a6 100644
+index 6632ac1f..4fe86a6b 100644
 --- a/templates/project/main.cpp
 +++ b/templates/project/main.cpp
 @@ -37,6 +37,7 @@
@@ -25999,7 +26080,7 @@ index 6632ac1..4fe86a6 100644
 +    return g_sys_process_exit_called ? (int)g_sys_process_exit_code : (rc != 0 ? 1 : 0);
  }
 diff --git a/third_party/at3_standalone/README.txt b/third_party/at3_standalone/README.txt
-index 5acc566..3d416b4 100644
+index 5acc566b..3d416b4b 100644
 --- a/third_party/at3_standalone/README.txt
 +++ b/third_party/at3_standalone/README.txt
 @@ -4,7 +4,8 @@ ps3recomp: vendored from PPSSPP ext/at3_standalone at commit
@@ -26013,7 +26094,7 @@ index 5acc566..3d416b4 100644
  The decoder sources are LGPL-2.1-or-later (see COPYING.LGPLv2.1 and the
  headers of each file). They are kept in this directory as a separable
 diff --git a/third_party/at3_standalone/at3_bridge.cpp b/third_party/at3_standalone/at3_bridge.cpp
-index 519a0dd..c518ceb 100644
+index 519a0dda..c518ceb0 100644
 --- a/third_party/at3_standalone/at3_bridge.cpp
 +++ b/third_party/at3_standalone/at3_bridge.cpp
 @@ -1,13 +1,33 @@
@@ -26053,7 +26134,7 @@ index 519a0dd..c518ceb 100644
 +    return atrac3p_decode_frame((ATRAC3PContext*)dec, out, samples, packet.data(), frame_bytes);
  }
 diff --git a/tools/find_spu_functions.py b/tools/find_spu_functions.py
-index 6c1b361..3ada2a6 100644
+index 6c1b361c..3ada2a66 100644
 --- a/tools/find_spu_functions.py
 +++ b/tools/find_spu_functions.py
 @@ -606,6 +606,12 @@ def detect_functions(buf, base_override=None, verbose=True, raw=False):
@@ -26070,7 +26151,7 @@ index 6c1b361..3ada2a6 100644
  
      # ELF entry point — 0 is a valid LS address, so don't treat falsy as unset.
 diff --git a/tools/gen_hle_nids.py b/tools/gen_hle_nids.py
-index ac13929..4993b9e 100644
+index ac13929c..4993b9ec 100644
 --- a/tools/gen_hle_nids.py
 +++ b/tools/gen_hle_nids.py
 @@ -28,7 +28,7 @@ from nid_database import compute_nid
@@ -26083,7 +26164,7 @@ index ac13929..4993b9e 100644
  
  
 diff --git a/tools/nid_database.py b/tools/nid_database.py
-index 794abe7..718c494 100644
+index 794abe77..718c4945 100644
 --- a/tools/nid_database.py
 +++ b/tools/nid_database.py
 @@ -64,6 +64,7 @@ _BUILTIN_FUNCTIONS: list[tuple[str, str]] = [
@@ -26103,7 +26184,7 @@ index 794abe7..718c494 100644
      ("cellResc", "cellRescSetConvertAndFlip"),
  
 diff --git a/tools/ppu_lifter.py b/tools/ppu_lifter.py
-index 7917a9d..bfa329a 100644
+index 7917a9d8..bfa329a4 100644
 --- a/tools/ppu_lifter.py
 +++ b/tools/ppu_lifter.py
 @@ -3409,7 +3409,7 @@ class PPULifter:
@@ -26116,7 +26197,7 @@ index 7917a9d..bfa329a 100644
          past 16,777,215 lines (C4049/C1088), which a large game exceeds in a
          single file; splitting also lets the build compile chunks in parallel
 diff --git a/tools/spu_lifter.py b/tools/spu_lifter.py
-index bfc9af4..7ab2cf2 100644
+index bfc9af4f..7ab2cf2b 100644
 --- a/tools/spu_lifter.py
 +++ b/tools/spu_lifter.py
 @@ -457,12 +457,13 @@ def compute_link_returns(insns, bounds) -> set:

@@ -1,3 +1,12 @@
+# 1.0.0 — Stable / DirectX 12
+
+- Menu de opções dentro do jogo (F1): Vídeo, Filtros, Controles e Sistema; lembra a última aba; salva em `settings.ini`.
+- Filtros: nitidez, scanlines, máscara CRT, vinheta, cores vivas, FXAA, contorno nos personagens e HDR.
+- Captura de tela (F12), avisos estilo Steam, pausa ao perder o foco, slots de save no jogo, ícone e DPI por monitor.
+- Pacote de texturas (dump em PNG e substituição) e ferramenta de ampliação (Lanczos / Real-ESRGAN experimental).
+- Launcher: novo seletor de ISO em vidro (`windows/glass_picker.py`).
+- Mouse como controle fica fora da 1.0 (branch `mouse-experimental`). Detalhes: `docs/RELEASE-1.0.0.md`.
+
 # Launcher 0.1.7-preview
 
 - Check presence and nonzero size of 18 startup files in the extracted US game
