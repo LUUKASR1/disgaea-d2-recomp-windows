@@ -157,6 +157,9 @@
 !/windows/assets/
 /windows/assets/*
 !/windows/assets/hero-*.png
+!/windows/assets/btn-*.png
+!/windows/assets/logo-disgaea.png
+!/windows/assets/pill.png
 !/docs/images/
 !/docs/images/*.jpg
 !/docs/images/*.png

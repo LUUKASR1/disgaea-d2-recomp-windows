@@ -305,5 +305,6 @@
   "Escolha um arquivo .iso.": "Choose an .iso file.",
   "Arquivo não encontrado.": "File not found.",
   "Arquivo pequeno demais para ser a ISO do jogo.": "File is too small to be the game ISO.",
-  "Pronta para usar": "Ready to use"
+  "Pronta para usar": "Ready to use",
+  "Escolher ISO": "Choose ISO"
 }
