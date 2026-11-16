@@ -22,6 +22,7 @@ extern "C" int d2_texture_dump_enabled(void);
 extern "C" void d2_screenshot_request(void);
 extern "C" unsigned d2_screenshot_last(char* path, unsigned size); /* port/graphics/graphics.cpp */
 #include <memory>
+#include <vector>
 #include <algorithm>
 #include "sys_overlay.h" /* SDK system dialogs (save/load lists, confirmations) */
 static std::wstring d2_settings_ini_path(void);
@@ -1239,8 +1240,22 @@ static void ensure_dialog_window()
 
 static HWND toast = nullptr;
 static unsigned toast_seen = 0;
-static ULONGLONG toast_until = 0;
-static std::string toast_text;
+
+/* Notices (screenshot saved, controller plugged/unplugged) slide up from the bottom-right corner, Steam style, in the
+ * panel's colours. The window is anchored on the game window's bottom edge and grows upwards, so the card appears to rise
+ * from below the edge; it holds for a moment and slides back down. */
+struct Notice { std::string title, text; int kind; }; // kind: 0 screenshot, 1 controller connected, 2 controller disconnected
+static std::vector<Notice> toast_queue;
+static bool toast_active = false;
+static Notice toast_cur;
+static ULONGLONG toast_t0 = 0;
+constexpr ULONGLONG kToastIn = 320, kToastHold = 3800, kToastOut = 320;
+
+static void push_notice(const std::string& title, const std::string& text, int kind)
+{
+    if (toast_queue.size() < 6) toast_queue.push_back(Notice{title, text, kind});
+}
+
 /* Controller hot-plug notice: XInput is polled from the toast timer (no extra link dependency). */
 typedef DWORD(WINAPI* XInputGetStateFn)(DWORD, void*);
 static void poll_controllers()
@@ -1248,6 +1263,9 @@ static void poll_controllers()
     static XInputGetStateFn get = nullptr;
     static bool tried = false, primed = false;
     static unsigned mask = 0;
+    static ULONGLONG next = 0;
+    if (GetTickCount64() < next) return;
+    next = GetTickCount64() + 500;
     if (!tried) {
         tried = true;
         for (const wchar_t* dll : {L"xinput1_4.dll", L"xinput1_3.dll", L"xinput9_1_0.dll"})
@@ -1262,9 +1280,20 @@ static void poll_controllers()
     const unsigned added = now & ~mask, removed = mask & ~now;
     mask = now;
     for (int i = 0; i < 4; i++) {
-        if (added & (1u << i)) { toast_text = std::string(L("Controle conectado (jogador ", "Controller connected (player ")) + std::to_string(i + 1) + ")"; toast_until = GetTickCount64() + 3500; }
-        else if (removed & (1u << i)) { toast_text = std::string(L("Controle desconectado (jogador ", "Controller disconnected (player ")) + std::to_string(i + 1) + ")"; toast_until = GetTickCount64() + 3500; }
+        const std::string who = std::string(L("Jogador ", "Player ")) + std::to_string(i + 1);
+        if (added & (1u << i)) push_notice(L("Controle conectado", "Controller connected"), who, 1);
+        else if (removed & (1u << i)) push_notice(L("Controle desconectado", "Controller disconnected"), who, 2);
     }
+}
+
+static double ease_out(double t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t); }
+
+static double toast_scale()
+{
+    RECT client = {0, 0, 1280, 720};
+    if (game) GetClientRect(game, &client);
+    double s = client.bottom / 720.0;
+    return s < 1.0 ? 1.0 : s > 3.0 ? 3.0 : s;
 }
 
 static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
@@ -1279,20 +1308,36 @@ static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         if (n != toast_seen) {
             toast_seen = n;
             const char* base = strrchr(path, '\\');
-            toast_text = std::string(L("Captura salva: ", "Screenshot saved: ")) + (base ? base + 1 : path);
-            toast_until = GetTickCount64() + 3500;
+            push_notice(L("Captura salva", "Screenshot saved"), base ? base + 1 : path, 0);
         }
-        if (game && GetTickCount64() < toast_until && IsWindowVisible(game) && !IsIconic(game)) {
-            RECT client;
-            GetClientRect(game, &client);
-            const int tw = std::min(720, (int)client.right - 20);
-            POINT o = {0, 0};
-            ClientToScreen(game, &o);
-            SetWindowPos(h, HWND_TOP, o.x + (client.right - tw) / 2, o.y + 12, tw, 44, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-            InvalidateRect(h, nullptr, FALSE);
-        } else if (IsWindowVisible(h)) {
-            ShowWindow(h, SW_HIDE);
+        const ULONGLONG now = GetTickCount64();
+        if (!toast_active && !toast_queue.empty()) {
+            toast_cur = toast_queue.front();
+            toast_queue.erase(toast_queue.begin());
+            toast_active = true;
+            toast_t0 = now;
         }
+        if (!toast_active || !game || !IsWindowVisible(game) || IsIconic(game)) {
+            if (IsWindowVisible(h)) ShowWindow(h, SW_HIDE);
+            if (toast_active && (!game || !IsWindowVisible(game) || IsIconic(game))) toast_active = false;
+            return 0;
+        }
+        const ULONGLONG elapsed = now - toast_t0, total = kToastIn + kToastHold + kToastOut;
+        if (elapsed >= total) { toast_active = false; ShowWindow(h, SW_HIDE); return 0; }
+        double p = 1.0;
+        if (elapsed < kToastIn) p = ease_out((double)elapsed / kToastIn);
+        else if (elapsed > total - kToastOut) p = 1.0 - ease_out((double)(elapsed - (total - kToastOut)) / kToastOut);
+        const double s = toast_scale();
+        RECT client;
+        GetClientRect(game, &client);
+        const int cw = (int)(400 * s), ch = (int)(84 * s), margin = (int)(18 * s);
+        const int shown = (int)((ch + margin) * p); // how far the card has risen above the bottom edge
+        if (shown <= 0) { ShowWindow(h, SW_HIDE); return 0; }
+        POINT o = {0, 0};
+        ClientToScreen(game, &o);
+        const int width = std::min(cw, (int)client.right - 2 * margin);
+        SetWindowPos(h, HWND_TOP, o.x + client.right - width - margin, o.y + client.bottom - shown, width, shown, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        InvalidateRect(h, nullptr, FALSE);
         return 0;
     }
     case WM_PAINT: {
@@ -1300,25 +1345,38 @@ static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         HDC dc = BeginPaint(h, &ps);
         RECT r;
         GetClientRect(h, &r);
-        HBRUSH key = CreateSolidBrush(RGB(255, 0, 255));
-        FillRect(dc, &r, key);
-        DeleteObject(key);
-        HFONT font = CreateFontW(-22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-                                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        HGDIOBJ old = SelectObject(dc, font);
+        fill(dc, 0, 0, r.right, r.bottom, RGB(255, 0, 255)); // colour key: the strip below the card stays see-through
+        const double s = toast_scale();
+        const int cw = r.right, ch = (int)(84 * s), bw = ch;
+        const COLORREF gold = rgb(255, 214, 77), ink = rgb(8, 3, 24), soft = rgb(232, 219, 255), pink = rgb(255, 71, 148);
+        gradient(dc, 0, 0, cw, ch, rgb(56, 23, 92), rgb(15, 10, 41));
+        const int bd = std::max(2, (int)(2 * s));
+        fill(dc, 0, 0, cw, bd, pink); fill(dc, 0, ch - bd, cw, bd, pink); fill(dc, 0, 0, bd, ch, pink); fill(dc, cw - bd, 0, bd, ch, pink);
+        gradient(dc, bd, bd, bw - bd, ch - 2 * bd, toast_cur.kind == 2 ? rgb(120, 60, 130) : rgb(199, 41, 115), toast_cur.kind == 2 ? rgb(50, 25, 80) : rgb(92, 20, 102));
+        // Icon: a monochrome emoji glyph.
+        HFONT icon = CreateFontW(-(int)(ch * 0.46), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Emoji");
+        HGDIOBJ old = SelectObject(dc, icon);
         SetBkMode(dc, TRANSPARENT);
-        const std::wstring text = W(toast_text);
-        SIZE sz = {0, 0};
-        GetTextExtentPoint32W(dc, text.c_str(), (int)text.size(), &sz);
-        const int x = std::max(4, (int)(r.right - sz.cx) / 2);
-        SetTextColor(dc, RGB(8, 3, 24));
-        for (int dy = -2; dy <= 2; dy++)
-            for (int dx = -2; dx <= 2; dx++)
-                if (dx || dy) TextOutW(dc, x + dx, 6 + dy, text.c_str(), (int)text.size());
-        SetTextColor(dc, RGB(255, 214, 77));
-        TextOutW(dc, x, 6, text.c_str(), (int)text.size());
+        const wchar_t* glyph = toast_cur.kind == 0 ? L"\xD83D\xDCF7" : L"\xD83C\xDFAE";
+        SIZE gz = {0, 0};
+        GetTextExtentPoint32W(dc, glyph, 2, &gz);
+        SetTextColor(dc, toast_cur.kind == 2 ? rgb(190, 175, 215) : gold);
+        TextOutW(dc, bd + (bw - bd - gz.cx) / 2, (ch - gz.cy) / 2, glyph, 2);
         SelectObject(dc, old);
-        DeleteObject(font);
+        DeleteObject(icon);
+        // Title and text.
+        const int tx = bw + (int)(14 * s), room = cw - tx - (int)(12 * s);
+        HFONT tfont = make_font((int)(22 * s)), bfont = make_font((int)(17 * s));
+        SelectObject(dc, tfont);
+        text_outline(dc, tx, (int)(14 * s), toast_cur.title, gold, ink, (int)(1 * s) + 1);
+        SelectObject(dc, bfont);
+        std::string line = toast_cur.text;
+        while (line.size() > 4 && text_width(dc, line) > room) line = line.substr(0, line.size() - 2) + "…";
+        text_outline(dc, tx, (int)(46 * s), line, soft, ink, 1);
+        SelectObject(dc, old);
+        DeleteObject(tfont);
+        DeleteObject(bfont);
         EndPaint(h, &ps);
         return 0;
     }
@@ -1338,7 +1396,7 @@ static void ensure_toast_window()
                             GetModuleHandleW(nullptr), nullptr);
     if (!toast) return;
     SetLayeredWindowAttributes(toast, RGB(255, 0, 255), 0, LWA_COLORKEY);
-    SetTimer(toast, 1, 150, nullptr);
+    SetTimer(toast, 1, 16, nullptr);
 }
 
 /* ---- game window hook -------------------------------------------------------------------------------------- */
