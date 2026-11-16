@@ -848,13 +848,350 @@ static void close_panel()
     if (game) SetForegroundWindow(game);
 }
 
+/* ---- system dialogs (save / load slot lists, confirmations) ------------------------------------------------ *
+ * The SDK keeps the dialog state (ps3_overlay_*) and the game thread waits inside cellSaveData. Without a renderer
+ * the SDK answers every dialog by itself, so ps3_overlay_set_renderer(1) is called once this window exists. The
+ * dialog is drawn in a pop-up like the F1 panel (never activated, so the game keeps the keyboard and the pad/keyboard
+ * path of the SDK works as usual); mouse clicks are turned into the same results the pad produces. */
+
+constexpr int D_ROW = 1000, D_OK = 1100, D_BACK = 1101, D_YES = 1102, D_NO = 1103, kDlgRows = 8;
+static HWND dlg = nullptr;
+static std::unique_ptr<SysOverlaySnapshot> dsnap;
+static uint64_t dlg_rev = ~0ull, dlg_token = 0;
+static int dlg_hover = A_NONE, dlg_top = 0;
+static Hit dhits[kDlgRows + 4];
+static int ndhits = 0;
+static double dlg_scale = 1.0;
+
+static std::string dlg_tr(const char* text)
+{
+    struct Tr { const char *raw, *pt, *en; };
+    static const Tr exact[] = {
+        {"Save saved data", "SALVAR JOGO", "SAVE GAME"}, {"Load saved data", "CARREGAR JOGO", "LOAD GAME"},
+        {"Delete saved data", "APAGAR SAVE", "DELETE SAVE"}, {"Overwrite saved data", "SOBRESCREVER SAVE", "OVERWRITE SAVE"},
+        {"Choose a save slot.", "Escolha um slot de save.", "Choose a save slot."},
+        {"There is no saved data.", "Não há saves.", "There is no saved data."},
+        {"The existing saved data will be replaced.", "O save existente será substituído.", "The existing saved data will be replaced."},
+        {"Your current progress will be saved to this slot.", "Seu progresso será salvo neste slot.", "Your current progress will be saved to this slot."},
+        {"This saved data will be deleted.", "Este save será apagado.", "This saved data will be deleted."}};
+    for (const Tr& p : exact)
+        if (!strcmp(text, p.raw)) return cfg.lang ? p.en : p.pt;
+    static const Tr prefixes[] = {{"New saved data: ", "Novo save: ", "New save: "}, {"Overwrite ", "Sobrescrever ", "Overwrite "},
+                                  {"Load ", "Carregar ", "Load "}, {"Save ", "Salvar ", "Save "}, {"Delete ", "Apagar ", "Delete "}};
+    for (const Tr& p : prefixes) {
+        const size_t n = strlen(p.raw);
+        if (!strncmp(text, p.raw, n)) return std::string(cfg.lang ? p.en : p.pt) + (text + n);
+    }
+    return text;
+}
+
+struct DlgLayout {
+    bool list = false, yesno = false, progress = false, ok_button = false;
+    int pw = 0, ph = 0, head_h = 0, rowh = 0, rows = 0, text_w = 0, msg_h = 0, hint_h = 0, foot_h = 0;
+    std::wstring msg, hint;
+};
+
+static DlgLayout dlg_layout(HDC dc, const SysOverlaySnapshot& sn, double s)
+{
+    DlgLayout d;
+    d.list = (sn.kind == SYS_OVERLAY_LIST || sn.kind == SYS_OVERLAY_EDITOR) && sn.count > 0;
+    d.yesno = sn.kind == SYS_OVERLAY_YESNO;
+    d.progress = sn.kind == SYS_OVERLAY_PROGRESS;
+    d.ok_button = !d.list && !d.progress && !d.yesno && sn.buttons;
+    d.rows = d.list ? std::min(sn.count, kDlgRows) : 0;
+    d.rowh = (int)(44 * s);
+    d.head_h = (int)(68 * s);
+    d.pw = (int)(720 * s);
+    d.text_w = d.pw - (int)(70 * s);
+    std::string m, cur;
+    for (const char* c = sn.message; *c; c++) {
+        if (*c == '\n') { m += dlg_tr(cur.c_str()) + "\n"; cur.clear(); }
+        else cur += *c;
+    }
+    if (!cur.empty()) m += dlg_tr(cur.c_str());
+    d.msg = W(m);
+    std::string hint;
+    if (d.progress) hint = L("Aguarde…", "Please wait…");
+    else if (sn.cancel_disabled)
+        hint = std::string(L("Clique ou ", "Click or ")) + key_name(cfg.keys[4]) + L(": confirmar · Setas: mover", ": confirm · Arrows: move");
+    else
+        hint = std::string(L("Clique ou ", "Click or ")) + key_name(cfg.keys[4]) + L(": confirmar · ", ": confirm · ") + key_name(cfg.keys[5]) +
+               L(" ou botão direito: voltar · Setas: mover", " or right click: back · Arrows: move");
+    d.hint = W(hint);
+    HFONT f = make_font((int)(25 * s)), fs = make_font((int)(19 * s));
+    HGDIOBJ old = SelectObject(dc, f);
+    RECT r = {0, 0, d.text_w, 0};
+    if (!d.msg.empty()) {
+        DrawTextW(dc, d.msg.c_str(), (int)d.msg.size(), &r, DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+        d.msg_h = r.bottom + (int)(10 * s);
+    }
+    SelectObject(dc, fs);
+    r = RECT{0, 0, d.text_w, 0};
+    DrawTextW(dc, d.hint.c_str(), (int)d.hint.size(), &r, DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+    d.hint_h = r.bottom;
+    SelectObject(dc, old);
+    DeleteObject(f);
+    DeleteObject(fs);
+    d.foot_h = (int)(22 * s) + d.hint_h;
+    const int body = (d.list ? d.rowh * d.rows + (int)(22 * s) : 0) + d.msg_h + (d.progress ? (int)(40 * s) * std::max(1, sn.progress_count) : 0) +
+                     ((d.yesno || d.ok_button) ? (int)(66 * s) : 0) + (int)(24 * s);
+    d.ph = d.head_h + body + d.foot_h;
+    return d;
+}
+
+static void wrapped_outline(HDC dc, RECT rc, const std::wstring& t, COLORREF col, COLORREF ink, int o)
+{
+    SetTextColor(dc, ink);
+    for (int dy = -o; dy <= o; dy++)
+        for (int dx = -o; dx <= o; dx++)
+            if (dx || dy) {
+                RECT q = rc;
+                OffsetRect(&q, dx, dy);
+                DrawTextW(dc, t.c_str(), (int)t.size(), &q, DT_WORDBREAK | DT_NOPREFIX);
+            }
+    SetTextColor(dc, col);
+    DrawTextW(dc, t.c_str(), (int)t.size(), &rc, DT_WORDBREAK | DT_NOPREFIX);
+}
+
+static std::string fit_text(HDC dc, std::string t, int max_w)
+{
+    if (text_width(dc, t) <= max_w) return t;
+    while (t.size() > 1 && text_width(dc, t + "…") > max_w) {
+        size_t n = t.size() - 1;
+        while (n > 0 && (t[n] & 0xC0) == 0x80) n--; /* keep UTF-8 intact */
+        t.resize(n);
+    }
+    return t + "…";
+}
+
+static void paint_dialog(HDC dc, int W_, int H_)
+{
+    const SysOverlaySnapshot& sn = *dsnap;
+    const double s = dlg_scale;
+    const COLORREF pink = rgb(255, 89, 166), gold = rgb(255, 214, 77), white = rgb(255, 255, 255), ink = rgb(8, 3, 24), soft = rgb(232, 219, 255);
+    const DlgLayout d = dlg_layout(dc, sn, s);
+    HFONT fnt = make_font((int)(25 * s)), fsmall = make_font((int)(19 * s)), fbig = make_font((int)(34 * s));
+    ndhits = 0;
+    auto add_hit = [&](int act, int x, int y, int w, int h) {
+        if (ndhits < kDlgRows + 4) dhits[ndhits++] = Hit{act, RECT{x, y, x + w, y + h}};
+    };
+    gradient(dc, 0, 0, W_, H_, rgb(56, 23, 92), rgb(15, 10, 41));
+    fill(dc, 0, 0, W_, (int)(4 * s), pink);
+    fill(dc, 0, H_ - (int)(4 * s), W_, (int)(4 * s), pink);
+    fill(dc, 0, 0, (int)(4 * s), H_, pink);
+    fill(dc, W_ - (int)(4 * s), 0, (int)(4 * s), H_, pink);
+    gradient(dc, (int)(4 * s), (int)(4 * s), W_ - (int)(8 * s), d.head_h - (int)(4 * s), rgb(199, 41, 115), rgb(92, 20, 102));
+    fill(dc, (int)(4 * s), d.head_h, W_ - (int)(8 * s), (int)(3 * s), gold);
+    SelectObject(dc, fbig);
+    const std::string title = fit_text(dc, dlg_tr(sn.title), W_ - (int)(120 * s));
+    text_outline(dc, (W_ - text_width(dc, title)) / 2, (int)((d.head_h - 34 * s * 1.3) / 2), title, white, ink, (int)(2 * s) + 1);
+
+    SelectObject(dc, fnt);
+    SetBkMode(dc, TRANSPARENT);
+    int y = d.head_h + (int)(14 * s);
+    if (!d.msg.empty()) {
+        wrapped_outline(dc, RECT{(int)(35 * s), y, (int)(35 * s) + d.text_w, y + d.msg_h}, d.msg, white, ink, std::max(1, (int)(1 * s)));
+        y += d.msg_h;
+    }
+    if (d.list) {
+        const int top = dlg_top;
+        y += (int)(6 * s);
+        for (int i = 0; i < d.rows; i++) {
+            const int idx = top + i, ry = y + d.rowh * i;
+            add_hit(D_ROW + i, 0, ry, W_, d.rowh);
+            const bool selected = idx == sn.selected, hot = dlg_hover == D_ROW + i;
+            if (selected || hot) {
+                gradient(dc, (int)(14 * s), ry + (int)(3 * s), W_ - (int)(28 * s), d.rowh - (int)(6 * s),
+                         selected ? rgb(255, 89, 166) : rgb(115, 51, 153), selected ? rgb(158, 31, 128) : rgb(77, 31, 115));
+                if (selected) fill(dc, (int)(14 * s), ry + (int)(3 * s), (int)(5 * s), d.rowh - (int)(6 * s), gold);
+            }
+            const std::string label = fit_text(dc, dlg_tr(sn.items[idx].label), W_ - (int)(90 * s));
+            text_outline(dc, (int)(38 * s), ry + (int)(6 * s), label, selected ? gold : white, ink, (int)(1 * s) + 1);
+        }
+        if (sn.count > kDlgRows) {
+            const std::string more = std::to_string(sn.selected + 1) + " / " + std::to_string(sn.count);
+            SelectObject(dc, fsmall);
+            text_outline(dc, W_ - (int)(30 * s) - text_width(dc, more), y + d.rowh * d.rows + (int)(2 * s), more, soft, ink, 1);
+            SelectObject(dc, fnt);
+        }
+        y += d.rowh * d.rows + (int)(16 * s);
+    }
+    if (d.progress) {
+        for (int i = 0; i < std::max(1, sn.progress_count); i++) {
+            const int bw = W_ - (int)(80 * s);
+            fill(dc, (int)(40 * s), y + (int)(8 * s), bw, (int)(14 * s), rgb(26, 13, 51));
+            fill(dc, (int)(40 * s), y + (int)(8 * s), bw * (int)std::min(100u, sn.progress[i]) / 100, (int)(14 * s), rgb(255, 89, 166));
+            y += (int)(40 * s);
+        }
+    }
+    auto button = [&](int act, const char* label, int x, int bw, bool selected) {
+        const int bh = (int)(46 * s), by = y + (int)(6 * s);
+        const bool hot = dlg_hover == act;
+        add_hit(act, x, by, bw, bh);
+        gradient(dc, x, by, bw, bh, selected || hot ? rgb(255, 89, 166) : rgb(51, 26, 82), selected || hot ? rgb(158, 31, 128) : rgb(26, 13, 51));
+        if (selected || act == D_OK) fill(dc, x, by + bh - (int)(4 * s), bw, (int)(3 * s), gold);
+        text_outline(dc, x + (bw - text_width(dc, label)) / 2, by + (int)(6 * s), label, selected || act == D_OK ? gold : white, ink, (int)(1 * s) + 1);
+    };
+    if (d.yesno) {
+        const int bw = (int)(170 * s), gap = (int)(24 * s), bx = (W_ - bw * 2 - gap) / 2;
+        button(D_YES, L("Sim", "Yes"), bx, bw, sn.selected == 0);
+        button(D_NO, L("Não", "No"), bx + bw + gap, bw, sn.selected == 1);
+    } else if (d.ok_button) {
+        const int bw = (int)(190 * s);
+        button(D_OK, "OK", (W_ - bw) / 2, bw, true);
+    }
+    const int fy = H_ - d.foot_h + (int)(8 * s);
+    fill(dc, (int)(30 * s), fy - (int)(6 * s), W_ - (int)(60 * s), (int)(2 * s) + 1, rgb(255, 71, 148));
+    SelectObject(dc, fsmall);
+    SetTextColor(dc, soft);
+    RECT tr = {(int)(35 * s), fy + (int)(6 * s), (int)(35 * s) + d.text_w, H_};
+    DrawTextW(dc, d.hint.c_str(), (int)d.hint.size(), &tr, DT_WORDBREAK | DT_NOPREFIX);
+    DeleteObject(fnt);
+    DeleteObject(fsmall);
+    DeleteObject(fbig);
+}
+
+static void dlg_activate(int act, int dir)
+{
+    if (act < 0) return;
+    auto snap = std::make_unique<SysOverlaySnapshot>();
+    ps3_overlay_snapshot(snap.get());
+    if (!snap->active) return;
+    const uint64_t token = snap->token;
+    auto pulse = [](uint16_t b) { ps3_overlay_input(0); ps3_overlay_input(b); };
+    if (act >= D_ROW && act < D_ROW + kDlgRows) {
+        const int target = dlg_top + (act - D_ROW);
+        if (target < 0 || target >= snap->count) return;
+        int cur = snap->selected;
+        while (cur < target) { pulse(0x40); cur++; }
+        while (cur > target) { pulse(0x10); cur--; }
+        ps3_overlay_input(0);
+        if (dir > 0) ps3_overlay_finish(token, SYS_OVERLAY_OK);
+        else if (!snap->cancel_disabled) ps3_overlay_finish(token, SYS_OVERLAY_BACK);
+    } else if (act == D_OK || act == D_YES) {
+        ps3_overlay_finish(token, SYS_OVERLAY_OK);
+    } else if (act == D_NO) {
+        ps3_overlay_finish(token, SYS_OVERLAY_NO);
+    } else if (act == D_BACK) {
+        if (!snap->cancel_disabled) ps3_overlay_finish(token, SYS_OVERLAY_BACK);
+    }
+}
+
+static int dlg_hit(int x, int y)
+{
+    for (int i = 0; i < ndhits; i++)
+        if (x >= dhits[i].r.left && x < dhits[i].r.right && y >= dhits[i].r.top && y < dhits[i].r.bottom) return dhits[i].act;
+    return A_NONE;
+}
+
+static void dlg_tick(HWND h)
+{
+    if (!dsnap) dsnap = std::make_unique<SysOverlaySnapshot>();
+    ps3_overlay_snapshot(dsnap.get());
+    const SysOverlaySnapshot& sn = *dsnap;
+    if (!sn.active || !game || IsIconic(game) || !IsWindowVisible(game)) {
+        if (IsWindowVisible(h)) ShowWindow(h, SW_HIDE);
+        dlg_rev = ~0ull;
+        dlg_hover = A_NONE;
+        return;
+    }
+    if (sn.revision == dlg_rev && sn.token == dlg_token && sn.kind != SYS_OVERLAY_PROGRESS && IsWindowVisible(h)) return;
+    dlg_rev = sn.revision;
+    dlg_token = sn.token;
+    if (is_open) close_panel();
+    RECT client;
+    GetClientRect(game, &client);
+    dlg_scale = client.bottom / 720.0;
+    if (dlg_scale < 0.8) dlg_scale = 0.8;
+    if (dlg_scale > 2.0) dlg_scale = 2.0;
+    if (sn.count > kDlgRows) dlg_top = std::clamp(sn.selected - kDlgRows / 2, 0, std::max(0, sn.count - kDlgRows));
+    else dlg_top = 0;
+    HDC dc = GetDC(h);
+    const DlgLayout d = dlg_layout(dc, sn, dlg_scale);
+    ReleaseDC(h, dc);
+    const int pw = std::min(d.pw, (int)client.right - 20), ph = std::min(d.ph, (int)client.bottom - 10);
+    POINT o = {0, 0};
+    ClientToScreen(game, &o);
+    SetWindowPos(h, HWND_TOP, o.x + (client.right - pw) / 2, o.y + (client.bottom - ph) / 2, pw, ph, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(h, nullptr, FALSE);
+}
+
+static LRESULT CALLBACK dlg_proc(HWND h, UINT m, WPARAM w, LPARAM l)
+{
+    switch (m) {
+    case WM_ERASEBKGND: return 1;
+    case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
+    case WM_TIMER: dlg_tick(h); return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        RECT cr;
+        GetClientRect(h, &cr);
+        if (dsnap && dsnap->active) {
+            HDC mem = CreateCompatibleDC(dc);
+            HBITMAP bmp = CreateCompatibleBitmap(dc, cr.right, cr.bottom);
+            HGDIOBJ old = SelectObject(mem, bmp);
+            paint_dialog(mem, cr.right, cr.bottom);
+            BitBlt(dc, 0, 0, cr.right, cr.bottom, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, old);
+            DeleteObject(bmp);
+            DeleteDC(mem);
+        }
+        EndPaint(h, &ps);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        const int hit = dlg_hit((short)LOWORD(l), (short)HIWORD(l));
+        if (hit != dlg_hover) { dlg_hover = hit; InvalidateRect(h, nullptr, FALSE); }
+        return 0;
+    }
+    case WM_LBUTTONDOWN:
+        dlg_activate(dlg_hit((short)LOWORD(l), (short)HIWORD(l)), 1);
+        return 0;
+    case WM_RBUTTONDOWN: {
+        const int hit = dlg_hit((short)LOWORD(l), (short)HIWORD(l));
+        dlg_activate(hit >= D_ROW && hit < D_ROW + kDlgRows ? hit : D_BACK, -1);
+        return 0;
+    }
+    case WM_MOUSEWHEEL: {
+        auto snap = std::make_unique<SysOverlaySnapshot>();
+        ps3_overlay_snapshot(snap.get());
+        if (snap->active && snap->kind == SYS_OVERLAY_LIST && snap->count) {
+            ps3_overlay_input(0);
+            ps3_overlay_input((short)HIWORD(w) > 0 ? 0x10 : 0x40);
+            ps3_overlay_input(0);
+        }
+        return 0;
+    }
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
+static void ensure_dialog_window()
+{
+    if (dlg || !game) return;
+    WNDCLASSEXW wc = {sizeof(wc)};
+    wc.lpfnWndProc = dlg_proc;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.lpszClassName = L"d2_system_dialog";
+    RegisterClassExW(&wc);
+    dlg = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"d2_system_dialog", L"Disgaea D2", WS_POPUP, 0, 0, 100, 100, game, nullptr,
+                          GetModuleHandleW(nullptr), nullptr);
+    if (!dlg) return;
+    SetLayeredWindowAttributes(dlg, 0, 245, LWA_ALPHA);
+    dsnap = std::make_unique<SysOverlaySnapshot>();
+    SetTimer(dlg, 1, 50, nullptr);
+    ps3_overlay_set_renderer(1); /* from now on the dialogs wait for the player */
+}
+
 /* ---- game window hook -------------------------------------------------------------------------------------- */
 
 static LRESULT CALLBACK game_hook(HWND h, UINT m, WPARAM w, LPARAM l)
 {
     switch (m) {
     case WM_KEYDOWN:
-        if (w == VK_F1) { if (is_open) close_panel(); else open_panel(); return 0; }
+        if (w == VK_F1) { if (dlg && IsWindowVisible(dlg)) return 0; if (is_open) close_panel(); else open_panel(); return 0; }
         if (w == VK_F11) { set_fullscreen(!cfg.fullscreen); save_config(); return 0; }
         if (w == VK_ESCAPE) return 0; /* the SDK window would close the game: Alt+F4 / the window button do that */
         break;
@@ -889,6 +1226,7 @@ static void attach()
     apply_keymap();
     apply_post();
     if (cfg.show_fps) ensure_fps_window();
+    ensure_dialog_window();
     if (!getenv("D2_PRESENT_INTERVAL")) _putenv_s("D2_PRESENT_INTERVAL", cfg.vsync ? "1" : "0");
     game_proc = (WNDPROC)SetWindowLongPtrA(game, GWLP_WNDPROC, (LONG_PTR)game_hook);
     if (!game_proc) { fprintf(stderr, "[d3d12][ui] options panel unavailable: could not hook the window\n"); return; }
