@@ -1,6 +1,6 @@
 """Regenerate the launcher artwork (cartoon buttons, home banner, logo). Needs Pillow; not part of the build.
 
-    python tools/make_launcher_art.py <folder with in-game screenshots> <disgaea-logo.png with transparency>
+    python tools/make_launcher_art.py <folder with in-game screenshots> <disgaea-logo.png with transparency> [winport-logo.png with transparency]
 
 Writes into windows/assets: hero-1..4.png (banner slides), logo-disgaea.png, pill.png and btn-*.png (n = normal,
 h = hover, p = pressed, d = disabled).
@@ -13,7 +13,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'windows/assets'
-BG = (19, 14, 29)
+BG = (244, 247, 253)  # light launcher background (matches BG in launcher_gui.py)
 S = 3  # supersampling
 
 
@@ -65,7 +65,7 @@ def cartoon_button(w, h, top, bottom, edge, icon=None, state='n'):
     radius = (body[3] - body[1]) * 0.34
     img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     shadow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).rounded_rectangle((body[0], body[1] + 6 * S, body[2], body[3] + 6 * S), radius, fill=(0, 0, 0, 140))
+    ImageDraw.Draw(shadow).rounded_rectangle((body[0], body[1] + 6 * S, body[2], body[3] + 6 * S), radius, fill=(40, 52, 96, 95))
     img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(3 * S)))
     outline = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(outline).rounded_rectangle(body, radius, fill=edge + (255,))
@@ -115,18 +115,20 @@ STYLES = {
     'red': ((255, 98, 118), (206, 30, 72), (86, 12, 38)),
     'blue': ((96, 176, 255), (40, 100, 226), (16, 34, 98)),
     'purple': ((170, 124, 255), (104, 62, 214), (38, 20, 96)),
+    'yellow': ((255, 234, 104), (250, 176, 24), (112, 60, 6)),
 }
 
 
 def make_buttons():
     spec = [('play', 'red', 340, 84, 'play'), ('iso', 'blue', 164, 60, 'folder'), ('gear', 'blue', 164, 60, 'gear'),
-            ('small', 'purple', 170, 46, None)]
+            ('small', 'purple', 170, 46, None),
+            ('nav', 'yellow', 176, 48, None), ('navs', 'red', 176, 48, None)]
     for name, style, w, h, icon in spec:
         top, bottom, edge = STYLES[style]
         for state in 'nhpd':
             cartoon_button(w, h, top, bottom, edge, icon, state).save(OUT / ('btn-%s-%s.png' % (name, state)), optimize=True)
     pill = Image.new('RGBA', (340 * S, 34 * S), (0, 0, 0, 0))
-    ImageDraw.Draw(pill).rounded_rectangle((0, 0, 340 * S - 1, 34 * S - 1), 17 * S, fill=(14, 8, 24, 215), outline=(255, 255, 255, 70), width=S)
+    ImageDraw.Draw(pill).rounded_rectangle((0, 0, 340 * S - 1, 34 * S - 1), 17 * S, fill=(255, 255, 255, 215), outline=(150, 165, 205, 160), width=S)
     pill.resize((340, 34), Image.LANCZOS).save(OUT / 'pill.png', optimize=True)
 
 
@@ -139,41 +141,55 @@ def make_logo(path):
     print('logo', logo.size)
 
 
-SLIDES = [('DisgaeaD2_20261115_212458_257.png', 0.30), ('DisgaeaD2_20261115_212602_217.png', 0.52),
-          ('DisgaeaD2_20261115_211801_367.png', 0.40), ('DisgaeaD2_20261115_212608_877.png', 0.42)]
-W, H, ART_LEFT = 760, 430, 240
+SLIDES = [2, 4, 5, 6, 1]  # indexes into the sorted screenshot folder: city, battle target, attack, miss, room
+W, H = 760, 430
+PANEL_BOX = (14, 14, 366, 416)  # frosted glass panel baked into each slide
 
 
 def make_slides(folder):
-    for number, (name, cx) in enumerate(SLIDES, 1):
-        shot = Image.open(Path(folder) / name).convert('RGB')
-        aw = W - ART_LEFT
-        crop_w = round(shot.height * aw / H)
-        x0 = int(max(0, min(shot.width - crop_w, cx * shot.width - crop_w / 2)))
-        art = shot.crop((x0, 0, x0 + crop_w, shot.height)).resize((aw, H), Image.LANCZOS)
-        art = ImageEnhance.Color(art).enhance(1.1)
-        canvas = Image.new('RGB', (W, H), BG)
-        canvas.paste(art, (ART_LEFT, 0))
-        # horizontal fade into the launcher colour: solid up to x=250, clear again from x~520
-        mask = Image.new('L', (W, H), 0)
-        mp = mask.load()
-        for x in range(W):
-            if x <= 250: v = 255
-            elif x >= 560: v = 0
-            else:
-                t = (x - 250) / 310
-                v = round(255 * (1 - t) ** 1.6)
-            for y in range(H): mp[x, y] = v
-        # soft bottom fade and top fade
-        for y in range(H):
-            edge = max(0, (y - (H - 46)) / 46)
-            top = max(0, (30 - y) / 30)
-            k = max(edge, top) * 255
-            if k:
-                for x in range(W): mp[x, y] = max(mp[x, y], round(k))
-        canvas = Image.composite(Image.new('RGB', (W, H), BG), canvas, mask)
-        canvas.save(OUT / ('hero-%d.png' % number), optimize=True)
+    files = sorted(Path(folder).glob('*.png'))
+    for number, index in enumerate(SLIDES, 1):
+        shot = Image.open(files[index]).convert('RGB')
+        crop_h = round(shot.width * H / W)
+        y0 = max(0, (shot.height - crop_h) // 2)
+        art = shot.crop((0, y0, shot.width, y0 + crop_h)).resize((W, H), Image.LANCZOS)
+        art = ImageEnhance.Color(art).enhance(1.08)
+        # frosted glass: blur + whiten the area behind the panel
+        glass = art.filter(ImageFilter.GaussianBlur(14))
+        glass = Image.blend(glass, Image.new('RGB', (W, H), (255, 255, 255)), 0.66)
+        mask = rounded_mask((W * S, H * S), tuple(v * S for v in PANEL_BOX), 26 * S).resize((W, H), Image.LANCZOS)
+        art = Image.composite(glass, art, mask)
+        ring = Image.new('RGBA', (W * S, H * S), (0, 0, 0, 0))
+        ImageDraw.Draw(ring).rounded_rectangle(tuple(v * S for v in PANEL_BOX), 26 * S, outline=(255, 255, 255, 235), width=2 * S)
+        art = Image.alpha_composite(art.convert('RGBA'), ring.resize((W, H), Image.LANCZOS)).convert('RGB')
+        # rounded outer corners in the launcher colour
+        corners = rounded_mask((W * S, H * S), (0, 0, W * S - 1, H * S - 1), 22 * S).resize((W, H), Image.LANCZOS)
+        art = Image.composite(art, Image.new('RGB', (W, H), BG), corners)
+        art.quantize(256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(OUT / ('hero-%d.png' % number), optimize=True)
         print('hero', number, (OUT / ('hero-%d.png' % number)).stat().st_size // 1024, 'KB')
+
+
+def make_sidebar_logo(path):
+    """Logo with the characters and 'WIN PORT' shown above the side menu."""
+    logo = Image.open(path).convert('RGBA')
+    logo = logo.crop(logo.getchannel('A').getbbox())
+    logo.thumbnail((200, 134), Image.LANCZOS)
+    logo.save(OUT / 'logo-sidebar.png', optimize=True)
+    print('sidebar logo', logo.size)
+
+
+def make_sidebar():
+    """Tall frosted-glass gradient for the side menu (220 px wide)."""
+    w, h = 220, 1400
+    img = gradient(w, h, (255, 255, 255), (214, 224, 250)).convert('RGBA')
+    orbs = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(orbs)
+    d.ellipse((-70, 300, 150, 500), fill=(255, 201, 92, 90))
+    d.ellipse((90, 760, 300, 970), fill=(255, 120, 150, 70))
+    d.ellipse((-40, 1040, 190, 1270), fill=(150, 170, 255, 90))
+    img.alpha_composite(orbs.filter(ImageFilter.GaussianBlur(38)))
+    ImageDraw.Draw(img).line((w - 1, 0, w - 1, h), fill=(255, 255, 255, 255), width=1)
+    img.convert('RGB').save(OUT / 'sidebar-glass.png', optimize=True)
 
 
 if __name__ == '__main__':
@@ -181,3 +197,6 @@ if __name__ == '__main__':
     make_buttons()
     make_logo(sys.argv[2])
     make_slides(sys.argv[1])
+    make_sidebar()
+    if len(sys.argv) > 3:
+        make_sidebar_logo(sys.argv[3])

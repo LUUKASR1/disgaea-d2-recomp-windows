@@ -2,10 +2,10 @@
 
 # Disgaea D2 WINPORT — Windows / DirectX 12
 
-## Versão pública oficial do projeto — 1.0.1 Stable
+## Versão pública oficial do projeto — 1.0.2 Stable
 
 Baixe o **instalador** ou o **ZIP portátil** em [Releases](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/releases/latest).
-### Novidades da 1.0 (e 1.0.1: nova tela inicial do launcher)
+### Novidades da 1.0 (1.0.1: nova tela inicial; 1.0.2: launcher em vidro, menu lateral cartoon e carrossel de gameplay)
 
 - **Menu de opções dentro do jogo (`F1`)** com abas Vídeo, Filtros, Controles e Sistema; lembra a última aba e guarda tudo em `settings.ini`.
 - **Vídeo:** janela / tela cheia sem bordas (`F11`), tamanho da janela, resolução de saída e interna, AMD FSR 1.0, VSync, contador de FPS.
@@ -49,13 +49,13 @@ Selecione sua própria **ISO USA compatível** e o PKG da atualização **BLUS31
 
 **DirectX 12**, configurações de resolução interna/saída, janela/tela cheia sem bordas, VSync, Hz e FSR 1 espacial. Vulkan, DLSS, Frame Generation e Android ainda não estão disponíveis. HUD após upscaling permanece experimental e desligado por padrão.
 
-[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-1.0.1.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
+[Instalação, saves, requisitos e limitações / Installation, saves, requirements and limitations](docs/RELEASE-1.0.2.md) · [Reportar erro / Report a bug](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues/new?template=bug_report.yml)
 
 A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` por compatibilidade com a linha testada. Não apague essa pasta. Outros perfis são preservados, sem migração universal automática.
 
 **Save do PS3:** [guia de importação experimental — PT-BR / English](docs/SAVES-PS3.md). A compatibilidade com saves reais do console ainda não foi validada.
 
-## Official project release — 1.0.1 Stable
+## Official project release — 1.0.2 Stable
 
 **Controls:** open **Controls** or **Command guide** on Home to view the keyboard mapping. The guide follows the launcher language, with outlined headings and game-inspired colors. Direct pointer selection inside the game is not available yet.
 
@@ -63,7 +63,7 @@ A versão oficial reutiliza `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` po
 
 **Saves:** use **My saves — open folder** on Home or **Files and support → Open save folder**. **How to use my save** shows the destination and instructions; close the game and back up before copying.
 
-### What's new in 1.0 (and 1.0.1: new launcher home screen)
+### What's new in 1.0 (1.0.1: new home screen; 1.0.2: glass launcher, cartoon side menu and gameplay carousel)
 
 - **In-game options menu (`F1`)** with Video, Filters, Controls and System tabs; remembers the last tab and saves everything to `settings.ini`.
 - **Video:** windowed / borderless fullscreen (`F11`), window size, output and internal resolution, AMD FSR 1.0, VSync, FPS counter.
@@ -91,7 +91,7 @@ Download the **installer** or **portable ZIP** from [Releases](https://github.co
 
 **No game data, updates/DLC, firmware, keys, saves or game-derived compiled code is distributed.** Independent community project, not an official release from the game's rights holders.
 
-**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v1.0.1](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v1.0.1). Use this tag when building the released version from source.
+**Código-fonte da versão / Release source:** para compilar esta versão, use a [tag v1.0.2](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/tree/v1.0.2). Use this tag when building the released version from source.
 
 ## Sobre o projeto
 

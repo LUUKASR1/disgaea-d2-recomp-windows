@@ -18,14 +18,14 @@ KEY_BINDINGS = (
 )
 
 
-def build_controls_guide(parent, translate):
+def build_controls_guide(parent, translate, palette=None):
     """Build scrollable-page content; return a language-refresh callback.
 
     Use installed system fonts, never bundle an extracted game font. Ordinary
     labels are localized by the launcher's existing widget_bindings; Canvas
     title text must be refreshed explicitly.
     """
-    bg, panel, ink, muted, gold = '#130e1d', '#2b1c38', '#fff2e6', '#b7a7c5', '#ffb16a'
+    bg, panel, ink, muted, gold, outline = palette or ('#130e1d', '#2b1c38', '#fff2e6', '#b7a7c5', '#ffb16a', '#07050c')
     families = set(tkfont.families(parent))
     title_family = 'Impact' if 'Impact' in families else 'Segoe UI'
     title_font = tkfont.Font(parent, family=title_family, size=29, weight='bold')
@@ -36,7 +36,7 @@ def build_controls_guide(parent, translate):
     title_ids = []
     for dx, dy in ((-2, -2), (-2, 2), (2, -2), (2, 2), (0, 3)):
         title_ids.append(banner.create_text(6 + dx, 30 + dy, anchor='w',
-                         font=title_font, fill='#07050c'))
+                         font=title_font, fill=outline))
     title_ids.append(banner.create_text(6, 30, anchor='w', font=title_font, fill=gold))
 
     def label(box, text, color=ink, size=11, bold=False):
