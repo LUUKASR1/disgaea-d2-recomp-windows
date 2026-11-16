@@ -84,6 +84,7 @@ struct Settings {
   bool fullscreen = false; // borderless fullscreen on the current monitor
   bool vsync = true;
   bool show_fps = false; // FPS counter in the corner of the screen
+  bool texdump = false; // save every texture the game loads as PNG (texture pack)
   uint32_t scale_pct = 100; // internal resolution: percent of the output size (50..200)
   // Image filters, each 0 (off) .. 3 (strong).
   uint32_t sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0;
@@ -128,6 +129,7 @@ void load_settings() {
         if (k == "fullscreen") g_settings.fullscreen = value != 0;
         else if (k == "vsync") g_settings.vsync = value != 0;
         else if (k == "showfps") g_settings.show_fps = value != 0;
+        else if (k == "texdump") g_settings.texdump = value != 0;
         else if (k == "scale" && value >= 25 && value <= 400) g_settings.scale_pct = value;
         else if (k == "sharpen" && value <= 3) g_settings.sharpen = value;
         else if (k == "scanlines" && value <= 3) g_settings.scanlines = value;
@@ -166,6 +168,7 @@ void save_settings() {
                  g_settings.width, g_settings.height);
     for (int i = 0; i < 14; i++) std::fprintf(f, "key%d=%d\n", i, g_settings.keys[i]);
     if (g_settings.api >= 0) std::fprintf(f, "api=%d\n", g_settings.api);
+    std::fprintf(f, "texdump=%u\n", g_settings.texdump ? 1u : 0u);
     std::fclose(f);
   }
 }
@@ -201,7 +204,7 @@ void set_fullscreen(bool on) {
 // Mouse driven on purpose: the game reads the keyboard itself (arrows, Enter, ...), so keyboard navigation
 // would also move the game. The layout is produced each frame by build_overlay() (further down); the window
 // thread only hit-tests against the rectangles stored here. Two tabs: video and image filters.
-enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET, A_API, A_TAB_SYSTEM };
+enum Act { A_MODE, A_WINSIZE, A_SCALE, A_VSYNC, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_UPSCALER, A_LANG, A_RESET, A_CLOSE, A_TAB_VIDEO, A_TAB_FILTERS, A_TAB_CONTROLS, A_KEYS_RESET, A_API, A_TAB_SYSTEM, A_TEXDUMP };
 constexpr int A_KEY0 = 200; // A_KEY0 + i: rebind pad action i
 constexpr int kMaxHits = 32;
 constexpr uint32_t kResW[] = {1280, 1600, 1920, 2560, 3840}, kResH[] = {720, 900, 1080, 1440, 2160};
@@ -365,6 +368,7 @@ void menu_activate(int action, int dir) {
   case A_AA: if (g_settings.upscaler) return; g_settings.aa = g_settings.aa ? 0u : 1u; break;
   case A_UPSCALER: g_settings.upscaler = g_settings.upscaler ? 0u : 1u; break;
   case A_LANG: g_settings.lang = g_settings.lang ? 0u : 1u; break;
+  case A_TEXDUMP: g_settings.texdump = !d2_texture_dump_enabled(); d2_texture_set_dump(g_settings.texdump ? 1 : 0); break;
   case A_API:
     if (dir != 1) { g_api_armed_until = 0; return; }
     request_api_switch();
@@ -1004,7 +1008,8 @@ void build_overlay(uint32_t w, uint32_t h, uint32_t cw, uint32_t ch) {
   const Row sys_rows[kRows] = {
       {A_LANG, L("Idioma", "Language"), g_settings.lang ? "\302\253 English \302\273" : "\302\253 Portugu\303\252s \302\273", true, false},
       {A_API, L("API gr\303\241fica", "Graphics API"), api_is_armed() ? L("\302\253 Clique: reiniciar em DirectX 12 \302\273", "\302\253 Click: restart in DirectX 12 \302\273") : "\302\253 Vulkan \302\273", true, false},
-      {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
+      {A_TEXDUMP, L("Salvar texturas (PNG)", "Save textures (PNG)"), on_off[d2_texture_dump_enabled() ? 1 : 0], true, false},
+      {-1, "", "", false, false}, {-1, "", "", false, false},
       {-1, "", "", false, false}, {-1, "", "", false, false}, {-1, "", "", false, false},
       {-1, "", "", false, false},
       {A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true},
