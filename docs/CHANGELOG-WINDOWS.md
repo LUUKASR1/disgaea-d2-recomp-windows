@@ -1,3 +1,7 @@
+# 1.0.5 — Prévia europeia (BLES01939)
+
+- Corrige a compilação europeia: o passo SSE4.1 dos SPU não reconhecia a pasta `spu-eu`.
+
 # 1.0.4 — Prévia europeia (BLES01939)
 
 - Perfil europeu experimental (pasta do jogo ou ISO BLES01939 + EBOOT.elf descriptografado), separado do americano. Pré-lançamento.

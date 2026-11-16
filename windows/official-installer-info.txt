@@ -1,4 +1,4 @@
-Disgaea D2 Windows Launcher 1.0.4 - Stable / DirectX 12
+Disgaea D2 Windows Launcher 1.0.5 - Stable / DirectX 12
 
 Projeto independente da comunidade. Nao e uma publicacao oficial da NIS ou Sony.
 
