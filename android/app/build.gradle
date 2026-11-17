@@ -4,6 +4,15 @@ android {
     namespace 'org.disgaead2.port'
     compileSdk 35
     ndkVersion '28.2.13676358'
+    signingConfigs {
+        // Fixed key so every build can be installed over the previous one (no uninstall needed). Debug-only, not a secret.
+        debug {
+            storeFile file('../d2-debug.keystore')
+            storePassword 'android'
+            keyAlias 'd2debug'
+            keyPassword 'android'
+        }
+    }
     defaultConfig {
         applicationId 'org.disgaead2.port'
         minSdk 29
