@@ -31,6 +31,21 @@ static void notify_queue(ppu_context* ctx)
             return;
         }
     }
+#elif D2_GAME_VERSION == 100
+    // EU 1.00 has the same SurMixer race: the key can still be 0 when Start runs. The worker's queue key is the
+    // same constant as in 1.40 (seen in every EU log), so wait for that queue to exist instead of failing with
+    // "no key" and leaving the game without audio-period events (silent game).
+    if (!key) {
+        constexpr uint64_t kSurMixerKey = 0x8000CAFE02460300ULL;
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!sys_event_find_queue_by_key(kSurMixerKey) && std::chrono::steady_clock::now() < until)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (sys_event_find_queue_by_key(kSurMixerKey)) {
+            std::fprintf(stderr, "[D2 audio] SurMixer queue was not published yet; using key=0x%llX\n",
+                (unsigned long long)kSurMixerKey);
+            key = kSurMixerKey;
+        }
+    }
 #endif
     ctx->gpr[3] = (uint32_t)cellAudioSetNotifyEventQueue(key);
 }

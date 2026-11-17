@@ -1,3 +1,7 @@
+# 1.0.21 — Prévia europeia + núcleo Android (prévia)
+
+- Áudio EU: corrida do SurMixer na inicialização (fila de eventos com chave 0) corrigida.
+
 # 1.0.20 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: áudio pelo AAudio; menos cópias de vértices por desenho.
