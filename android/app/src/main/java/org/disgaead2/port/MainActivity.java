@@ -58,6 +58,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             @Override public void surfaceDestroyed(SurfaceHolder holder) { NativeBridge.setSurface(null); }
         });
         root.addView(surface);
+        // Fix the buffer to the Activity's landscape size: on a portrait-mounted panel the default buffer is portrait and
+        // would be stretched, squashing the picture.
+        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int w = r - l, h = b - t;
+            if (w > 0 && h > 0) surface.getHolder().setFixedSize(w, h);
+        });
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);

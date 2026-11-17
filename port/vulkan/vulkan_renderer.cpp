@@ -2132,11 +2132,12 @@ public:
       throw std::runtime_error("Surface cannot render color attachments");
     VkExtent2D current_extent = caps.currentExtent;
 #ifdef __ANDROID__
-    // The panel can be mounted rotated (portrait-native devices): the surface then reports the physical size. Draw in the
-    // Activity's orientation and let the compositor rotate (preTransform IDENTITY below).
-    if (current_extent.width != UINT32_MAX &&
-        (caps.currentTransform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)))
-      std::swap(current_extent.width, current_extent.height);
+    // The app fixes the SurfaceView buffer to the Activity's (landscape) size, which is what the window reports: use that
+    // size and an IDENTITY pre-transform instead of guessing from the panel rotation.
+    fprintf(stderr, "[vulkan] surface caps: currentExtent=%ux%u transform=0x%x supported=0x%x window=%ux%u\n", caps.currentExtent.width,
+          caps.currentExtent.height, (unsigned)caps.currentTransform, (unsigned)caps.supportedTransforms, w, h);
+    current_extent = VkExtent2D{std::clamp(w, caps.minImageExtent.width, caps.maxImageExtent.width),
+                                std::clamp(h, caps.minImageExtent.height, caps.maxImageExtent.height)};
 #endif
     swap_extent = current_extent.width != UINT32_MAX
                       ? current_extent

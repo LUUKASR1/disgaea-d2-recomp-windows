@@ -192,7 +192,10 @@ void rsx_vulkan_backend_present(void) {
   try {
     uint32_t w = (uint32_t)ANativeWindow_getWidth(g.window), h = (uint32_t)ANativeWindow_getHeight(g.window);
     if (w < 2 || h < 2) return;
-    if (g.renderer->needsResize()) {
+    static uint32_t last_w = 0, last_h = 0;
+    if (g.renderer->needsResize() || w != last_w || h != last_h) {
+      if (w != last_w || h != last_h) D2LOG("[vulkan] window size now %ux%u\n", w, h);
+      last_w = w; last_h = h;
       if (!g.renderer->resize(w, h, true)) return;
     }
     uint32_t rw = w, rh = h;

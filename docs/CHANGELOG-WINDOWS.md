@@ -1,3 +1,7 @@
+# 1.0.16 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: o buffer da tela do jogo passa a ter o tamanho real da tela deitada; antes a imagem ficava achatada numa faixa do aplicativo.
+
 # 1.0.15 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: a imagem sai na orientação do app (deitada) em aparelhos com a tela montada em pé; o Android faz a rotação e o aviso permanente de "subótimo" deixou de recriar a cadeia de imagens.
