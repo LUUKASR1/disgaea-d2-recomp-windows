@@ -1,4 +1,11 @@
 #include "compiler.h"
+#ifdef D2_SHADER_GLSLANG
+// Android build: glslang's HLSL front end replaces DXC (there is no DXC for ARM64 Android).
+#include <SPIRV/GlslangToSpv.h>
+#include <glslang/Public/ResourceLimits.h>
+#include <glslang/Public/ShaderLang.h>
+#include <mutex>
+#else
 #ifdef _WIN32
 // clang-format off: bcrypt requires Windows typedefs first.
 #include <windows.h>
@@ -10,14 +17,16 @@
 #else
 #include <dlfcn.h>
 #endif
+#include <dxcapi.h>
+#endif
 #include <algorithm>
 #include <cstring>
-#include <dxcapi.h>
 #include <filesystem>
 #include <map>
 #include <regex>
 #include <stdexcept>
 #include <utility>
+#ifndef D2_SHADER_GLSLANG
 #if defined(__MINGW32__) && defined(__clang__)
 // llvm-mingw builds: dxcapi.h declares interface IIDs without a
 // __declspec(uuid), so __uuidof falls back to __mingw_uuidof<T>() which has no
@@ -33,7 +42,9 @@ D2_UUID(IDxcBlobUtf8, 0x3DA636C9, 0xBA71, 0x4024, 0xA3, 0x01, 0x30, 0xCB, 0xF1, 
 D2_UUID(IDxcBlob, 0x8BA5FB08, 0x5195, 0x40E2, 0xAC, 0x58, 0x0D, 0x98, 0x9C, 0x3A, 0x01, 0x02)
 #undef D2_UUID
 #endif
+#endif // !D2_SHADER_GLSLANG
 namespace d2::vulkan::shader {
+#ifndef D2_SHADER_GLSLANG
 namespace {
 template <class T> struct Com {
   T *p = nullptr;
@@ -54,6 +65,7 @@ void checked(HRESULT result, const char *message) {
     throw std::runtime_error(message);
 }
 } // namespace
+#endif
 std::string prepare_rsx_hlsl(const std::string &source, Stage stage) {
   if (source.empty() || source.size() > 2 * 1024 * 1024 ||
       source.find('\0') != std::string::npos ||
@@ -159,6 +171,79 @@ Interface inspect(const std::vector<uint32_t> &words) {
   std::sort(result.outputs.begin(), result.outputs.end());
   return result;
 }
+#ifdef D2_SHADER_GLSLANG
+class Compiler::Impl {
+public:
+  void start() {
+    static std::once_flag once;
+    std::call_once(once, [] { glslang::InitializeProcess(); });
+  }
+  Module compile(const std::string &raw, Stage stage) {
+    auto source = prepare_rsx_hlsl(raw, stage);
+    const EShLanguage language =
+        stage == Stage::vertex ? EShLangVertex : EShLangFragment;
+    const int set = stage == Stage::vertex ? 0 : 1;
+    glslang::TShader shader(language);
+    const char *text = source.c_str();
+    shader.setStrings(&text, 1);
+    shader.setEnvInput(glslang::EShSourceHlsl, language,
+                       glslang::EShClientVulkan, 100);
+    shader.setEnvClient(glslang::EShClientVulkan,
+                        glslang::EShTargetVulkan_1_1);
+    shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
+    shader.setEntryPoint("main");
+    shader.setSourceEntryPoint("main");
+    // Same binding contract the DXC build used: b# -> b, t# -> 32+n, s# -> 64+n, u# -> 96+n, one set per stage.
+    // (One shader per compile, so the global shift is enough; register(.., spaceN) already carries the set.)
+    (void)set;
+    shader.setShiftBinding(glslang::EResUbo, 0);
+    shader.setShiftBinding(glslang::EResTexture, 32);
+    shader.setShiftBinding(glslang::EResSampler, 64);
+    shader.setShiftBinding(glslang::EResImage, 96);
+    shader.setShiftBinding(glslang::EResUav, 96);
+    if (stage == Stage::vertex)
+      shader.setInvertY(true);
+    else
+      shader.setDxPositionW(true); // SV_Position.w is 1/w in HLSL, as DXC does
+    const EShMessages messages = static_cast<EShMessages>(
+        EShMsgSpvRules | EShMsgVulkanRules | EShMsgReadHlsl | EShMsgHlslOffsets);
+    Module module;
+    if (!shader.parse(GetDefaultResources(), 100, false, messages)) {
+      module.diagnostics = std::string(shader.getInfoLog()) + shader.getInfoDebugLog();
+      throw std::runtime_error("RSX HLSL compile failed: " + module.diagnostics);
+    }
+    glslang::TProgram program;
+    program.addShader(&shader);
+    if (!program.link(messages)) {
+      module.diagnostics = std::string(program.getInfoLog()) + program.getInfoDebugLog();
+      throw std::runtime_error("RSX HLSL link failed: " + module.diagnostics);
+    }
+    // The register shifts above are applied by the IO mapper, which the glslang CLI runs after linking.
+    if (!program.mapIO()) {
+      module.diagnostics = std::string(program.getInfoLog()) + program.getInfoDebugLog();
+      throw std::runtime_error("RSX HLSL binding map failed: " + module.diagnostics);
+    }
+    glslang::SpvOptions options;
+    options.disableOptimizer = true;
+    options.validate = false;
+    spv::SpvBuildLogger logger;
+    glslang::GlslangToSpv(*program.getIntermediate(language), module.words, &logger, &options);
+    module.diagnostics = std::string(shader.getInfoLog()) + logger.getAllMessages();
+    if (module.words.empty())
+      throw std::runtime_error("glslang produced no SPIR-V");
+    module.metadata = inspect(module.words);
+    for (auto resource : module.metadata.resources) {
+      bool range = resource.binding < 16 ||
+                   (resource.binding >= 32 && resource.binding < 80) ||
+                   (resource.binding >= 96 && resource.binding < 112);
+      if (resource.set != uint32_t(stage == Stage::fragment) || !range)
+        throw std::runtime_error(
+            "Compiled resource outside RSX binding contract");
+    }
+    return module;
+  }
+};
+#else
 class Compiler::Impl {
 #ifdef _WIN32
   HMODULE library = nullptr;
@@ -312,6 +397,7 @@ public:
     return module;
   }
 };
+#endif
 Compiler::Compiler() : impl_(std::make_unique<Impl>()) { impl_->start(); }
 Compiler::~Compiler() = default;
 Module Compiler::compile(const std::string &source, Stage stage) {

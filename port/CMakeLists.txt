@@ -290,6 +290,30 @@ if(ANDROID)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${D2_ANDROID_LOG_LIB})
     # bionic lacks pthread cancellation: every game TU gets the same no-op shim the runtime library uses.
     target_compile_options(${PROJECT_NAME} PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/android/d2_android_ucontext.h)
+
+    # Graphics: the Vulkan RSX backend on the Activity's surface. DXC does not exist for Android, so the RSX HLSL goes
+    # through glslang's HLSL front end (tools/build_android_core.py downloads the pinned glslang source).
+    set(D2_GLSLANG_DIR "" CACHE PATH "glslang source tree used as the Android HLSL -> SPIR-V compiler")
+    if(NOT D2_GLSLANG_DIR OR NOT EXISTS "${D2_GLSLANG_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR "D2_GLSLANG_DIR is not set; run the core build through tools/build_android_core.py")
+    endif()
+    foreach(opt ENABLE_OPT ENABLE_GLSLANG_BINARIES ENABLE_SPVREMAPPER ENABLE_CTEST GLSLANG_TESTS BUILD_TESTING
+                BUILD_EXTERNAL ALLOW_EXTERNAL_SPIRV_TOOLS GLSLANG_ENABLE_INSTALL ENABLE_GLSLANG_JS)
+        set(${opt} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    set(ENABLE_HLSL ON CACHE BOOL "" FORCE)
+    add_subdirectory("${D2_GLSLANG_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/glslang" EXCLUDE_FROM_ALL)
+    set(D2_ANDROID_VULKAN_SOURCES
+        vulkan/vulkan_renderer.cpp
+        vulkan/rsx_vulkan_android.cpp
+        vulkan/shader/compiler.cpp
+        vulkan/shader/fixtures.cpp)
+    target_sources(${PROJECT_NAME} PRIVATE ${D2_ANDROID_VULKAN_SOURCES})
+    set_source_files_properties(${D2_ANDROID_VULKAN_SOURCES} PROPERTIES
+        COMPILE_DEFINITIONS "VK_NO_PROTOTYPES;D2_VULKAN_GAME_BACKEND;D2_SHADER_GLSLANG")
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/vulkan" "${CMAKE_CURRENT_SOURCE_DIR}/vulkan/shader")
+    target_link_libraries(${PROJECT_NAME} PRIVATE glslang SPIRV glslang-default-resource-limits android)
 else()
     add_executable(${PROJECT_NAME} ${D2_GAME_SOURCES})
 endif()

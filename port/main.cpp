@@ -171,6 +171,21 @@ extern "C" int  rsx_metal_backend_pump_messages(void);
 #  define rsx_backend_present rsx_metal_backend_present
 #  define rsx_backend_pump    rsx_metal_backend_pump_messages
 #  define RSX_BACKEND_NAME    "Metal"
+#elif defined(__ANDROID__)
+/* Vulkan on the Activity's surface (port/vulkan/rsx_vulkan_android.cpp). If it cannot start, the null backend below
+ * keeps the guest running so the log still shows how far the boot gets (D2_ANDROID_GFX=null forces that). */
+extern "C" int  rsx_vulkan_backend_init(uint32_t w, uint32_t h, const char* title);
+extern "C" void rsx_vulkan_backend_present(void);
+extern "C" int  rsx_vulkan_backend_pump_messages(void);
+static int d2_android_backend_init(uint32_t w, uint32_t h, const char* title) {
+    const char* gfx = getenv("D2_ANDROID_GFX");
+    if (gfx && !strcmp(gfx, "null")) return -1;
+    return rsx_vulkan_backend_init(w, h, title);
+}
+#  define rsx_backend_init    d2_android_backend_init
+#  define rsx_backend_present rsx_vulkan_backend_present
+#  define rsx_backend_pump    rsx_vulkan_backend_pump_messages
+#  define RSX_BACKEND_NAME    "Vulkan (Android)"
 #else
 extern "C" int  rsx_null_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_null_backend_present(void);
@@ -183,7 +198,7 @@ extern "C" int  rsx_null_backend_pump_messages(void);
 
 /* If Metal is unavailable (including in a sandbox), keep draining the FIFO
  * through the existing software backend so guest fences can still complete. */
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)
 extern "C" int  rsx_null_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_null_backend_present(void);
 extern "C" int  rsx_null_backend_pump_messages(void);
@@ -371,7 +386,7 @@ static DWORD WINAPI frame_clock(LPVOID)
 #endif
     fprintf(stderr, "[rsx] %s backend init %s\n", RSX_BACKEND_NAME,
             rsx_ok ? "OK -- window open" : "FAILED");
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)
     if (!rsx_ok) {
         rsx_ok = (rsx_null_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
         if (rsx_ok) {

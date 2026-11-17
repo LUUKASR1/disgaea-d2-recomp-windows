@@ -5,6 +5,10 @@
 #else
 #include <dlfcn.h>
 #endif
+#ifdef __ANDROID__
+#define VK_USE_PLATFORM_ANDROID_KHR 1
+#include <android/native_window.h>
+#endif
 #include "rsx_contract.h"
 #include "triangle_spv.h"
 #include "vulkan_renderer.h"
@@ -108,6 +112,9 @@ class Renderer::Impl {
   DECLARE(vkDestroyDebugUtilsMessengerEXT)
 #ifdef _WIN32
   DECLARE(vkCreateWin32SurfaceKHR)
+#endif
+#ifdef __ANDROID__
+  DECLARE(vkCreateAndroidSurfaceKHR)
 #endif
 #undef DECLARE
   VkInstance instance = VK_NULL_HANDLE;
@@ -980,7 +987,11 @@ public:
     gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
         GetProcAddress(library, "vkGetInstanceProcAddr"));
 #else
+#ifdef __ANDROID__
+    library = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+#else
     library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+#endif
     if (!library)
       throw Unavailable("Vulkan loader unavailable");
     gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
@@ -1001,10 +1012,15 @@ public:
       extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
       extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
     }
+#elif defined(__ANDROID__)
+    if (window) {
+      extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+      extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+    }
 #else
     if (window)
       throw std::runtime_error(
-          "Window presentation currently implemented only on Win32");
+          "Window presentation currently implemented only on Win32 and Android");
 #endif
     if (useValidation) {
       extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -1059,6 +1075,12 @@ public:
       si.hinstance = GetModuleHandleW(nullptr);
       si.hwnd = (HWND)window;
       OK(vkCreateWin32SurfaceKHR(instance, &si, nullptr, &surface));
+#elif defined(__ANDROID__)
+      LOAD(vkCreateAndroidSurfaceKHR)
+      VkAndroidSurfaceCreateInfoKHR si{
+          VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+      si.window = static_cast<ANativeWindow *>(window);
+      OK(vkCreateAndroidSurfaceKHR(instance, &si, nullptr, &surface));
 #endif
     }
 #undef LOAD

@@ -20,6 +20,7 @@ NDK_FOLDER = 'android-ndk-r28c'
 NDK_WINDOWS = ('https://dl.google.com/android/repository/android-ndk-r28c-windows.zip',
                '086bba43ff2f5eb0e387b15c8278bb4e0d89ba1d')
 SDL_TAG = 'release-2.30.9'
+GLSLANG_COMMIT = 'a830a79179a724072e0c5a8c61758ed0b98ba6cc'   # HLSL front end replaces DXC on Android
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -127,11 +128,60 @@ def build_sdl(work, ndk):
     return install
 
 
+def fetch_glslang(work):
+    """glslang source at a pinned commit (the Android shader compiler: RSX HLSL -> SPIR-V)."""
+    source = work / 'glslang-src'
+    if (source / 'CMakeLists.txt').is_file():
+        head = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+        if head.returncode == 0 and head.stdout.strip() == GLSLANG_COMMIT:
+            return source
+        shutil.rmtree(source)
+    source.mkdir(parents=True)
+    run(['git', '-C', source, 'init', '-q'])
+    run(['git', '-C', source, 'fetch', '-q', '--depth', '1', 'https://github.com/KhronosGroup/glslang.git', GLSLANG_COMMIT])
+    run(['git', '-C', source, 'checkout', '-q', 'FETCH_HEAD'])
+    return source
+
+
+def vulkan_probe(work, ndk, sdk):
+    """Compile glslang and the Android Vulkan backend with the NDK, without the lifted game (so CI can check it)."""
+    glslang = fetch_glslang(work)
+    probe = work / 'vulkan-probe'
+    probe.mkdir(exist_ok=True)
+    port = (ROOT / 'port').as_posix()
+    sdk_dirs = ' '.join('"%s/%s"' % (sdk.as_posix(), d) for d in
+                        ('include', 'libs/video', 'libs/system', 'runtime/memory', 'runtime/platform', 'runtime/ppu'))
+    write_text(probe / 'CMakeLists.txt', f'''cmake_minimum_required(VERSION 3.22)
+project(d2_vulkan_probe C CXX)
+set(CMAKE_CXX_STANDARD 20)
+foreach(opt ENABLE_OPT ENABLE_GLSLANG_BINARIES ENABLE_SPVREMAPPER ENABLE_CTEST GLSLANG_TESTS BUILD_TESTING
+            BUILD_EXTERNAL ALLOW_EXTERNAL_SPIRV_TOOLS GLSLANG_ENABLE_INSTALL)
+    set(${{opt}} OFF CACHE BOOL "" FORCE)
+endforeach()
+set(ENABLE_HLSL ON CACHE BOOL "" FORCE)
+add_subdirectory("{glslang.as_posix()}" glslang EXCLUDE_FROM_ALL)
+add_library(d2_vk OBJECT "{port}/vulkan/vulkan_renderer.cpp" "{port}/vulkan/rsx_vulkan_android.cpp"
+    "{port}/vulkan/shader/compiler.cpp" "{port}/vulkan/shader/fixtures.cpp")
+target_compile_definitions(d2_vk PRIVATE VK_NO_PROTOTYPES D2_VULKAN_GAME_BACKEND D2_SHADER_GLSLANG)
+target_include_directories(d2_vk PRIVATE "{port}" "{port}/vulkan" "{port}/vulkan/shader" {sdk_dirs})
+target_link_libraries(d2_vk PRIVATE glslang SPIRV glslang-default-resource-limits)
+add_library(d2_vk_probe SHARED $<TARGET_OBJECTS:d2_vk>)
+target_link_libraries(d2_vk_probe PRIVATE glslang SPIRV glslang-default-resource-limits android log)
+target_link_options(d2_vk_probe PRIVATE -Wl,--unresolved-symbols=ignore-all)
+''')
+    build = work / 'vulkan-probe-build'
+    run(['cmake', '-S', probe, '-B', build, *toolchain_args(ndk)])
+    run(['cmake', '--build', build, '--', '-k', '0'])
+    print('Backend Vulkan Android compilado:', build / 'libd2_vk_probe.so')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sdk', type=Path, required=True, help='project-patched ps3recomp checkout')
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--ndk', type=Path)
+    parser.add_argument('--vulkan-probe', action='store_true',
+                        help='CI: build glslang and compile the Android Vulkan backend sources for ARM64')
     parser.add_argument('--runtime-only', action='store_true', help='CI: build only the ps3recomp runtime library')
     parser.add_argument('--recomp-dir', type=Path)
     parser.add_argument('--out-dir', type=Path, help='loader metadata (out-140 / out-eu)')
@@ -145,6 +195,9 @@ def main():
     ndk = ensure_ndk(work, args.ndk)
     sdk = work / 'sdk-android'
     prepare_sdk(args.sdk.resolve(), sdk)
+    if args.vulkan_probe:
+        vulkan_probe(work, ndk, sdk)
+        return
     sdl = build_sdl(work, ndk)
     prefix = ['-DCMAKE_PREFIX_PATH=' + str(sdl), '-DSDL2_DIR=' + str(sdl / 'lib/cmake/SDL2')]
     if args.runtime_only:
@@ -156,6 +209,7 @@ def main():
     for name in ('recomp_dir', 'out_dir', 'spu_dir', 'json_include', 'output'):
         if getattr(args, name) is None:
             parser.error('--' + name.replace('_', '-') + ' e obrigatorio sem --runtime-only')
+    glslang = fetch_glslang(work)
     build = work / 'core-build'
     # The launcher unpacks its sources into a new temporary folder on every run; CMake refuses a build
     # directory configured from another source path, so start clean when the path changed.
@@ -168,7 +222,7 @@ def main():
                '-DD2_GAME_VERSION=' + args.game_version, '-DPS3RECOMP_DIR=' + str(sdk),
                '-DRECOMP_DIR=' + str(args.recomp_dir.resolve()), '-DD2_OUT_DIR=' + str(args.out_dir.resolve()),
                '-DSPU_DIR=' + str(args.spu_dir.resolve()), '-DD2_JSON_INCLUDE_DIR=' + str(args.json_include.resolve()),
-               '-DD2_ENABLE_ISO_VFS=OFF', '-DD2_SPU_SIMD_SSE41=OFF', '-DBUILD_TESTING=OFF',
+               '-DD2_GLSLANG_DIR=' + str(glslang), '-DD2_ENABLE_ISO_VFS=OFF', '-DD2_SPU_SIMD_SSE41=OFF', '-DBUILD_TESTING=OFF',
                '-DCMAKE_CXX_FLAGS_RELEASE=-O1 -DNDEBUG', '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG',   # the lifted PPU files are huge
                '-DPython3_EXECUTABLE=' + sys.executable]
     run(command)

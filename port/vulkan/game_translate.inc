@@ -102,7 +102,11 @@ std::vector<uint32_t> compile_cached(const std::string &hlsl, shader::Stage stag
   const bool off = [] { const char *e = std::getenv("D2_VULKAN_SHADER_CACHE"); return e && e[0] == '0'; }();
   char name[64] = {};
   if (!off) {
+#ifdef D2_SHADER_GLSLANG
+    const std::string tag = std::string("glslang-1|") + (stage == shader::Stage::vertex ? "v|" : "f|");
+#else
     const std::string tag = std::string("dxc-1.8.2505.1|") + (stage == shader::Stage::vertex ? "v|" : "f|");
+#endif
     const uint64_t h1 = fast_hash(reinterpret_cast<const uint8_t *>(hlsl.data()), hlsl.size());
     const uint64_t h2 = fast_hash(reinterpret_cast<const uint8_t *>(tag.data()), tag.size()) ^ (h1 * 0x9E3779B97F4A7C15ull);
     std::snprintf(name, sizeof name, "%016llX%016llX.spv", (unsigned long long)h1, (unsigned long long)h2);
