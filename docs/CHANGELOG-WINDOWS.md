@@ -1,3 +1,7 @@
+# 1.0.18 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: cache de pipelines Vulkan salvo em disco (menos travadas ao carregar cenas novas).
+
 # 1.0.17 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: controle (botões, direcional e analógicos) entra no jogo pelo cellPad; o app esconde o painel quando o jogo inicia.

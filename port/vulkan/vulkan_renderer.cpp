@@ -19,6 +19,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
+#include <iterator>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -48,6 +50,7 @@ void check(VkResult r, const char *call) {
                   X(vkGetDeviceProcAddr)
 #define DEVICE_FUNCTIONS(X)                                                     \
   X(vkDestroyDevice)                                                            \
+  X(vkCreatePipelineCache) X(vkDestroyPipelineCache) X(vkGetPipelineCacheData)  \
   X(vkGetDeviceQueue)                                                           \
   X(vkDeviceWaitIdle)                                                           \
   X(vkCreateCommandPool)                                                        \
@@ -120,6 +123,7 @@ class Renderer::Impl {
   VkInstance instance = VK_NULL_HANDLE;
   VkPhysicalDevice physical = VK_NULL_HANDLE;
   VkDevice device = VK_NULL_HANDLE;
+  VkPipelineCache pipeline_cache = VK_NULL_HANDLE; // Android: persisted so pipelines are not recompiled on every run
   VkSurfaceKHR surface = VK_NULL_HANDLE;
   VkDebugUtilsMessengerEXT debug = VK_NULL_HANDLE;
   VkQueue queue = VK_NULL_HANDLE;
@@ -418,7 +422,7 @@ class Renderer::Impl {
         ds.depthWriteEnable = mode == 2;
         for (auto &a : color_blends)
           a.blendEnable = alpha;
-        OK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pc, nullptr,
+        OK(vkCreateGraphicsPipelines(device, pipeline_cache, 1, &pc, nullptr,
                                      &destination[mode * 2 + alpha]));
       }
     vkDestroyShaderModule(device, vert, nullptr);
@@ -954,6 +958,11 @@ public:
         vkDestroyFence(device, fence, nullptr);
       if (pool)
         vkDestroyCommandPool(device, pool, nullptr);
+      if (pipeline_cache) {
+        savePipelineCache();
+        vkDestroyPipelineCache(device, pipeline_cache, nullptr);
+        pipeline_cache = VK_NULL_HANDLE;
+      }
       vkDestroyDevice(device, nullptr);
       device = VK_NULL_HANDLE;
     }
@@ -1186,6 +1195,25 @@ public:
     }
 #undef LOAD
     vkGetDeviceQueue(device, family, 0, &queue);
+#ifdef __ANDROID__
+    {
+      std::vector<char> blob;
+      std::ifstream in("vulkan-pipeline-cache.bin", std::ios::binary);
+      if (in)
+        blob.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+      VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+      ci.initialDataSize = blob.size();
+      ci.pInitialData = blob.empty() ? nullptr : blob.data();
+      if (vkCreatePipelineCache(device, &ci, nullptr, &pipeline_cache) != VK_SUCCESS) {
+        pipeline_cache = VK_NULL_HANDLE; // a stale / foreign blob: start empty
+        ci.initialDataSize = 0;
+        ci.pInitialData = nullptr;
+        if (vkCreatePipelineCache(device, &ci, nullptr, &pipeline_cache) != VK_SUCCESS)
+          pipeline_cache = VK_NULL_HANDLE;
+      }
+      fprintf(stderr, "[vulkan] pipeline cache: loaded %zu bytes from disk\n", blob.size());
+    }
+#endif
     VkCommandPoolCreateInfo pc{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pc.queueFamilyIndex = family;
     pc.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -1896,7 +1924,27 @@ public:
     }
     programs.push_back(std::move(next));
     ++pipeline_cache_misses;
+    savePipelineCache();
     return uint32_t(programs.size() - 1);
+  }
+  void savePipelineCache() {
+#ifdef __ANDROID__
+    if (!pipeline_cache)
+      return;
+    size_t size = 0;
+    if (vkGetPipelineCacheData(device, pipeline_cache, &size, nullptr) != VK_SUCCESS || !size)
+      return;
+    std::vector<char> data(size);
+    if (vkGetPipelineCacheData(device, pipeline_cache, &size, data.data()) != VK_SUCCESS)
+      return;
+    {
+      std::ofstream out("vulkan-pipeline-cache.bin.tmp", std::ios::binary | std::ios::trunc);
+      out.write(data.data(), std::streamsize(size));
+      if (!out)
+        return;
+    }
+    std::rename("vulkan-pipeline-cache.bin.tmp", "vulkan-pipeline-cache.bin");
+#endif
   }
   uint32_t allocateConstants() {
     if (constant_states.size() >= 64)
