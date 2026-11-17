@@ -1,3 +1,7 @@
+# 1.0.14 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: os vídeos de abertura são pulados (ainda não há decodificador H.264 no Android), para o jogo seguir até a tela de título.
+
 # 1.0.13 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android com gráficos: backend Vulkan na tela do app (traduz os desenhos do jogo) e compilador de shaders glslang no lugar do DXC. O núcleo é gerado de novo pelo botão "Preparar núcleo Android" e baixa o glslang (pequeno) na primeira vez.
