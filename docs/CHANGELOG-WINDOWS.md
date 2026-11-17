@@ -1,3 +1,7 @@
+# 1.0.20 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: áudio pelo AAudio; menos cópias de vértices por desenho.
+
 # 1.0.19 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: buffer de geometria persistente e checagem vetorizada dos vértices (menos tempo por quadro em cenas pesadas).

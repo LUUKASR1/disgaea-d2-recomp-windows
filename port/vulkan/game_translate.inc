@@ -439,8 +439,8 @@ VertexTemplate make_template(const rsx_state *st) {
   }
   return t;
 }
+// `out` already holds the template (filled in bulk by the caller): only the enabled attributes are fetched.
 inline void fetch_vertex(const rsx_state *st, const VertexTemplate &t, uint32_t vi, RsxVertex &out) {
-  out = t.base;
   for (int k = 0; k < t.count; k++) {
     const int i = t.active[k];
     float *v = out.attributes[i].data();
@@ -538,9 +538,9 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
   src.reserve(stream.carry.size() + count);
   src.insert(src.end(), stream.carry.begin(), stream.carry.end());
   const size_t carried = src.size();
-  src.resize(carried + count);
   const auto tf0 = Clock::now();
   const VertexTemplate vt = make_template(st);
+  src.insert(src.end(), count, vt.base);   // one 256-byte write per vertex instead of zero-fill + copy
   for (u32 k = 0; k < count; k++)
     fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, src[carried + k]);
   t_fetch += ms(tf0, Clock::now());

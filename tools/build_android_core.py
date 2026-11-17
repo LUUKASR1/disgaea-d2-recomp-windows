@@ -96,6 +96,7 @@ def prepare_sdk(source, destination):
         raise SystemExit('SDK mudou: opcao -msse4.1 nao encontrada.')   # the project patch already tests for it
     text += ('\nif(ANDROID)\n'
              '    target_sources(ps3recomp_runtime PRIVATE libs/spurs/d2_android_ucontext.c libs/input/d2_android_pad.c)\n'
+             '    target_link_libraries(ps3recomp_runtime PUBLIC aaudio)\n'
              '    target_compile_options(ps3recomp_runtime PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/libs/spurs/d2_android_ucontext.h)\n'
              'endif()\n')
     write_text(cmake, text)
@@ -109,6 +110,18 @@ def prepare_sdk(source, destination):
         shutil.copyfile(ROOT / 'port/android' / name, destination / 'libs/spurs' / name)
     # Controller: SDL's gamepad driver needs its Java side, so cellPad reads the state the app forwards.
     shutil.copyfile(ROOT / 'port/android/d2_android_pad.c', destination / 'libs/input/d2_android_pad.c')
+    # Audio: SDL's audio driver needs its Java side, so cellAudio writes to AAudio instead.
+    shutil.copyfile(ROOT / 'port/android/d2_android_audio.inc', destination / 'libs/audio/d2_android_audio.inc')
+    audio = destination / 'libs/audio/cellAudio.c'
+    audio_text = read_text(audio)
+    sel = '#if defined(PS3RECOMP_AUDIO_USE_SDL2)\n  #define AUDIO_BACKEND_SDL2    1'
+    end = '#endif /* AUDIO_BACKEND_WASAPI */'
+    if sel not in audio_text or end not in audio_text:
+        raise SystemExit('SDK mudou: seletor do backend de audio nao encontrado.')
+    audio_text = audio_text.replace(sel, '#if defined(__ANDROID__)\n  #define AUDIO_BACKEND_SDL2    0\n  #define AUDIO_BACKEND_WASAPI  0\n'
+                                    '#elif defined(PS3RECOMP_AUDIO_USE_SDL2)\n  #define AUDIO_BACKEND_SDL2    1', 1)
+    audio_text = audio_text.replace(end, end + '\n\n#ifdef __ANDROID__\n#include "d2_android_audio.inc"\n#endif', 1)
+    write_text(audio, audio_text)
     pad = destination / 'libs/input/cellPad.c'
     pad_text = read_text(pad)
     marker = 'static void pad_poll_sdl2(void)\n{'
