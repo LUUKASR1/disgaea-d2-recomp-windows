@@ -1,0 +1,30 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.disgaead2.port'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+    signingConfigs {
+        // Fixed key so every build can be installed over the previous one (no uninstall needed). Debug-only, not a secret.
+        debug {
+            storeFile file('../d2-debug.keystore')
+            storePassword 'android'
+            keyAlias 'd2debug'
+            keyPassword 'android'
+        }
+    }
+    defaultConfig {
+        applicationId 'org.disgaead2.port'
+        minSdk 29
+        targetSdk 35
+        versionCode 2
+        versionName '0.2.0'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
+    }
+    externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,61 @@
+name: Android port (Vulkan surface milestone)
+on:
+  push:
+    branches: [android-port, eu-preview]
+    paths: ['android/**', '.github/workflows/android-port.yml', 'tools/android_core_probe.sh', 'tools/build_android_core.py', 'port/CMakeLists.txt', 'port/android/**', 'port/vulkan/**', 'port/main.cpp']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install pinned SDK and ARM64 toolchain
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Build debug APK
+        run: gradle -p android assembleDebug --no-daemon --stacktrace
+      - name: Verify the APK carries the ARM64 library
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          unzip -l "$apk" | grep 'lib/arm64-v8a/libd2android.so'
+          ls -l "$apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DisgaeaD2-Android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  core-probe:
+    name: ps3recomp runtime for ARM64 (NDK probe)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install NDK
+        run: sdkmanager 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Build the runtime library with the NDK
+        run: bash tools/android_core_probe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-core-probe-log
+          path: |
+            probe.log
+            vulkan-probe.log
+            patch.log
