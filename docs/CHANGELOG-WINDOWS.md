@@ -1,3 +1,7 @@
+# 1.0.23 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: áudio AAudio em modo callback com buffer circular + monitor de saúde a cada 5 s.
+
 # 1.0.22 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: relatório de saúde do áudio (AAudio) a cada 5 s para diagnosticar som baixo/chiado.
