@@ -1,3 +1,7 @@
+# 1.0.13 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android com gráficos: backend Vulkan na tela do app (traduz os desenhos do jogo) e compilador de shaders glslang no lugar do DXC. O núcleo é gerado de novo pelo botão "Preparar núcleo Android" e baixa o glslang (pequeno) na primeira vez.
+
 # 1.0.12 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: saves, cache e pasta de trabalho do jogo vão para o armazenamento do app (antes o jogo tentava gravar numa pasta somente leitura e parava na recuperação de saves).
