@@ -38,6 +38,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView info, iso, coreInfo, logView;
+    private LinearLayout panelView;
     private boolean coreStarted;
     private SecondScreen second;
     private DisplayManager displays;
@@ -66,6 +67,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         });
 
         LinearLayout panel = new LinearLayout(this);
+        panelView = panel;
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(24, 16, 24, 16);
         info = new TextView(this);
@@ -247,6 +249,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 root.getAbsolutePath(), logFile().getAbsolutePath());
         if (error != null) { logView.setText(error); return; }
         coreStarted = true;
+        panelView.setVisibility(android.view.View.GONE); // the game gets the whole screen; Back brings the panel back
     }
 
     private void importCore(Uri uri) {
@@ -301,6 +304,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             case KeyEvent.KEYCODE_DPAD_RIGHT: return 8192;
             default: return 0;
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (coreStarted) {
+            panelView.setVisibility(panelView.getVisibility() == android.view.View.GONE ? android.view.View.VISIBLE : android.view.View.GONE);
+            return;
+        }
+        super.onBackPressed();
     }
 
     @Override
