@@ -91,7 +91,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         Button share = new Button(this);
         share.setText(R.string.share_log);
         share.setOnClickListener(v -> {
-            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, logTail(300));
+            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, logTail(120, 200));
             startActivity(Intent.createChooser(send, getString(R.string.share_log)));
         });
         LinearLayout buttons = new LinearLayout(this);
@@ -121,7 +121,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         @Override public void run() {
             String vulkan = NativeBridge.info();
             info.setText(vulkan);
-            if (coreStarted) logView.setText(logTail(14));
+            if (coreStarted) logView.setText(logTail(0, 10));
             if (second != null) second.setStatus(vulkan + "\n" + getString(R.string.status_input, describeInput()));
             handler.postDelayed(this, 500);
         }
@@ -159,17 +159,30 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         coreInfo.setText(text + "\n" + getString(R.string.game_folder, gameRoot().getAbsolutePath()));
     }
 
-    private String logTail(int lines) {
+    /** Log without the per-frame spam: the first `headLines` interesting lines, a frame counter and the last `lines` lines. */
+    private String logTail(int headLines, int lines) {
         File log = logFile();
         if (!log.exists()) return "";
         try (RandomAccessFile f = new RandomAccessFile(log, "r")) {
-            long size = f.length(), from = Math.max(0, size - 64 * 1024);
+            long size = f.length(), from = Math.max(0, size - 6L * 1024 * 1024);
             byte[] data = new byte[(int) (size - from)];
             f.seek(from);
             f.readFully(data);
             String[] all = new String(data, StandardCharsets.UTF_8).split("\n");
+            java.util.ArrayList<String> kept = new java.util.ArrayList<>();
+            String lastFrame = null;
+            for (String line : all) {
+                if (line.startsWith("[rsx] presented guest frame")) { lastFrame = line; continue; }
+                kept.add(line);
+            }
             StringBuilder out = new StringBuilder();
-            for (int i = Math.max(0, all.length - lines); i < all.length; i++) out.append(all[i]).append('\n');
+            if (from > 0) out.append("(log truncated: only the last 6 MB)\n");
+            int head = Math.min(headLines, kept.size());
+            for (int i = 0; i < head; i++) out.append(kept.get(i)).append('\n');
+            int tailStart = Math.max(head, kept.size() - lines);
+            if (tailStart > head) out.append("... ").append(tailStart - head).append(" lines omitted ...\n");
+            for (int i = tailStart; i < kept.size(); i++) out.append(kept.get(i)).append('\n');
+            if (lastFrame != null) out.append(lastFrame).append('\n');
             return out.toString();
         } catch (java.io.IOException e) {
             return "(log: " + e + ")";
