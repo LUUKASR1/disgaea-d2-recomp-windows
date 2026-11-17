@@ -95,7 +95,7 @@ def prepare_sdk(source, destination):
     if not count and 'PS3RECOMP_HAS_MSSE41' not in text:
         raise SystemExit('SDK mudou: opcao -msse4.1 nao encontrada.')   # the project patch already tests for it
     text += ('\nif(ANDROID)\n'
-             '    target_sources(ps3recomp_runtime PRIVATE libs/spurs/d2_android_ucontext.c)\n'
+             '    target_sources(ps3recomp_runtime PRIVATE libs/spurs/d2_android_ucontext.c libs/input/d2_android_pad.c)\n'
              '    target_compile_options(ps3recomp_runtime PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/libs/spurs/d2_android_ucontext.h)\n'
              'endif()\n')
     write_text(cmake, text)
@@ -107,6 +107,30 @@ def prepare_sdk(source, destination):
     write_text(affinity, body.replace('pthread_setaffinity_np(pt, sizeof set, &set);', '(void)pt; (void)set;'))
     for name in ('d2_android_ucontext.c', 'd2_android_ucontext.h'):
         shutil.copyfile(ROOT / 'port/android' / name, destination / 'libs/spurs' / name)
+    # Controller: SDL's gamepad driver needs its Java side, so cellPad reads the state the app forwards.
+    shutil.copyfile(ROOT / 'port/android/d2_android_pad.c', destination / 'libs/input/d2_android_pad.c')
+    pad = destination / 'libs/input/cellPad.c'
+    pad_text = read_text(pad)
+    marker = 'static void pad_poll_sdl2(void)\n{'
+    if marker not in pad_text:
+        raise SystemExit('SDK mudou: pad_poll_sdl2 nao encontrado.')
+    hook = (marker + '\n#ifdef __ANDROID__\n'
+            '    {\n'
+            '        extern void d2_android_pad_get(unsigned*, unsigned char*);\n'
+            '        unsigned b; unsigned char a[4];\n'
+            '        d2_android_pad_get(&b, a);\n'
+            '        PadHostState* st = &s_host_state[0];\n'
+            '        st->connected = 1; st->buttons = (u16)b;\n'
+            '        st->analog_lx = a[0]; st->analog_ly = a[1]; st->analog_rx = a[2]; st->analog_ry = a[3];\n'
+            '        st->trigger_l2 = (b & CELL_PAD_CTRL_L2) ? 255 : 0; st->trigger_r2 = (b & CELL_PAD_CTRL_R2) ? 255 : 0;\n'
+            '        st->press_up = (b & CELL_PAD_CTRL_UP) ? 255 : 0; st->press_down = (b & CELL_PAD_CTRL_DOWN) ? 255 : 0;\n'
+            '        st->press_left = (b & CELL_PAD_CTRL_LEFT) ? 255 : 0; st->press_right = (b & CELL_PAD_CTRL_RIGHT) ? 255 : 0;\n'
+            '        st->press_triangle = (b & CELL_PAD_CTRL_TRIANGLE) ? 255 : 0; st->press_circle = (b & CELL_PAD_CTRL_CIRCLE) ? 255 : 0;\n'
+            '        st->press_cross = (b & CELL_PAD_CTRL_CROSS) ? 255 : 0; st->press_square = (b & CELL_PAD_CTRL_SQUARE) ? 255 : 0;\n'
+            '        st->press_l1 = (b & CELL_PAD_CTRL_L1) ? 255 : 0; st->press_r1 = (b & CELL_PAD_CTRL_R1) ? 255 : 0;\n'
+            '        return;\n'
+            '    }\n#endif')
+    write_text(pad, pad_text.replace(marker, hook, 1))
 
 
 def toolchain_args(ndk):

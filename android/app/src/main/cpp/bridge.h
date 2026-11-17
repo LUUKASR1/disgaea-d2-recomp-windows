@@ -11,3 +11,4 @@ void d2_demo_stop();
 void d2_core_forward_window(ANativeWindow* window);
 // True once the core owns the surface.
 bool d2_core_active();
+void d2_core_forward_pad(int buttons, float lx, float ly, float rx, float ry);

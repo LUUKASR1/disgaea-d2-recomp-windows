@@ -26,6 +26,7 @@ namespace {
 
 std::atomic<int> g_buttons{0};
 std::atomic<float> g_lx{0.f}, g_ly{0.f};
+std::atomic<float> g_rx{0.f}, g_ry{0.f};
 std::mutex g_info_mutex;
 std::string g_info = "Vulkan: not started";
 
@@ -304,10 +305,13 @@ JNIEXPORT void JNICALL Java_org_disgaead2_port_NativeBridge_setSurface(JNIEnv* e
     if (g_renderer->init(window)) g_renderer->start();
 }
 
-JNIEXPORT void JNICALL Java_org_disgaead2_port_NativeBridge_setInput(JNIEnv*, jclass, jint buttons, jfloat lx, jfloat ly) {
+JNIEXPORT void JNICALL Java_org_disgaead2_port_NativeBridge_setInput(JNIEnv*, jclass, jint buttons, jfloat lx, jfloat ly, jfloat rx, jfloat ry) {
     g_buttons = buttons;
     g_lx = lx;
     g_ly = ly;
+    g_rx = rx;
+    g_ry = ry;
+    d2_core_forward_pad(buttons, lx, ly, rx, ry);
 }
 
 JNIEXPORT jstring JNICALL Java_org_disgaead2_port_NativeBridge_info(JNIEnv* env, jclass) {

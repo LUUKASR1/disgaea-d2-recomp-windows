@@ -12,7 +12,7 @@ final class NativeBridge {
 
     static native void setSurface(Surface surface);
 
-    static native void setInput(int buttons, float lx, float ly);
+    static native void setInput(int buttons, float lx, float ly, float rx, float ry);
 
     static native String info();
 

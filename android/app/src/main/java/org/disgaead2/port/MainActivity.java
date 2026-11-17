@@ -43,7 +43,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private SecondScreen second;
     private DisplayManager displays;
     private int buttons;
-    private float lx, ly;
+    private float lx, ly, rx, ry;
+    private int hat;   // D-pad reported as a hat axis (bits 1024..8192)
 
     @Override
     protected void onCreate(Bundle state) {
@@ -298,6 +299,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             case KeyEvent.KEYCODE_BUTTON_R2: return 128;
             case KeyEvent.KEYCODE_BUTTON_START: return 256;
             case KeyEvent.KEYCODE_BUTTON_SELECT: return 512;
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: return 16384;
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: return 32768;
             case KeyEvent.KEYCODE_DPAD_UP: return 1024;
             case KeyEvent.KEYCODE_DPAD_DOWN: return 2048;
             case KeyEvent.KEYCODE_DPAD_LEFT: return 4096;
@@ -321,7 +324,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (bit == 0) return super.dispatchKeyEvent(event);
         if (event.getAction() == KeyEvent.ACTION_DOWN) buttons |= bit;
         else if (event.getAction() == KeyEvent.ACTION_UP) buttons &= ~bit;
-        NativeBridge.setInput(buttons, lx, ly);
+        NativeBridge.setInput(buttons | hat, lx, ly, rx, ry);
         return true;
     }
 
@@ -331,7 +334,11 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 && event.getAction() == MotionEvent.ACTION_MOVE) {
             lx = dead(event.getAxisValue(MotionEvent.AXIS_X));
             ly = dead(event.getAxisValue(MotionEvent.AXIS_Y));
-            NativeBridge.setInput(buttons, lx, ly);
+            rx = dead(event.getAxisValue(MotionEvent.AXIS_Z));
+            ry = dead(event.getAxisValue(MotionEvent.AXIS_RZ));
+            float hx = event.getAxisValue(MotionEvent.AXIS_HAT_X), hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
+            hat = (hx < -0.5f ? 4096 : 0) | (hx > 0.5f ? 8192 : 0) | (hy < -0.5f ? 1024 : 0) | (hy > 0.5f ? 2048 : 0);
+            NativeBridge.setInput(buttons | hat, lx, ly, rx, ry);
             return true;
         }
         return super.dispatchGenericMotionEvent(event);

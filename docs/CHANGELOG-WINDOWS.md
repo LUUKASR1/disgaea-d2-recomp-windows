@@ -1,3 +1,7 @@
+# 1.0.17 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: controle (botões, direcional e analógicos) entra no jogo pelo cellPad; o app esconde o painel quando o jogo inicia.
+
 # 1.0.16 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: o buffer da tela do jogo passa a ter o tamanho real da tela deitada; antes a imagem ficava achatada numa faixa do aplicativo.

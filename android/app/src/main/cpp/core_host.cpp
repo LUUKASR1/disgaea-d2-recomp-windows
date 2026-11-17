@@ -14,6 +14,7 @@ std::atomic<bool> g_started{false};
 std::atomic<int> g_result{-1000};   // -1000 = running / not finished
 typedef int (*core_run_fn)(const char*, const char*, const char*);
 std::atomic<void (*)(void*)> g_set_window{nullptr};
+std::atomic<void (*)(int, float, float, float, float)> g_set_pad{nullptr};
 
 std::string str(JNIEnv* env, jstring s) {
     const char* c = env->GetStringUTFChars(s, nullptr);
@@ -24,6 +25,10 @@ std::string str(JNIEnv* env, jstring s) {
 }  // namespace
 
 bool d2_core_active() { return g_set_window.load() != nullptr; }
+
+void d2_core_forward_pad(int buttons, float lx, float ly, float rx, float ry) {
+    if (auto fn = g_set_pad.load()) fn(buttons, lx, ly, rx, ry);
+}
 
 void d2_core_forward_window(ANativeWindow* window) {
     if (auto fn = g_set_window.load()) fn(window);
@@ -44,6 +49,7 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
         g_started = false;
         return env->NewStringUTF("d2_core_run not found in the library");
     }
+    g_set_pad = reinterpret_cast<void (*)(int, float, float, float, float)>(dlsym(lib, "d2_android_pad_set"));
     g_result = -1000;
     // The core draws with its own Vulkan swapchain: stop the milestone-0 renderer, then give it the window.
     d2_demo_stop();
