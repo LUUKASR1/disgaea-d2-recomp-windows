@@ -1,3 +1,7 @@
+# 1.0.15 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: a imagem sai na orientação do app (deitada) em aparelhos com a tela montada em pé; o Android faz a rotação e o aviso permanente de "subótimo" deixou de recriar a cadeia de imagens.
+
 # 1.0.14 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: os vídeos de abertura são pulados (ainda não há decodificador H.264 no Android), para o jogo seguir até a tela de título.

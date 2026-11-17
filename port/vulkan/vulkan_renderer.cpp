@@ -2130,8 +2130,16 @@ public:
     OK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface, &caps));
     if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT))
       throw std::runtime_error("Surface cannot render color attachments");
-    swap_extent = caps.currentExtent.width != UINT32_MAX
-                      ? caps.currentExtent
+    VkExtent2D current_extent = caps.currentExtent;
+#ifdef __ANDROID__
+    // The panel can be mounted rotated (portrait-native devices): the surface then reports the physical size. Draw in the
+    // Activity's orientation and let the compositor rotate (preTransform IDENTITY below).
+    if (current_extent.width != UINT32_MAX &&
+        (caps.currentTransform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)))
+      std::swap(current_extent.width, current_extent.height);
+#endif
+    swap_extent = current_extent.width != UINT32_MAX
+                      ? current_extent
                       : VkExtent2D{std::clamp(w, caps.minImageExtent.width,
                                               caps.maxImageExtent.width),
                                    std::clamp(h, caps.minImageExtent.height,
@@ -2219,6 +2227,10 @@ public:
                     (swap_can_copy ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
     sc.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sc.preTransform = caps.currentTransform;
+#ifdef __ANDROID__
+    if (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+      sc.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+#endif
     sc.compositeAlpha = alpha;
     sc.presentMode = mode;
     sc.clipped = VK_TRUE;
@@ -2401,9 +2413,11 @@ public:
       }
       if (r == VK_TIMEOUT || r == VK_NOT_READY)
         return false;
-      if (r == VK_SUBOPTIMAL_KHR)
-        dirty = true;
-      else
+      if (r == VK_SUBOPTIMAL_KHR) {
+#ifndef __ANDROID__
+        dirty = true; // Android reports SUBOPTIMAL permanently when the compositor rotates: not a reason to rebuild
+#endif
+      } else
         check(r, "vkAcquireNextImageKHR");
     }
     OK(vkResetCommandBuffer(cmd, 0));
@@ -2608,9 +2622,13 @@ public:
       present.pSwapchains = &swapchain;
       present.pImageIndices = &index;
       VkResult r = vkQueuePresentKHR(queue, &present);
-      if (r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR)
+      if (r == VK_ERROR_OUT_OF_DATE_KHR)
         dirty = true;
-      else
+      else if (r == VK_SUBOPTIMAL_KHR) {
+#ifndef __ANDROID__
+        dirty = true;
+#endif
+      } else
         check(r, "vkQueuePresentKHR");
     }
     if (!surface)
