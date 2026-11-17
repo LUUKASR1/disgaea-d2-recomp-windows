@@ -198,8 +198,14 @@ class Renderer::Impl {
   VkShaderModule vert = VK_NULL_HANDLE, frag = VK_NULL_HANDLE;
   VkBuffer readback = VK_NULL_HANDLE;
   VkDeviceMemory readback_memory = VK_NULL_HANDLE;
-  VkBuffer geometry = VK_NULL_HANDLE;
+  VkBuffer geometry = VK_NULL_HANDLE;          // == geo_buf while a frame has geometry, null for clear-only frames
   VkDeviceMemory geometry_memory = VK_NULL_HANDLE;
+  // Persistent upload buffer (re-created only when a frame needs more room) so no per-frame alloc/map/free.
+  VkBuffer geo_buf = VK_NULL_HANDLE;
+  VkDeviceMemory geo_mem = VK_NULL_HANDLE;
+  void *geo_map = nullptr;
+  VkDeviceSize geo_cap = 0;
+  bool geo_coherent = false;
   VkDeviceSize index_offset = 0;
   uint32_t vertex_count = 0, index_count = 0;
   DrawParameters parameters{};
@@ -922,10 +928,15 @@ public:
         vkDestroySampler(device, sampler, nullptr);
       if (texture_layout)
         vkDestroyDescriptorSetLayout(device, texture_layout, nullptr);
-      if (geometry)
-        vkDestroyBuffer(device, geometry, nullptr);
-      if (geometry_memory)
-        vkFreeMemory(device, geometry_memory, nullptr);
+      if (geo_buf)
+        vkDestroyBuffer(device, geo_buf, nullptr);
+      if (geo_mem)
+        vkFreeMemory(device, geo_mem, nullptr);
+      geo_buf = VK_NULL_HANDLE;
+      geo_mem = VK_NULL_HANDLE;
+      geo_map = nullptr;
+      geometry = VK_NULL_HANDLE;
+      geometry_memory = VK_NULL_HANDLE;
       if (vert)
         vkDestroyShaderModule(device, vert, nullptr);
       if (frag)
@@ -2309,63 +2320,69 @@ public:
     if (!device || vertices.size() > 1048576 || indices.size() > 3145728 ||
         (indices.empty() ? vertices.size() % 3 : indices.size() % 3))
       throw std::runtime_error("Invalid or oversized triangle-list geometry");
-    for (const auto &v : vertices) {
-      if constexpr (std::is_same_v<V, RsxVertex>) {
-        for (const auto &a : v.attributes)
-          for (float c : a)
-            if (!std::isfinite(c))
-              throw std::runtime_error("Nonfinite RSX attribute");
-      } else {
-        for (float c : v.uv)
-          if (!std::isfinite(c))
-            throw std::runtime_error("Nonfinite UV");
-        for (float c : v.position)
-          if (!std::isfinite(c))
-            throw std::runtime_error("Nonfinite position");
-        for (float c : v.color)
-          if (!std::isfinite(c))
-            throw std::runtime_error("Nonfinite color");
-      }
+    {
+      // Branch-free scan over the raw float words (NaN/Inf have an all-ones exponent); vectorises on NEON/SSE.
+      static_assert(sizeof(RsxVertex) % sizeof(uint32_t) == 0);
+      const auto *words = reinterpret_cast<const uint32_t *>(vertices.data());
+      const size_t count = vertices.size_bytes() / sizeof(uint32_t);
+      uint32_t bad = 0;
+      for (size_t k = 0; k < count; k++)
+        bad |= uint32_t((words[k] & 0x7f800000u) == 0x7f800000u);
+      if (bad)
+        throw std::runtime_error(std::is_same_v<V, RsxVertex> ? "Nonfinite RSX attribute" : "Nonfinite vertex data");
     }
     for (auto i : indices)
       if (i >= vertices.size())
         throw std::runtime_error("Vertex index out of range");
     OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
-    if (geometry)
-      vkDestroyBuffer(device, geometry, nullptr);
-    if (geometry_memory)
-      vkFreeMemory(device, geometry_memory, nullptr);
     geometry = VK_NULL_HANDLE;
     geometry_memory = VK_NULL_HANDLE;
     vertex_count = index_count = 0;
     if (vertices.empty())
       return; // An explicit clear-only frame.
     index_offset = vertices.size_bytes();
-    VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    bc.size = index_offset + indices.size_bytes();
-    bc.usage =
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    OK(vkCreateBuffer(device, &bc, nullptr, &geometry));
-    VkMemoryRequirements req{};
-    vkGetBufferMemoryRequirements(device, geometry, &req);
-    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    ai.allocationSize = req.size;
-    ai.memoryTypeIndex =
-        memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    OK(vkAllocateMemory(device, &ai, nullptr, &geometry_memory));
-    OK(vkBindBufferMemory(device, geometry, geometry_memory, 0));
-    void *mapped = nullptr;
-    OK(vkMapMemory(device, geometry_memory, 0, VK_WHOLE_SIZE, 0, &mapped));
-    std::memcpy(mapped, vertices.data(), vertices.size_bytes());
+    const VkDeviceSize needed = index_offset + indices.size_bytes();
+    if (needed > geo_cap || !geo_buf) {
+      if (geo_buf)
+        vkDestroyBuffer(device, geo_buf, nullptr);
+      if (geo_mem)
+        vkFreeMemory(device, geo_mem, nullptr); // also unmaps
+      geo_buf = VK_NULL_HANDLE;
+      geo_mem = VK_NULL_HANDLE;
+      geo_map = nullptr;
+      const VkDeviceSize capacity = std::max<VkDeviceSize>(needed + needed / 4, 1u << 20);
+      VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+      bc.size = capacity;
+      bc.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+      OK(vkCreateBuffer(device, &bc, nullptr, &geo_buf));
+      VkMemoryRequirements req{};
+      vkGetBufferMemoryRequirements(device, geo_buf, &req);
+      VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+      ai.allocationSize = req.size;
+      try {
+        ai.memoryTypeIndex = memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        geo_coherent = true;
+      } catch (const std::exception &) {
+        ai.memoryTypeIndex = memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        geo_coherent = false;
+      }
+      OK(vkAllocateMemory(device, &ai, nullptr, &geo_mem));
+      OK(vkBindBufferMemory(device, geo_buf, geo_mem, 0));
+      OK(vkMapMemory(device, geo_mem, 0, VK_WHOLE_SIZE, 0, &geo_map));
+      geo_cap = capacity;
+    }
+    std::memcpy(geo_map, vertices.data(), vertices.size_bytes());
     if (!indices.empty())
-      std::memcpy(static_cast<uint8_t *>(mapped) + index_offset, indices.data(),
-                  indices.size_bytes());
-    VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
-    range.memory = geometry_memory;
-    range.size = VK_WHOLE_SIZE;
-    auto flushed = vkFlushMappedMemoryRanges(device, 1, &range);
-    vkUnmapMemory(device, geometry_memory);
-    check(flushed, "vkFlushMappedMemoryRanges");
+      std::memcpy(static_cast<uint8_t *>(geo_map) + index_offset, indices.data(), indices.size_bytes());
+    if (!geo_coherent) {
+      VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+      range.memory = geo_mem;
+      range.offset = 0;
+      range.size = VK_WHOLE_SIZE;
+      check(vkFlushMappedMemoryRanges(device, 1, &range), "vkFlushMappedMemoryRanges");
+    }
+    geometry = geo_buf;
+    geometry_memory = geo_mem;
     vertex_count = static_cast<uint32_t>(vertices.size());
     index_count = static_cast<uint32_t>(indices.size());
   }

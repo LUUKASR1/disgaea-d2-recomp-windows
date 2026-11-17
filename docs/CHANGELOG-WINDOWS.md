@@ -1,3 +1,7 @@
+# 1.0.19 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: buffer de geometria persistente e checagem vetorizada dos vértices (menos tempo por quadro em cenas pesadas).
+
 # 1.0.18 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: cache de pipelines Vulkan salvo em disco (menos travadas ao carregar cenas novas).
