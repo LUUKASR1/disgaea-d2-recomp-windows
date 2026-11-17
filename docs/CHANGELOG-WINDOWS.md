@@ -1,3 +1,7 @@
+# 1.0.22 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: relatório de saúde do áudio (AAudio) a cada 5 s para diagnosticar som baixo/chiado.
+
 # 1.0.21 — Prévia europeia + núcleo Android (prévia)
 
 - Áudio EU: corrida do SurMixer na inicialização (fila de eventos com chave 0) corrigida.

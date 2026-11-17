@@ -23,6 +23,8 @@ int d2_core_run(const char* eboot_path, const char* vfs_root, const char* log_pa
     if (vfs_root && *vfs_root) setenv("PS3_VFS_ROOT", vfs_root, 1);
     /* There is no H.264 decoder on Android yet: skip the opening movies cleanly instead of stalling on them. */
     setenv("D2_MOVIE_SKIP", "1", 0);
+    setenv("AUDIO_RATE", "1", 0);  // preview: audio device/mixer health report every 5 s
+    setenv("AUDIO_PEAK", "1", 0);
 
     /* The process starts in a read-only directory. Give the game a writable "disc" for saves and caches next to the log. */
     if (log_path && *log_path) {
