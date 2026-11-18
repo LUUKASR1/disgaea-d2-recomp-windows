@@ -1,3 +1,7 @@
+# 1.0.34 — Prévia europeia + núcleo Android (prévia)
+
+- Android: botões de resolução interna (50–100 %) e contador de FPS no painel do app.
+
 # 1.0.33 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: leitura de vértices em paralelo nos núcleos ociosos.

@@ -103,6 +103,24 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, logTail(120, 200));
             startActivity(Intent.createChooser(send, getString(R.string.share_log)));
         });
+        Button resolution = new Button(this);
+        Button fps = new Button(this);
+        resolution.setText(resolutionLabel());
+        resolution.setOnClickListener(v -> {
+            int next = 0;
+            for (int i = 0; i < SCALES.length; i++) if (SCALES[i] == scalePct()) next = (i + 1) % SCALES.length;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_SCALE, SCALES[next]).apply();
+            resolution.setText(resolutionLabel());
+        });
+        fps.setText(fpsLabel());
+        fps.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FPS, !showFps()).apply();
+            fps.setText(fpsLabel());
+        });
+        LinearLayout options = new LinearLayout(this);
+        options.setOrientation(LinearLayout.HORIZONTAL);
+        options.addView(resolution);
+        options.addView(fps);
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.addView(chooseCore);
@@ -112,6 +130,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         panel.addView(iso);
         panel.addView(coreInfo);
         panel.addView(buttons);
+        panel.addView(options);
         panel.addView(logView);
         panel.addView(choose);
         root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -158,6 +177,24 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private File coreFile() { return new File(getFilesDir(), "libd2core.so"); }
 
     private File gameRoot() { return new File(getExternalFilesDir(null), "game"); }
+
+    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps";
+    private static final int[] SCALES = {50, 60, 75, 100};
+
+    private int scalePct() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SCALE, 100); }
+
+    private boolean showFps() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_FPS, false); }
+
+    private String resolutionLabel() { return getString(R.string.internal_resolution, scalePct()); }
+
+    private String fpsLabel() { return getString(showFps() ? R.string.fps_on : R.string.fps_off); }
+
+    // The core reads this file from its working directory (next to the log) when the first frame is presented.
+    private void writeSettings() {
+        try (OutputStream out = new FileOutputStream(new File(getExternalFilesDir(null), "d2_android.cfg"))) {
+            out.write(("scale=" + scalePct() + "\nshowfps=" + (showFps() ? 1 : 0) + "\n").getBytes("UTF-8"));
+        } catch (java.io.IOException ignored) { }
+    }
 
     private File logFile() { return new File(getExternalFilesDir(null), "d2core.log"); }
 
@@ -246,6 +283,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             logView.setText(getString(R.string.game_missing) + "\n" + gameRoot() + "\n" + listing(gameRoot(), "  ", 2));
             return;
         }
+        writeSettings();
         String error = NativeBridge.startCore(coreFile().getAbsolutePath(), eboot.getAbsolutePath(),
                 root.getAbsolutePath(), logFile().getAbsolutePath());
         if (error != null) { logView.setText(error); return; }

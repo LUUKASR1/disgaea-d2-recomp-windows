@@ -197,6 +197,42 @@ int rsx_vulkan_backend_pump_messages(void) { return g.closed ? -1 : 0; }
 
 static bool window_force_resize = false;
 
+// User settings written by the Android app next to the log ("d2_android.cfg", the core's working directory):
+//   scale=<25..200>   internal resolution, percent of the screen size (100 = native)
+//   showfps=<0|1>     FPS counter in the top-left corner
+struct AndroidSettings { unsigned scale_pct = 100; bool show_fps = false; };
+static AndroidSettings load_android_settings() {
+  AndroidSettings st;
+  if (FILE *f = std::fopen("d2_android.cfg", "r")) {
+    char line[128];
+    while (std::fgets(line, sizeof line, f)) {
+      unsigned v = 0;
+      if (std::sscanf(line, "scale=%u", &v) == 1 && v >= 25 && v <= 200) st.scale_pct = v;
+      else if (std::sscanf(line, "showfps=%u", &v) == 1) st.show_fps = v != 0;
+    }
+    std::fclose(f);
+  }
+  D2LOG("[vulkan] android settings: internal resolution %u%%, FPS counter %s\n", st.scale_pct, st.show_fps ? "on" : "off");
+  return st;
+}
+
+// Presented frames per second (what the player sees), refreshed twice a second, drawn with the shared UI font.
+static void draw_fps_counter(uint32_t w, uint32_t h) {
+  static auto last = std::chrono::steady_clock::now();
+  static unsigned count = 0, shown = 0;
+  count++;
+  const auto now = std::chrono::steady_clock::now();
+  const double elapsed = std::chrono::duration<double, std::milli>(now - last).count();
+  if (elapsed >= 500.0) { shown = unsigned(count * 1000.0 / elapsed + 0.5); count = 0; last = now; }
+  const float s = std::max(0.6f, float(h) / 720.f);
+  char text[32];
+  std::snprintf(text, sizeof text, "FPS %u", shown);
+  using Color = std::array<float, 4>;
+  const Color good{0.55f, 1.f, 0.65f, 1.f}, warn{1.f, 0.82f, 0.30f, 1.f}, ink{0.03f, 0.01f, 0.09f, 1.f};
+  tr::ui_begin(w, h);
+  tr::ui_text_outline(14.f * s, 10.f * s, text, 22.f * s, shown >= 28 ? good : warn, ink, 1.5f * s);
+}
+
 void rsx_vulkan_backend_present(void) {
   if (!g.initialized || g.closed || !g.renderer) return;
   try {
@@ -235,6 +271,8 @@ void rsx_vulkan_backend_present(void) {
     }
     uint32_t w = (uint32_t)ANativeWindow_getWidth(g.window), h = (uint32_t)ANativeWindow_getHeight(g.window);
     if (w < 2 || h < 2) return;
+    static const AndroidSettings settings = load_android_settings();
+    g.renderer->setRenderScale(float(settings.scale_pct) / 100.f); // internal resolution (marks a resize if changed)
     static uint32_t last_w = 0, last_h = 0;
     if (window_force_resize) { last_w = last_h = 0; window_force_resize = false; }
     if (g.renderer->needsResize() || w != last_w || h != last_h) {
@@ -244,6 +282,11 @@ void rsx_vulkan_backend_present(void) {
     }
     uint32_t rw = w, rh = h;
     g.renderer->renderExtent(rw, rh);
+    {
+      static uint32_t logged_w = 0, logged_h = 0;
+      if (rw != logged_w || rh != logged_h) { logged_w = rw; logged_h = rh; D2LOG("[vulkan] rendering at %ux%u (window %ux%u)\n", rw, rh, w, h); }
+    }
+    if (settings.show_fps) draw_fps_counter(rw, rh);
     const bool presented = tr::submit(*g.renderer, rw, rh, g.clear, tr::guest_w, tr::guest_h);
     if (presented) {
       g.frames++;

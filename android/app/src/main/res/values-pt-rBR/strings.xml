@@ -14,4 +14,7 @@
     <string name="core_ready">Núcleo: %1$s MB importado</string>
     <string name="game_folder">Pasta do jogo: %1$s</string>
     <string name="game_missing">EBOOT.elf não encontrado na pasta do jogo</string>
+    <string name="internal_resolution">Resolução interna: %1$d%%</string>
+    <string name="fps_on">Contador de FPS: ligado</string>
+    <string name="fps_off">Contador de FPS: desligado</string>
 </resources>
