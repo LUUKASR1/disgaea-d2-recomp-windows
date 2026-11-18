@@ -26,6 +26,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <condition_variable>
 #include <set>
 #include <tuple>
 #include <vector>

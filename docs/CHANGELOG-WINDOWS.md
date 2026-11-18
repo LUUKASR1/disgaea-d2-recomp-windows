@@ -1,3 +1,7 @@
+# 1.0.33 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: leitura de vértices em paralelo nos núcleos ociosos.
+
 # 1.0.32 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: vértices compactos (só os atributos lidos pelo shader) e prefetch dos dados do jogo.

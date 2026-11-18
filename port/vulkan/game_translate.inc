@@ -558,6 +558,84 @@ inline void fetch_vertex(const rsx_state *st, const VertexTemplate &t, uint32_t 
   }
 }
 
+// Parallel vertex fetch. While the guest waits for the flip the other cores are idle, so the fetch of whole non-indexed
+// draws is deferred: record() reserves the draw's range in `verts` and queues a job (a copy of the decode plan), and
+// run_fetch_jobs() fills every range on a few helper threads plus the caller just before the geometry is uploaded. The
+// guest's vertex data does not change while the flip is pending, so the result is identical to fetching at draw time.
+struct FetchJob {
+  VertexTemplate vt;
+  uint32_t first = 0, count = 0;
+  size_t vbase = 0;
+};
+std::vector<FetchJob> fetch_jobs;
+struct FetchPool {
+  std::vector<std::thread> workers;
+  std::mutex m;
+  std::condition_variable cv, done_cv;
+  uint64_t gen = 0;
+  int pending = 0;
+  const FetchJob *jobs = nullptr;
+  size_t njobs = 0;
+  Slot *out = nullptr;
+  std::atomic<size_t> next{0};
+  explicit FetchPool(int n) {
+    for (int i = 0; i < n; i++) workers.emplace_back([this] { loop(); });
+  }
+  void work() {
+    for (;;) {
+      const size_t j = next.fetch_add(1, std::memory_order_relaxed);
+      if (j >= njobs) break;
+      const FetchJob &job = jobs[j];
+      const size_t S = job.vt.stride_slots;
+      for (uint32_t k = 0; k < job.count; k++) fetch_vertex(nullptr, job.vt, job.first + k, &out[job.vbase + size_t(k) * S]);
+    }
+  }
+  void loop() {
+    uint64_t seen = 0;
+    for (;;) {
+      {
+        std::unique_lock<std::mutex> l(m);
+        cv.wait(l, [&] { return gen != seen; });
+        seen = gen;
+      }
+      work();
+      std::lock_guard<std::mutex> l(m);
+      if (--pending == 0) done_cv.notify_one();
+    }
+  }
+  void run(const std::vector<FetchJob> &js, Slot *o) {
+    {
+      std::lock_guard<std::mutex> l(m);
+      jobs = js.data();
+      njobs = js.size();
+      out = o;
+      next.store(0, std::memory_order_relaxed);
+      pending = int(workers.size());
+      gen++;
+    }
+    cv.notify_all();
+    work();
+    std::unique_lock<std::mutex> l(m);
+    done_cv.wait(l, [&] { return pending == 0; });
+  }
+};
+int fetch_thread_count() {
+  static const int n = [] {
+    int v = 3;
+    if (const char *e = std::getenv("D2_VULKAN_FETCH_THREADS")) v = std::atoi(e);
+    const unsigned hw = std::thread::hardware_concurrency();
+    if (hw && v > int(hw) - 1) v = int(hw) - 1;
+    return std::max(0, std::min(v, 7));
+  }();
+  return n;
+}
+FetchPool *fetch_pool() {
+  static FetchPool *pool = new FetchPool(fetch_thread_count());   // never destroyed: the helpers outlive static teardown
+  return pool;
+}
+// Fills every queued range; the vertex array must not grow until this returns.
+void run_fetch_jobs();
+
 // RSX splits one primitive stream into several draw calls of at most 256
 // vertices inside a single BEGIN/END, and 256 is not a multiple of 3: a
 // triangle list must be assembled over the concatenated stream or every batch
@@ -653,9 +731,15 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
   // Carried vertices were fetched for the previous draw's slot layout; keep them only for the same vertex program.
   if (!stream.carry.empty() && (stream.vkey != vkey || stream.carry.size() % S)) stream.carry.clear();
   struct Rollback {
-    size_t vbase = verts.size(), ibase = indices.size();
+    size_t vbase = verts.size(), ibase = indices.size(), jbase = fetch_jobs.size();
     bool commit = false;
-    ~Rollback() { if (!commit) { verts.resize(vbase); indices.resize(ibase); } }
+    ~Rollback() {
+      if (!commit) {
+        verts.resize(vbase);
+        indices.resize(ibase);
+        fetch_jobs.erase(fetch_jobs.begin() + jbase, fetch_jobs.end());
+      }
+    }
   } rollback;
   const size_t vbase = (rollback.vbase + S - 1) / S * S;   // a draw starts at a multiple of its stride (indices count strides)
   const bool whole = stream.carry.empty() && (prim == RSX_PRIMITIVE_QUADS ? count % 4 == 0 : tri_list ? count % 3 == 0 : true);
@@ -704,10 +788,17 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
       idx_entries += count;
       idx_unique += nv;
     } else {
-      auto vi_of = [&](u32 k) -> uint32_t { return indexed ? (count >= 3 ? d_idx[k] : read_index(st, first + k)) : first + k; };
-      for (u32 k = 0; k < count; k++) {
-        if (k + kPrefetchAhead < count) prefetch_vertex(vt, vi_of(k + kPrefetchAhead));
-        fetch_vertex(st, vt, vi_of(k), &verts[vbase + size_t(k) * S]);
+      bool defer = !indexed && count >= 16 && fetch_thread_count() > 0;
+      for (int k = 0; defer && k < vt.count; k++)
+        if (vt.plan[k].kind == 1) defer = false;   // the generic decoder needs the live rsx_state
+      if (defer) {
+        fetch_jobs.push_back(FetchJob{vt, first, count, vbase});
+      } else {
+        auto vi_of = [&](u32 k) -> uint32_t { return indexed ? (count >= 3 ? d_idx[k] : read_index(st, first + k)) : first + k; };
+        for (u32 k = 0; k < count; k++) {
+          if (k + kPrefetchAhead < count) prefetch_vertex(vt, vi_of(k + kPrefetchAhead));
+          fetch_vertex(st, vt, vi_of(k), &verts[vbase + size_t(k) * S]);
+        }
       }
     }
     if (indexed) idx_draws++;
@@ -861,6 +952,13 @@ void evict_textures(Renderer &r) {
   std::fprintf(stderr, "[vulkan][m2] texture cache pressure: freed %zu of the idle textures, %zu remain\n", freed, tex_cache.size());
 }
 #include "ui_overlay.inc"
+void run_fetch_jobs() {
+  if (fetch_jobs.empty()) return;
+  const auto t0 = Clock::now();
+  fetch_pool()->run(fetch_jobs, verts.data());
+  fetch_jobs.clear();
+  t_fetch += ms(t0, Clock::now());
+}
 bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &clear,
             uint32_t guest_w, uint32_t guest_h) {
   DrawParameters params;
@@ -904,6 +1002,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     d.fp_block = c.fp_block;
     cmds.push_back(d);
   }
+  run_fetch_jobs();        // fill the vertex ranges reserved by record()
   ui_flush(r, w, h, cmds); // options menu / FPS counter on top of the game
   const auto g0 = Clock::now();
   if (!verts.empty()) r.setRsxGeometryCompact(verts, indices);
@@ -965,6 +1064,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
 void init(Renderer &r) {
   compiler = std::make_unique<shader::Compiler>();
   r.setCompactVertices(true);   // before the first program: pipelines are built for the compact vertex layout
+  std::fprintf(stderr, "[vulkan] vertex fetch helper threads: %d\n", fetch_thread_count());
   const auto vs = compile_cached(shader::fixtures::vertex(), shader::Stage::vertex);
   const auto fs = compile_cached(shader::fixtures::fragment(false), shader::Stage::fragment);
   r.setRsxProgram(vs, fs);
@@ -972,7 +1072,7 @@ void init(Renderer &r) {
   ready = true;
 }
 
-void drop_frame() { recs.clear(); verts.clear(); indices.clear(); frame_verts = 0; const_epoch++; }
+void drop_frame() { recs.clear(); verts.clear(); indices.clear(); fetch_jobs.clear(); frame_verts = 0; const_epoch++; }
 
 void print_counters() {
   if (frames_timed)
