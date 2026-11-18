@@ -1,3 +1,7 @@
+# 1.0.29 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: renderizador Vulkan compilado com -O2 e processo restrito aos núcleos rápidos da CPU (mapa pesado).
+
 # 1.0.28 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: relatório de CPU por thread e frequência dos núcleos a cada 5 s (diagnóstico).

@@ -311,6 +311,9 @@ if(ANDROID)
     target_sources(${PROJECT_NAME} PRIVATE ${D2_ANDROID_VULKAN_SOURCES})
     set_source_files_properties(${D2_ANDROID_VULKAN_SOURCES} PROPERTIES
         COMPILE_DEFINITIONS "VK_NO_PROTOTYPES;D2_VULKAN_GAME_BACKEND;D2_SHADER_GLSLANG")
+    # The target-wide -O1 is for the huge PPU TUs; the draw recorder / vertex fetch / renderer run every frame and
+    # are small, so they get full optimisation (the last -O on the line wins).
+    set_property(SOURCE ${D2_ANDROID_VULKAN_SOURCES} APPEND PROPERTY COMPILE_OPTIONS "-O2")
     target_include_directories(${PROJECT_NAME} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/vulkan" "${CMAKE_CURRENT_SOURCE_DIR}/vulkan/shader")
     target_link_libraries(${PROJECT_NAME} PRIVATE glslang SPIRV glslang-default-resource-limits android)

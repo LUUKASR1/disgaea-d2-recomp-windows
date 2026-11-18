@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdio>
 #include <dirent.h>
+#include <sched.h>
 #include <map>
 #include <thread>
 #include <vector>
@@ -86,6 +87,31 @@ static void thread_report() {
     }
 }
 
+// Big.LITTLE: the game threads were seen drifting onto the 2.0 GHz little cores. Threads created from here inherit the
+// mask, so restrict this worker (and everything it starts) to the cores whose maximum frequency is near the fastest.
+static void pin_to_fast_cores() {
+    if (std::getenv("D2_CPU_PIN_OFF")) return;
+    const long n = sysconf(_SC_NPROCESSORS_CONF);
+    if (n < 2 || n > 32) return;
+    std::vector<long> fmax((size_t)n, 0);
+    long best = 0;
+    for (long i = 0; i < n; i++) {
+        char path[96];
+        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%ld/cpufreq/cpuinfo_max_freq", i);
+        if (FILE* f = std::fopen(path, "r")) { if (std::fscanf(f, "%ld", &fmax[(size_t)i]) != 1) fmax[(size_t)i] = 0; std::fclose(f); }
+        best = std::max(best, fmax[(size_t)i]);
+    }
+    if (best <= 0) return;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    int picked = 0;
+    for (long i = 0; i < n; i++)
+        if (fmax[(size_t)i] * 100 >= best * 80) { CPU_SET((int)i, &set); picked++; }   // within 80% of the fastest core
+    if (picked < 2 || picked == n) return;
+    const int rc = sched_setaffinity(0, sizeof set, &set);
+    std::fprintf(stderr, "[cpu] pinned to %d fast cores (of %ld): %s\n", picked, n, rc == 0 ? "ok" : "failed");
+}
+
 extern "C" __attribute__((visibility("default")))
 int d2_core_run(const char* eboot_path, const char* vfs_root, const char* log_path)
 {
@@ -101,6 +127,7 @@ int d2_core_run(const char* eboot_path, const char* vfs_root, const char* log_pa
     setenv("D2_MOVIE_SKIP", "1", 0);
     setenv("AUDIO_RATE", "1", 0);  // preview: audio device/mixer health report every 5 s
     setenv("AUDIO_PEAK", "1", 0);
+    pin_to_fast_cores();
     if (!std::getenv("D2_THREAD_REPORT_OFF")) std::thread(thread_report).detach();
 
     /* The process starts in a read-only directory. Give the game a writable "disc" for saves and caches next to the log. */
