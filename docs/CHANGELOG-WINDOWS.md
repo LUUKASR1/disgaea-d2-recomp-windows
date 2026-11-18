@@ -1,3 +1,7 @@
+# 1.0.31 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: a leitura de vértices grava só os atributos que o shader lê.
+
 # 1.0.30 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: leitura de vértices mais rápida (plano de decodificação por desenho).
