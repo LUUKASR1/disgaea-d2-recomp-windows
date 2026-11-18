@@ -443,10 +443,18 @@ uint32_t read_index(const rsx_state *st, uint32_t k) {
   return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
 }
 
-// Per-draw template: the constant vertex attribute registers, sanitised once.
+// Per-draw template: the constant vertex attribute registers, sanitised once, plus a decode plan per enabled
+// attribute. LOCAL (VRAM) arrays without a frequency divider are linear in host memory, so their base address and
+// component decoder are resolved once per draw instead of once per vertex; anything else goes through the generic
+// rsx_fetch_attrib().
+struct AttrPlan {
+  int idx = 0;
+  bool fast = false;
+  uint32_t type = 0, n = 4, stride = 0, offset = 0, local_base = 0;
+};
 struct VertexTemplate {
   RsxVertex base;
-  std::array<int, 16> active{};
+  std::array<AttrPlan, 16> plan{};
   int count = 0;
 };
 VertexTemplate make_template(const rsx_state *st) {
@@ -455,20 +463,64 @@ VertexTemplate make_template(const rsx_state *st) {
   for (auto &a : t.base.attributes)
     for (float &c : a)
       if (!std::isfinite(c)) c = 0.f;
+  static const bool no_fast = std::getenv("D2_VULKAN_SLOW_FETCH") != nullptr;
   for (int i = 0; i < 16; i++) {
     const rsx_vertex_attrib *a = &st->vertex_attribs[i];
-    if (a->enabled && a->stride && vm_base) t.active[t.count++] = i;
+    if (a->enabled && a->stride && vm_base) {
+      AttrPlan &p = t.plan[t.count++];
+      p.idx = i;
+      p.type = a->type;
+      p.n = a->size ? std::min<uint32_t>(a->size, 4u) : 4u;
+      p.stride = a->stride;
+      p.offset = a->offset & 0x7FFFFFFFu;
+      p.local_base = cellGcmResolveLocated(1, 0);
+      const bool known = a->type == 2 || a->type == 3 || a->type == 4 || a->type == 1 || a->type == 5 || a->type == 7;
+      p.fast = !no_fast && known && !(a->offset & 0x80000000u) && a->frequency <= 1;
+    }
   }
   return t;
+}
+static inline float be_f32(const uint8_t *p) {
+  uint32_t w;
+  std::memcpy(&w, p, 4);
+  w = __builtin_bswap32(w);
+  float f;
+  std::memcpy(&f, &w, 4);
+  return f;
 }
 // `out` already holds the template (filled in bulk by the caller): only the enabled attributes are fetched.
 inline void fetch_vertex(const rsx_state *st, const VertexTemplate &t, uint32_t vi, RsxVertex &out) {
   for (int k = 0; k < t.count; k++) {
-    const int i = t.active[k];
-    float *v = out.attributes[i].data();
-    rsx_fetch_attrib(st, i, vi, v);
-    for (int c = 0; c < 4; c++)
-      if (!std::isfinite(v[c])) v[c] = 0.f;
+    const AttrPlan &a = t.plan[k];
+    float *v = out.attributes[a.idx].data();
+    if (!a.fast) {
+      rsx_fetch_attrib(st, a.idx, vi, v);
+      for (int c = 0; c < 4; c++)
+        if (!std::isfinite(v[c])) v[c] = 0.f;
+      continue;
+    }
+    const uint32_t off = a.offset + vi * a.stride;                 // same 32-bit wrap as rsx_fetch_attrib
+    const uint8_t *p = vm_base + uint32_t(a.local_base + off);
+    switch (a.type) {
+      case 2:  // float32 BE
+        for (uint32_t c = 0; c < a.n; c++) { const float f = be_f32(p + c * 4); v[c] = std::isfinite(f) ? f : 0.f; }
+        break;
+      case 3:  // half float BE
+        for (uint32_t c = 0; c < a.n; c++) { const float f = rsx_rd_half_be(p + c * 2); v[c] = std::isfinite(f) ? f : 0.f; }
+        break;
+      case 4:  // u8 normalised
+        for (uint32_t c = 0; c < a.n; c++) v[c] = p[c] / 255.0f;
+        break;
+      case 1:  // s16 normalised
+        for (uint32_t c = 0; c < a.n; c++) v[c] = (float)(int16_t)((p[c * 2] << 8) | p[c * 2 + 1]) / 32767.0f;
+        break;
+      case 5:  // s16 integer
+        for (uint32_t c = 0; c < a.n; c++) v[c] = (float)(int16_t)((p[c * 2] << 8) | p[c * 2 + 1]);
+        break;
+      default:  // 7: u8 unnormalised
+        for (uint32_t c = 0; c < a.n; c++) v[c] = (float)p[c];
+        break;
+    }
   }
 }
 

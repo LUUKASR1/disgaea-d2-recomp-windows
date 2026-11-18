@@ -1,3 +1,7 @@
+# 1.0.30 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: leitura de vértices mais rápida (plano de decodificação por desenho).
+
 # 1.0.29 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: renderizador Vulkan compilado com -O2 e processo restrito aos núcleos rápidos da CPU (mapa pesado).
