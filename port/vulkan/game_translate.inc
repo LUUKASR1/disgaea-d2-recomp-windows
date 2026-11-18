@@ -413,6 +413,23 @@ constexpr size_t kMaxIndices = 3000000;
 // Draw composition (printed with the counters): how many draws per primitive type, and for indexed draws how many index
 // entries there were against distinct vertices.
 uint64_t prim_draws[16] = {}, prim_verts[16] = {}, idx_draws = 0, idx_entries = 0, idx_unique = 0, idx_deduped = 0;
+void print_mix() {
+  static const char *const names[16] = {"?0", "points", "lines", "line_loop", "line_strip", "triangles", "tri_strip", "tri_fan",
+                                        "quads", "quad_strip", "polygon", "?11", "?12", "?13", "?14", "?15"};
+  std::fprintf(stderr, "[vulkan][m2] draw mix since start:");
+  for (int i = 0; i < 16; i++)
+    if (prim_draws[i]) std::fprintf(stderr, " %s=%llu draws/%llu verts", names[i], (unsigned long long)prim_draws[i], (unsigned long long)prim_verts[i]);
+  std::fprintf(stderr, " | indexed draws=%llu, deduplicated=%llu (%llu index entries -> %llu distinct vertices)\n",
+               (unsigned long long)idx_draws, (unsigned long long)idx_deduped, (unsigned long long)idx_entries, (unsigned long long)idx_unique);
+}
+#ifdef __ANDROID__
+// CPU time of the calling thread / the whole process, in ms: tells busy time from time spent waiting.
+double cpu_ms(clockid_t id) {
+  timespec ts{};
+  clock_gettime(id, &ts);
+  return double(ts.tv_sec) * 1e3 + double(ts.tv_nsec) / 1e6;
+}
+#endif
 
 uint32_t read_index(const rsx_state *st, uint32_t k) {
   const int local = ((st->index_array_dma & 0xF) == 0);
@@ -801,28 +818,39 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     static Clock::time_point last{};
     static bool have_last = false;
     static uint64_t last_uploads = 0, hist[5] = {}, slow_logged = 0, nframes = 0;
-    static double period_max = 0, guest_sum = 0;
+    static double period_max = 0, guest_sum = 0, thr_sum = 0, proc_sum = 0;
+#ifdef __ANDROID__
+    static double last_thr = 0, last_proc = 0;
+    const double thr_now = cpu_ms(CLOCK_THREAD_CPUTIME_ID), proc_now = cpu_ms(CLOCK_PROCESS_CPUTIME_ID);
+    const double thr_frame = last_thr ? thr_now - last_thr : 0.0, proc_frame = last_proc ? proc_now - last_proc : 0.0;
+    last_thr = thr_now;
+    last_proc = proc_now;
+#else
+    const double thr_frame = 0.0, proc_frame = 0.0;
+#endif
     const auto now = Clock::now();
     if (have_last) {
       const double period = ms(last, now);
       const double work = f_record + ms(g0, g2);
       nframes++;
       guest_sum += std::max(0.0, period - work);
+      thr_sum += thr_frame;
+      proc_sum += proc_frame;
       period_max = std::max(period_max, period);
       hist[period <= 17.5 ? 0 : period <= 25 ? 1 : period <= 34 ? 2 : period <= 50 ? 3 : 4]++;
       if (period > 34.0 && slow_logged < 80 && nframes > 300) {
         slow_logged++;
         std::fprintf(stderr,
-            "[vulkan][slow] frame#%llu period=%.1f ms: record=%.1f (texture check/upload=%.1f, uploads=%llu) geometry=%.1f draw+present=%.1f guest/other=%.1f | draws=%zu verts=%zu\n",
+            "[vulkan][slow] frame#%llu period=%.1f ms: record=%.1f (texture check/upload=%.1f, uploads=%llu) geometry=%.1f draw+present=%.1f guest/other=%.1f | draws=%zu verts=%zu idx=%zu | cpu: render-thread=%.1f process=%.1f ms\n",
             (unsigned long long)frame_no, period, f_record, f_texup, (unsigned long long)(cnt.tex_uploads - last_uploads),
-            ms(g0, g1), ms(g1, g2), std::max(0.0, period - work), recs.size(), verts.size());
+            ms(g0, g1), ms(g1, g2), std::max(0.0, period - work), recs.size(), verts.size(), indices.size(), thr_frame, proc_frame);
       }
       if (nframes % 600 == 0)
         std::fprintf(stderr,
-            "[vulkan][pace] last 600 frames: <=17ms=%llu 17-25=%llu 25-34=%llu 34-50=%llu >50=%llu | max=%.1f ms | avg guest/other=%.1f ms\n",
+            "[vulkan][pace] last 600 frames: <=17ms=%llu 17-25=%llu 25-34=%llu 34-50=%llu >50=%llu | max=%.1f ms | avg guest/other=%.1f ms | avg cpu per frame: render-thread=%.1f, process=%.1f ms\n",
             (unsigned long long)hist[0], (unsigned long long)hist[1], (unsigned long long)hist[2], (unsigned long long)hist[3],
-            (unsigned long long)hist[4], period_max, guest_sum / 600.0);
-      if (nframes % 600 == 0) { for (auto &hh : hist) hh = 0; period_max = 0; guest_sum = 0; }
+            (unsigned long long)hist[4], period_max, guest_sum / 600.0, thr_sum / 600.0, proc_sum / 600.0);
+      if (nframes % 600 == 0) { print_mix(); for (auto &hh : hist) hh = 0; period_max = 0; guest_sum = 0; thr_sum = 0; proc_sum = 0; }
     }
     last = Clock::now();
     have_last = true;
@@ -854,15 +882,7 @@ void print_counters() {
                  t_consts / frames_timed, t_tex / frames_timed, t_geom / frames_timed,
                  t_draw / frames_timed, double(verts_total) / frames_timed);
   t_record = t_geom = t_draw = t_fetch = t_consts = t_tex = 0; verts_total = 0; frames_timed = 0;
-  {
-    static const char *const names[16] = {"?0", "points", "lines", "line_loop", "line_strip", "triangles", "tri_strip", "tri_fan",
-                                          "quads", "quad_strip", "polygon", "?11", "?12", "?13", "?14", "?15"};
-    std::fprintf(stderr, "[vulkan][m2] draw mix since start:");
-    for (int i = 0; i < 16; i++)
-      if (prim_draws[i]) std::fprintf(stderr, " %s=%llu draws/%llu verts", names[i], (unsigned long long)prim_draws[i], (unsigned long long)prim_verts[i]);
-    std::fprintf(stderr, " | indexed draws=%llu, deduplicated=%llu (%llu index entries -> %llu distinct vertices)\n",
-                 (unsigned long long)idx_draws, (unsigned long long)idx_deduped, (unsigned long long)idx_entries, (unsigned long long)idx_unique);
-  }
+  print_mix();
   std::fprintf(stderr,
                "[vulkan][m2] recorded=%llu skipped: target=%llu prim=%llu shader=%llu other=%llu cap=%llu | "
                "compiles=%llu (disk cache hits %llu) failures=%llu pipelines=%llu | textures: uploads=%llu unsupported=%llu live=%zu evicted=%llu\n",

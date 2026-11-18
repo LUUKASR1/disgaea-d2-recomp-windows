@@ -1,3 +1,7 @@
+# 1.0.27 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: diagnóstico de CPU por quadro (thread de renderização e processo) e composição dos desenhos a cada 600 quadros.
+
 # 1.0.26 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: reaproveitamento de vértices em desenhos indexados, sem varredura redundante de vértices; log da composição dos desenhos.
