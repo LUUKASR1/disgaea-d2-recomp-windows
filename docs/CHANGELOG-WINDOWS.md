@@ -1,3 +1,7 @@
+# 1.0.24 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: minimizar/voltar recria a superfície Vulkan (sem tela preta); o jogo pausa em segundo plano.
+
 # 1.0.23 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: áudio AAudio em modo callback com buffer circular + monitor de saúde a cada 5 s.

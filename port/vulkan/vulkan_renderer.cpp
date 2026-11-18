@@ -2701,6 +2701,28 @@ public:
       offscreen_frame_ready = true;
     return true;
   }
+  // Android: the Activity's surface was destroyed and a new one created (app minimised and restored). Drops the
+  // swapchain and the dead VkSurfaceKHR and builds a new surface on the new window; the caller then calls resize().
+  bool replaceWindow(void *window) {
+#ifdef __ANDROID__
+    if (!device || !instance || !window)
+      return false;
+    OK(vkDeviceWaitIdle(device));
+    releaseTargets();
+    if (surface && vkDestroySurfaceKHR)
+      vkDestroySurfaceKHR(instance, surface, nullptr);
+    surface = VK_NULL_HANDLE;
+    VkAndroidSurfaceCreateInfoKHR si{
+        VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+    si.window = static_cast<ANativeWindow *>(window);
+    OK(vkCreateAndroidSurfaceKHR(instance, &si, nullptr, &surface));
+    dirty = true;
+    return true;
+#else
+    (void)window;
+    return false;
+#endif
+  }
   std::vector<uint8_t> readPixels(uint32_t attachment) {
     if (!device || surface || !readback || attachment >= color_count)
       throw std::runtime_error("Readback requires an offscreen target");
@@ -2738,6 +2760,9 @@ void Renderer::setSamplerUnit(uint32_t unit, bool linear, bool wrap) {
 }
 void Renderer::offscreen(uint32_t width, uint32_t height, uint32_t targets) {
   impl_->offscreen(width, height, targets);
+}
+bool Renderer::replaceWindow(void *native_window) {
+  return impl_->replaceWindow(native_window);
 }
 bool Renderer::resize(uint32_t width, uint32_t height, bool vsync) {
   return impl_->resize(width, height, vsync);

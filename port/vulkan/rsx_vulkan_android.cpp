@@ -64,6 +64,7 @@ namespace {
 std::mutex g_window_mutex;
 std::condition_variable g_window_cv;
 ANativeWindow *g_window = nullptr;
+uint64_t g_window_gen = 1;   // bumped whenever the Activity hands over a different surface (or takes it away)
 
 struct State {
   ANativeWindow *window = nullptr;
@@ -72,6 +73,8 @@ struct State {
   std::array<float, 4> clear{0.f, 0.f, 0.f, 1.f};
   bool closed = false;
   bool initialized = false;
+  uint64_t window_gen = 0;      // generation of g.window; differs from g_window_gen after a minimise/restore
+  bool surface_lost = false;    // the swapchain reported VK_ERROR_SURFACE_LOST_KHR
   uint64_t frames = 0, draws = 0;
 } g;
 const rsx_state *g_state = nullptr;
@@ -114,8 +117,10 @@ void cb_bind_texture(void *, u32, const rsx_texture_state *) {}
 // The Activity calls this (through libd2android) when its surface is created (non-null) or destroyed (null).
 extern "C" __attribute__((visibility("default"))) void d2_core_set_window(void *window) {
   std::lock_guard<std::mutex> lock(g_window_mutex);
+  ANativeWindow *next = static_cast<ANativeWindow *>(window);
+  if (next != g_window) g_window_gen++;
   if (g_window) ANativeWindow_release(g_window);
-  g_window = static_cast<ANativeWindow *>(window);
+  g_window = next;
   if (g_window) ANativeWindow_acquire(g_window);
   g_window_cv.notify_all();
 }
@@ -133,6 +138,7 @@ int rsx_vulkan_backend_init(uint32_t width, uint32_t height, const char *) {
         return -1;
       }
       g.window = g_window;
+      g.window_gen = g_window_gen;
       ANativeWindow_acquire(g.window);
     }
     g.renderer = std::make_unique<d2::vulkan::Renderer>();
@@ -187,12 +193,48 @@ void rsx_vulkan_backend_shutdown(void) {
 
 int rsx_vulkan_backend_pump_messages(void) { return g.closed ? -1 : 0; }
 
+static bool window_force_resize = false;
+
 void rsx_vulkan_backend_present(void) {
   if (!g.initialized || g.closed || !g.renderer) return;
   try {
+    // The app was minimised (surface destroyed) or restored (new surface): pause here, then rebuild the swapchain.
+    {
+      std::unique_lock<std::mutex> lock(g_window_mutex);
+      if (g.surface_lost || g_window == nullptr || g_window_gen != g.window_gen) {
+        if (!g_window || g.surface_lost) D2LOG("[vulkan] surface %s; pausing until the window returns\n", g_window ? "lost" : "destroyed");
+        const auto t0 = std::chrono::steady_clock::now();
+        while (!g.closed) {
+          const bool fresh = g_window != nullptr && g_window_gen != g.window_gen;
+          if (fresh) break;
+          // A lost surface the Activity never reported: after 3 s try the window we still have.
+          if (g.surface_lost && g_window != nullptr && std::chrono::steady_clock::now() - t0 > std::chrono::seconds(3)) break;
+          g_window_cv.wait_for(lock, std::chrono::milliseconds(100));
+        }
+        if (g.closed || !g_window) return;
+        ANativeWindow *next = g_window;
+        const uint64_t gen = g_window_gen;
+        ANativeWindow_acquire(next);
+        lock.unlock();
+        if (!g.renderer->replaceWindow(next)) {
+          ANativeWindow_release(next);
+          D2LOG("[vulkan] could not create a surface on the new window\n");
+          g.closed = true;
+          return;
+        }
+        if (g.window) ANativeWindow_release(g.window);
+        g.window = next;
+        g.window_gen = gen;
+        g.surface_lost = false;
+        D2LOG("[vulkan] surface recreated after %.1f s\n",
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+        window_force_resize = true;
+      }
+    }
     uint32_t w = (uint32_t)ANativeWindow_getWidth(g.window), h = (uint32_t)ANativeWindow_getHeight(g.window);
     if (w < 2 || h < 2) return;
     static uint32_t last_w = 0, last_h = 0;
+    if (window_force_resize) { last_w = last_h = 0; window_force_resize = false; }
     if (g.renderer->needsResize() || w != last_w || h != last_h) {
       if (w != last_w || h != last_h) D2LOG("[vulkan] window size now %ux%u\n", w, h);
       last_w = w; last_h = h;
@@ -210,7 +252,9 @@ void rsx_vulkan_backend_present(void) {
     }
   } catch (const std::exception &e) {
     D2LOG("[vulkan] present failed: %s\n", e.what());
-    g.closed = true;
+    // VK_ERROR_SURFACE_LOST_KHR (-1000000000) is the app being minimised, not a reason to end the game.
+    if (std::strstr(e.what(), "-1000000000")) { g.surface_lost = true; tr::drop_frame(); }
+    else g.closed = true;
   }
 }
 

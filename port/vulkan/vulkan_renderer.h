@@ -119,6 +119,8 @@ public:
                       bool wrap); // RSX sampler 0..15.
   void offscreen(uint32_t width, uint32_t height, uint32_t color_targets = 1);
   bool resize(uint32_t width, uint32_t height, bool vsync);
+  // Android: swap in the surface of a new window (after the old one was destroyed); call resize() afterwards.
+  bool replaceWindow(void *native_window);
   bool needsResize() const;
   // Internal resolution: the scene is rendered at window size * scale (0.25..4) and scaled to the window. Takes
   // effect at the next resize(). renderExtent() is the size draw commands (viewports/scissors) must use.
