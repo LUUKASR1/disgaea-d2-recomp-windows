@@ -2416,6 +2416,11 @@ public:
       throw std::runtime_error("Compact vertex layout requires setRsxGeometryCompact");
     uploadGeometry(v, i);
   }
+  void setCompactVertices(bool on) {
+    if (!programs.empty())
+      throw std::runtime_error("setCompactVertices must be called before the first RSX program");
+    compact = on;
+  }
   void setRsxGeometryCompact(std::span<const std::array<float, 4>> v,
                              std::span<const uint32_t> i) {
     if (!rsxMode() || !compact)
@@ -2877,11 +2882,7 @@ void Renderer::setRsxGeometryCompact(std::span<const std::array<float, 4>> v,
                                      std::span<const uint32_t> i) {
   impl_->setRsxGeometryCompact(v, i);
 }
-void Renderer::setCompactVertices(bool on) {
-  if (!impl_->programs.empty())
-    throw std::runtime_error("setCompactVertices must be called before the first RSX program");
-  impl_->compact = on;
-}
+void Renderer::setCompactVertices(bool on) { impl_->setCompactVertices(on); }
 void Renderer::setRsxConstants(std::span<const std::array<float, 4>> v,
                                std::span<const std::array<float, 4>> f) {
   impl_->setRsxConstants(v, f);
