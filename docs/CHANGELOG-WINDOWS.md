@@ -1,3 +1,7 @@
+# 1.0.28 — Prévia europeia + núcleo Android (prévia)
+
+- Núcleo Android: relatório de CPU por thread e frequência dos núcleos a cada 5 s (diagnóstico).
+
 # 1.0.27 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: diagnóstico de CPU por quadro (thread de renderização e processo) e composição dos desenhos a cada 600 quadros.
