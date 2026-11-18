@@ -45,6 +45,11 @@ std::string replace_all(std::string s, const std::string &from,
 }
 
 // ---- shaders ----------------------------------------------------------------
+// Attribute locations a vertex shader reads, in the order the renderer lays them out in a compact vertex (it uses the same
+// function for the pipeline's vertex input, so the two must agree).
+std::vector<uint32_t> vertex_inputs(const std::vector<uint32_t> &words) {
+  return validateRsxModule(words, false).inputs;
+}
 struct Module {
   std::vector<uint32_t> words;
   std::vector<uint32_t> inputs;   // vertex shader: attribute locations it reads (empty = unknown, treat all as read)
@@ -159,7 +164,7 @@ Module &get_vs(const rsx_state *st, uint64_t &key) {
   }
   try {
     m.words = compile_cached(hlsl, shader::Stage::vertex);
-    try { m.inputs = shader::inspect(m.words).inputs; } catch (...) { m.inputs.clear(); }
+    m.inputs = vertex_inputs(m.words);
     m.ok = true;
     cnt.compiles++;
   } catch (const std::exception &e) {
@@ -407,18 +412,22 @@ struct Rec {
   bool blend;
 };
 std::vector<Rec> recs;
-// Vertex array of the frame. Slots a draw's vertex shader does not read are never looked at (the pipeline's vertex input lists
-// only the shader's attributes), so growing the array must not zero-fill the 256-byte vertices: the fetch writes what is read.
+// Vertex array of the frame, in float4 slots. Compact layout (see Renderer::setCompactVertices): a draw's vertices hold
+// only the attributes its vertex shader reads, one slot per input in the shader's input order (stride = max(1, inputs)
+// slots); every draw starts at a multiple of its stride and indices count vertices of that stride. Growing the array must
+// not zero-fill: every slot of a vertex is written by fetch_vertex.
+using Slot = std::array<float, 4>;
 template <class T> struct NoInitAlloc : std::allocator<T> {
   template <class U> struct rebind { using other = NoInitAlloc<U>; };
   using std::allocator<T>::allocator;
   template <class U> void construct(U *) noexcept {}
   template <class U, class... A> void construct(U *p, A &&...a) { ::new (static_cast<void *>(p)) U(std::forward<A>(a)...); }
 };
-std::vector<RsxVertex, NoInitAlloc<RsxVertex>> verts;
+std::vector<Slot, NoInitAlloc<Slot>> verts;
+uint64_t frame_verts = 0;   // vertices recorded this frame (verts.size() counts slots)
 std::vector<uint32_t> indices;   // every recorded draw is indexed: Rec::first/count address this list
 std::map<std::array<uint32_t, 10>, uint32_t> pipelines;
-constexpr size_t kMaxVerts = 1000000;
+constexpr size_t kMaxSlots = 4000000;   // float4 slots per frame (the renderer accepts 4194304)
 constexpr size_t kMaxIndices = 3000000;
 // Draw composition (printed with the counters): how many draws per primitive type, and for indexed draws how many index
 // entries there were against distinct vertices.
@@ -458,45 +467,40 @@ uint32_t read_index(const rsx_state *st, uint32_t k) {
 // component decoder are resolved once per draw instead of once per vertex; anything else goes through the generic
 // rsx_fetch_attrib().
 struct AttrPlan {
-  int idx = 0;
+  int idx = 0;        // RSX attribute location read for this slot
   uint8_t kind = 0;   // 0 = constant register, 1 = generic rsx_fetch_attrib, 2 = fast linear decode
   uint32_t type = 0, n = 4, stride = 0, offset = 0, local_base = 0;
 };
 struct VertexTemplate {
-  RsxVertex base;
-  std::array<AttrPlan, 16> plan{};
-  int count = 0;
+  std::array<Slot, 16> base{};         // the constant vertex attribute registers, sanitised
+  std::array<AttrPlan, 16> plan{};     // plan[i] fills slot i of every vertex (the shader's i-th input)
+  int count = 0;                       // slots per vertex (>= 1 for the stride; plan entries = shader inputs)
+  uint32_t stride_slots = 1;
 };
-// `inputs`: attribute locations the vertex shader reads; only those are produced (empty = all 16).
 VertexTemplate make_template(const rsx_state *st, const std::vector<uint32_t> &inputs) {
   VertexTemplate t;
-  std::memcpy(t.base.attributes.data(), st->vertex_data4f, sizeof t.base.attributes);
-  for (auto &a : t.base.attributes)
+  std::memcpy(t.base.data(), st->vertex_data4f, sizeof t.base);
+  for (auto &a : t.base)
     for (float &c : a)
       if (!std::isfinite(c)) c = 0.f;
   static const bool no_fast = std::getenv("D2_VULKAN_SLOW_FETCH") != nullptr;
-  static const bool all_slots = std::getenv("D2_VULKAN_ALL_SLOTS") != nullptr;
-  auto add = [&](int i) {
+  const uint32_t local_base = cellGcmResolveLocated(1, 0);
+  for (size_t k = 0; k < inputs.size() && k < 16; k++) {
+    const int i = int(inputs[k] & 15u);
     AttrPlan &p = t.plan[t.count++];
     p.idx = i;
     const rsx_vertex_attrib *a = &st->vertex_attribs[i];
-    if (!(a->enabled && a->stride && vm_base)) return;   // constant register
+    if (!(a->enabled && a->stride && vm_base)) continue;   // constant register
     p.kind = 1;
     p.type = a->type;
     p.n = a->size ? std::min<uint32_t>(a->size, 4u) : 4u;
     p.stride = a->stride;
     p.offset = a->offset & 0x7FFFFFFFu;
-    p.local_base = cellGcmResolveLocated(1, 0);
+    p.local_base = local_base;
     const bool known = a->type == 2 || a->type == 3 || a->type == 4 || a->type == 1 || a->type == 5 || a->type == 7;
     if (!no_fast && known && !(a->offset & 0x80000000u) && a->frequency <= 1) p.kind = 2;
-  };
-  if (inputs.empty() || all_slots) {
-    for (int i = 0; i < 16; i++) add(i);
-  } else {
-    bool seen[16] = {};
-    for (uint32_t l : inputs)
-      if (l < 16 && !seen[l]) { seen[l] = true; add(int(l)); }
   }
+  t.stride_slots = uint32_t(std::max(1, t.count));
   return t;
 }
 static inline float be_f32(const uint8_t *p) {
@@ -507,19 +511,28 @@ static inline float be_f32(const uint8_t *p) {
   std::memcpy(&f, &w, 4);
   return f;
 }
-// Writes the planned attributes of vertex `vi` into `out`; slots outside the plan are left alone.
-inline void fetch_vertex(const rsx_state *st, const VertexTemplate &t, uint32_t vi, RsxVertex &out) {
+// Pulls the source data of vertex `vi` towards the cache: it was just written by the guest thread on another core, so the
+// first touch is a slow cache-to-cache transfer. Issued a few vertices ahead of the fetch.
+inline void prefetch_vertex(const VertexTemplate &t, uint32_t vi) {
   for (int k = 0; k < t.count; k++) {
     const AttrPlan &a = t.plan[k];
-    float *v = out.attributes[a.idx].data();
-    if (a.kind == 0) { std::memcpy(v, t.base.attributes[a.idx].data(), 16); continue; }
+    if (a.kind == 2) __builtin_prefetch(vm_base + uint32_t(a.local_base + a.offset + vi * a.stride), 0, 3);
+  }
+}
+constexpr uint32_t kPrefetchAhead = 12;
+// Writes slot i of vertex `vi` for every planned attribute: `out` points at the vertex's first slot.
+inline void fetch_vertex(const rsx_state *st, const VertexTemplate &t, uint32_t vi, Slot *out) {
+  for (int k = 0; k < t.count; k++) {
+    const AttrPlan &a = t.plan[k];
+    float *v = out[k].data();
+    if (a.kind == 0) { std::memcpy(v, t.base[a.idx].data(), 16); continue; }
     if (a.kind == 1) {
       rsx_fetch_attrib(st, a.idx, vi, v);
       for (int c = 0; c < 4; c++)
         if (!std::isfinite(v[c])) v[c] = 0.f;
       continue;
     }
-    if (a.n < 4) std::memcpy(v, t.base.attributes[a.idx].data(), 16);   // components the array does not supply keep the register
+    if (a.n < 4) std::memcpy(v, t.base[a.idx].data(), 16);   // components the array does not supply keep the register
     const uint32_t off = a.offset + vi * a.stride;                 // same 32-bit wrap as rsx_fetch_attrib
     const uint8_t *p = vm_base + uint32_t(a.local_base + off);
     switch (a.type) {
@@ -554,7 +567,8 @@ inline void fetch_vertex(const rsx_state *st, const VertexTemplate &t, uint32_t 
 struct Stream {
   bool valid = false;
   uint32_t epoch = 0, end = 0, prim = 0;
-  std::vector<RsxVertex> carry;
+  uint64_t vkey = 0;          // vertex program the carried vertices were fetched for (their slot layout)
+  std::vector<Slot> carry;    // whole vertices of stride_slots slots
 } stream;
 double t_record = 0, t_geom = 0, t_draw = 0, t_fetch = 0, t_consts = 0, t_tex = 0;
 uint64_t verts_total = 0, frames_timed = 0;
@@ -633,15 +647,18 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
   // Vertices of this batch, stored once in the frame's vertex array; the draw addresses them through `indices`, so a
   // quad is 4 vertices instead of 6 and nothing is copied twice. A batch that continues a triangle stream (carried
   // vertices) or ends mid-primitive goes through a temporary array. Everything is rolled back on an early return.
+  const auto tf0 = Clock::now();
+  const VertexTemplate vt = make_template(st, vs.inputs);
+  const size_t S = vt.stride_slots;   // slots per vertex of this draw's program
+  // Carried vertices were fetched for the previous draw's slot layout; keep them only for the same vertex program.
+  if (!stream.carry.empty() && (stream.vkey != vkey || stream.carry.size() % S)) stream.carry.clear();
   struct Rollback {
     size_t vbase = verts.size(), ibase = indices.size();
     bool commit = false;
     ~Rollback() { if (!commit) { verts.resize(vbase); indices.resize(ibase); } }
   } rollback;
-  const size_t vbase = rollback.vbase;
+  const size_t vbase = (rollback.vbase + S - 1) / S * S;   // a draw starts at a multiple of its stride (indices count strides)
   const bool whole = stream.carry.empty() && (prim == RSX_PRIMITIVE_QUADS ? count % 4 == 0 : tri_list ? count % 3 == 0 : true);
-  const auto tf0 = Clock::now();
-  const VertexTemplate vt = make_template(st, vs.inputs);
   size_t n_src = 0;      // vertices of this batch now in verts[vbase..]
   size_t used = 0;       // tri_list: vertices that form whole triangles
   // An indexed draw usually reuses vertices: fetch each distinct index once and keep the index list. Needs the index range
@@ -676,33 +693,41 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
       }
     }
     const size_t nv = dedup ? d_uniq.size() : size_t(count);
-    if (verts.size() + nv > kMaxVerts) { cnt.skipped_cap++; return; }
-    verts.resize(verts.size() + nv);   // not zero-filled (NoInitAlloc): fetch_vertex writes only the slots the shader reads
+    if (vbase + nv * S > kMaxSlots) { cnt.skipped_cap++; return; }
+    verts.resize(vbase + nv * S);   // not zero-filled (NoInitAlloc): fetch_vertex writes every slot
     if (dedup) {
-      for (size_t u = 0; u < nv; u++) fetch_vertex(st, vt, d_uniq[u], verts[vbase + u]);
+      for (size_t u = 0; u < nv; u++) {
+        if (u + kPrefetchAhead < nv) prefetch_vertex(vt, d_uniq[u + kPrefetchAhead]);
+        fetch_vertex(st, vt, d_uniq[u], &verts[vbase + u * S]);
+      }
       idx_deduped++;
       idx_entries += count;
       idx_unique += nv;
     } else {
-      for (u32 k = 0; k < count; k++)
-        fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, verts[vbase + k]);
+      auto vi_of = [&](u32 k) -> uint32_t { return indexed ? (count >= 3 ? d_idx[k] : read_index(st, first + k)) : first + k; };
+      for (u32 k = 0; k < count; k++) {
+        if (k + kPrefetchAhead < count) prefetch_vertex(vt, vi_of(k + kPrefetchAhead));
+        fetch_vertex(st, vt, vi_of(k), &verts[vbase + size_t(k) * S]);
+      }
     }
     if (indexed) idx_draws++;
     n_src = used = count;
     if (tri_list) stream.carry.clear();
   } else {
-    std::vector<RsxVertex> src;
-    src.reserve(stream.carry.size() + count);
+    std::vector<Slot> src;
+    src.reserve(stream.carry.size() + size_t(count) * S);
     src.insert(src.end(), stream.carry.begin(), stream.carry.end());
-    const size_t carried = src.size();
-    src.insert(src.end(), count, vt.base);
+    const size_t carried = src.size() / S;
+    src.resize(src.size() + size_t(count) * S);
     for (u32 k = 0; k < count; k++)
-      fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, src[carried + k]);
-    n_src = prim == RSX_PRIMITIVE_QUADS ? src.size() / 4 * 4 : tri_list ? src.size() / 3 * 3 : src.size();
+      fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, &src[(carried + k) * S]);
+    const size_t src_vertices = src.size() / S;
+    n_src = prim == RSX_PRIMITIVE_QUADS ? src_vertices / 4 * 4 : tri_list ? src_vertices / 3 * 3 : src_vertices;
     used = n_src;
-    if (tri_list) stream.carry.assign(src.begin() + used, src.end());
-    if (verts.size() + n_src > kMaxVerts) { cnt.skipped_cap++; if (tri_list) { stream.valid = true; stream.prim = prim; stream.epoch = st->begin_epoch; stream.end = first + count; } return; }
-    verts.insert(verts.end(), src.begin(), src.begin() + n_src);
+    if (tri_list) { stream.carry.assign(src.begin() + used * S, src.end()); stream.vkey = vkey; }
+    if (vbase + n_src * S > kMaxSlots) { cnt.skipped_cap++; if (tri_list) { stream.valid = true; stream.prim = prim; stream.epoch = st->begin_epoch; stream.end = first + count; } return; }
+    verts.resize(vbase);
+    verts.insert(verts.end(), src.begin(), src.begin() + n_src * S);
   }
   t_fetch += ms(tf0, Clock::now());
   if (tri_list) {
@@ -712,7 +737,7 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
     stream.end = first + count;
   }
   indices.reserve(indices.size() + n_src * 3 / 2 + 6);
-  const uint32_t vb = uint32_t(vbase);
+  const uint32_t vb = uint32_t(vbase / S);   // first vertex of this draw, in strides
   auto at = [&](size_t k) -> uint32_t { return vb + (dedup ? d_local[k] : uint32_t(k)); };
   if (prim == RSX_PRIMITIVE_QUADS) {
     for (size_t q = 0; q + 3 < n_src; q += 4) {
@@ -765,6 +790,7 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
            float(st->alpha_func & 0x07u), 0.f};
   t_tex += ms(tt0, Clock::now());
   if (fcode) d2_fp_extract_consts(fcode, 4096, &fc[5][0], 64);
+  frame_verts += (verts.size() - vbase) / S;
   Rec rec{};
   try {
     if (vs_same) rec.vs_block = last_vblock;
@@ -880,7 +906,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
   }
   ui_flush(r, w, h, cmds); // options menu / FPS counter on top of the game
   const auto g0 = Clock::now();
-  if (!verts.empty()) r.setRsxGeometry(verts, indices);
+  if (!verts.empty()) r.setRsxGeometryCompact(verts, indices);
   const auto g1 = Clock::now();
   const bool ok = r.draw(cmds);
   const_epoch++;
@@ -930,7 +956,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     last_uploads = cnt.tex_uploads;
     f_record = 0; f_texup = 0;
   }
-  if (ok) { verts_total += verts.size(); frames_timed++; recs.clear(); verts.clear(); indices.clear(); frame_no++; stream.valid = false; stream.carry.clear(); evict_textures(r); }
+  if (ok) { verts_total += frame_verts; frame_verts = 0; frames_timed++; recs.clear(); verts.clear(); indices.clear(); frame_no++; stream.valid = false; stream.carry.clear(); evict_textures(r); }
   return ok;
 }
 
@@ -938,6 +964,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
 // start the shader compiler. Throws when DXC is unavailable.
 void init(Renderer &r) {
   compiler = std::make_unique<shader::Compiler>();
+  r.setCompactVertices(true);   // before the first program: pipelines are built for the compact vertex layout
   const auto vs = compile_cached(shader::fixtures::vertex(), shader::Stage::vertex);
   const auto fs = compile_cached(shader::fixtures::fragment(false), shader::Stage::fragment);
   r.setRsxProgram(vs, fs);
@@ -945,7 +972,7 @@ void init(Renderer &r) {
   ready = true;
 }
 
-void drop_frame() { recs.clear(); verts.clear(); indices.clear(); const_epoch++; }
+void drop_frame() { recs.clear(); verts.clear(); indices.clear(); frame_verts = 0; const_epoch++; }
 
 void print_counters() {
   if (frames_timed)

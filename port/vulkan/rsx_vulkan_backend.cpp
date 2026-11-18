@@ -60,6 +60,7 @@ extern "C" u32 d2_fp_code_hash(const u8 *, u32) __asm__("rsx_fp_code_hash");
 
 #endif
 #include "vulkan_renderer.h"
+#include "rsx_contract.h"
 
 namespace {
 

@@ -41,6 +41,7 @@
 #include "rsx_vertex_fetch.h"
 #include "rsx_vp_decompiler.h"
 #include "vulkan_renderer.h"
+#include "rsx_contract.h"
 #include "../graphics/graphics.h"
 
 extern "C" uint8_t *vm_base;

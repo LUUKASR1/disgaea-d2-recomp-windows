@@ -164,6 +164,13 @@ public:
                               std::span<const std::array<float, 4>> fragment);
   void setRsxGeometry(std::span<const RsxVertex>,
                       std::span<const uint32_t> indices = {});
+  // Compact vertex layout (call before the first RSX program): a program's vertices hold only the attributes its vertex
+  // shader reads, one float4 slot per input in the order of the shader's inputs, so the stride is max(1, inputs) * 16 bytes.
+  // Draws must be indexed; an index counts vertices of the draw's program stride from the start of the slot array, so a
+  // draw's first vertex must start at a multiple of its stride. Replaces setRsxGeometry for that renderer.
+  void setCompactVertices(bool on);
+  void setRsxGeometryCompact(std::span<const std::array<float, 4>> slots,
+                             std::span<const uint32_t> indices);
   // VS requires exactly 514 float4 rows (512 constants + scale + offset).
   // FP is a nonempty packed cbuffer, at most 1024 float4 rows.
   void setRsxConstants(std::span<const std::array<float, 4>> vertex,

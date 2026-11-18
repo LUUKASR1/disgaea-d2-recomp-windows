@@ -238,6 +238,14 @@ class Renderer::Impl {
     std::optional<RasterState> state;
   };
   std::vector<Program> programs;
+  // Compact vertex layout (opt-in, setCompactVertices): a program's vertices hold only the attributes its vertex shader
+  // reads, one float4 slot each in the order of vs_contract.inputs (stride = slots * 16 bytes, at least one slot). Indices
+  // are in units of that stride from the start of the vertex array. Default off: the legacy 16-slot (256-byte) vertex.
+  bool compact = false;
+  std::vector<uint32_t> idx_copy;   // indices of the current compact geometry (draw() range-checks them per program)
+  uint32_t compactSlots(const Program &p) const {
+    return uint32_t(std::max<size_t>(1, p.vs_contract.inputs.size()));
+  }
   uint64_t pipeline_cache_hits = 0, pipeline_cache_misses = 0;
   std::vector<Constants> constant_states;
   std::array<VkDescriptorSetLayout, 2> rsx_layouts{};
@@ -307,8 +315,11 @@ class Renderer::Impl {
     stages[1].module = frag;
     VkPipelineVertexInputStateCreateInfo vertex{
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    const bool compact_layout = compact && program;
     VkVertexInputBindingDescription binding{
-        0, uint32_t(rsxMode() ? sizeof(RsxVertex) : sizeof(Vertex)),
+        0,
+        compact_layout ? compactSlots(*program) * 16u
+                       : uint32_t(rsxMode() ? sizeof(RsxVertex) : sizeof(Vertex)),
         VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription attributes[] = {
         {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, position)},
@@ -321,7 +332,7 @@ class Renderer::Impl {
       for (uint32_t i = 0; i < program->vs_contract.inputs.size(); i++) {
         auto location = program->vs_contract.inputs[i];
         rsx_attributes[i] = {location, 0, VK_FORMAT_R32G32B32A32_SFLOAT,
-                             location * 16};
+                             (compact_layout ? i : location) * 16};
       }
     vertex.vertexAttributeDescriptionCount =
         program ? uint32_t(program->vs_contract.inputs.size()) : 3;
@@ -2318,13 +2329,14 @@ public:
   template <class V>
   void uploadGeometry(std::span<const V> vertices,
                       std::span<const uint32_t> indices) {
-    if (!device || vertices.size() > 1048576 || indices.size() > 3145728 ||
+    constexpr bool is_slot = std::is_same_v<V, std::array<float, 4>>;
+    if (!device || vertices.size() > (is_slot ? 4194304u : 1048576u) || indices.size() > 3145728 ||
         (indices.empty() ? vertices.size() % 3 : indices.size() % 3))
       throw std::runtime_error("Invalid or oversized triangle-list geometry");
     // RSX vertices are sanitised when they are fetched (and the constant template is too), so the scan over every word is
     // only done on request (D2_VULKAN_CHECK_VERTS=1) or for the legacy vertex layout.
     static const bool check_rsx = std::getenv("D2_VULKAN_CHECK_VERTS") != nullptr;
-    if (!std::is_same_v<V, RsxVertex> || check_rsx) {
+    if ((!std::is_same_v<V, RsxVertex> && !is_slot) || check_rsx) {
       // Branch-free scan over the raw float words (NaN/Inf have an all-ones exponent); vectorises on NEON/SSE.
       static_assert(sizeof(RsxVertex) % sizeof(uint32_t) == 0);
       const auto *words = reinterpret_cast<const uint32_t *>(vertices.data());
@@ -2342,6 +2354,7 @@ public:
     geometry = VK_NULL_HANDLE;
     geometry_memory = VK_NULL_HANDLE;
     vertex_count = index_count = 0;
+    if constexpr (is_slot) idx_copy.assign(indices.begin(), indices.end());
     if (vertices.empty())
       return; // An explicit clear-only frame.
     index_offset = vertices.size_bytes();
@@ -2399,6 +2412,14 @@ public:
                       std::span<const uint32_t> i) {
     if (!rsxMode())
       throw std::runtime_error("Install RSX program first");
+    if (compact)
+      throw std::runtime_error("Compact vertex layout requires setRsxGeometryCompact");
+    uploadGeometry(v, i);
+  }
+  void setRsxGeometryCompact(std::span<const std::array<float, 4>> v,
+                             std::span<const uint32_t> i) {
+    if (!rsxMode() || !compact)
+      throw std::runtime_error("Compact geometry needs setCompactVertices and an RSX program");
     uploadGeometry(v, i);
   }
   bool draw() {
@@ -2457,6 +2478,17 @@ public:
                   programs[c.rsx_program].fp_contract.uniform_bytes)
             throw std::runtime_error(
                 "RSX draw constants unavailable or too short");
+        }
+        if (compact) {
+          // Indices count vertices of this program's stride; each must stay inside the uploaded vertex array.
+          if (!c.indexed)
+            throw std::runtime_error("Compact geometry needs indexed draws");
+          const uint64_t slots = compactSlots(programs[c.rsx_program]);
+          uint32_t top = 0;
+          for (uint32_t k = c.first; k < c.first + c.count; k++)
+            top = std::max(top, idx_copy[k]);
+          if ((uint64_t(top) + 1) * slots > vertex_count)
+            throw std::runtime_error("Vertex index out of range for the program's vertex layout");
         }
       } else if (c.rsx_program || c.rsx_constants)
         throw std::runtime_error("RSX handles in legacy draw");
@@ -2840,6 +2872,15 @@ void Renderer::setRsxProgram(std::span<const uint32_t> v,
 void Renderer::setRsxGeometry(std::span<const RsxVertex> v,
                               std::span<const uint32_t> i) {
   impl_->setRsxGeometry(v, i);
+}
+void Renderer::setRsxGeometryCompact(std::span<const std::array<float, 4>> v,
+                                     std::span<const uint32_t> i) {
+  impl_->setRsxGeometryCompact(v, i);
+}
+void Renderer::setCompactVertices(bool on) {
+  if (!impl_->programs.empty())
+    throw std::runtime_error("setCompactVertices must be called before the first RSX program");
+  impl_->compact = on;
 }
 void Renderer::setRsxConstants(std::span<const std::array<float, 4>> v,
                                std::span<const std::array<float, 4>> f) {

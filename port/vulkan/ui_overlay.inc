@@ -9,7 +9,8 @@
 struct Ui {
   bool tried = false, ready = false;
   uint32_t program = 0, texture = 0;
-  std::vector<RsxVertex> v;
+  std::vector<uint32_t> inputs;   // attribute locations the overlay vertex shader reads (its compact slot order)
+  std::vector<RsxVertex> v;       // quads are built with the legacy 16-attribute layout and packed in ui_flush
   float W = 1.f, H = 1.f;
 } ui;
 
@@ -142,6 +143,7 @@ bool ui_prepare(Renderer &r) {
     const auto vs = compile_cached(shader::fixtures::vertex(false, 0), shader::Stage::vertex);
     const auto fs = compile_cached(fragment, shader::Stage::fragment);
     RasterState rs;
+    ui.inputs = vertex_inputs(vs);
     ui.program = r.acquireRsxPipeline(vs, fs, rs);
     ui.ready = true;
   } catch (const std::exception &e) {
@@ -160,9 +162,11 @@ void ui_flush(Renderer &r, uint32_t w, uint32_t h, std::vector<DrawCommand> &cmd
     vc[513] = {0.f, 0.f, 0.f, 0.f};
     const std::array<std::array<float, 4>, 5 + 64> fc{};
     DrawCommand d;
-    d.first = uint32_t(verts.size());
+    const size_t S = std::max<size_t>(1, ui.inputs.size());
+    const size_t vbase = (verts.size() + S - 1) / S * S;   // a draw starts at a multiple of its stride
+    d.first = uint32_t(indices.size());
     d.count = uint32_t(ui.v.size());
-    d.indexed = false;
+    d.indexed = true;
     d.depth = DepthMode::disabled;
     d.blend = true;
     d.viewport = {0, 0, w, h};
@@ -171,7 +175,13 @@ void ui_flush(Renderer &r, uint32_t w, uint32_t h, std::vector<DrawCommand> &cmd
     d.textures[0] = ui.texture;
     d.vs_block = r.frameVsConstants(vc);
     d.fp_block = r.frameFpConstants(fc);
-    verts.insert(verts.end(), ui.v.begin(), ui.v.end());
+    if (vbase + ui.v.size() * S > kMaxSlots || indices.size() + ui.v.size() > kMaxIndices) throw std::runtime_error("frame is full");
+    verts.resize(vbase + ui.v.size() * S);
+    for (size_t k = 0; k < ui.v.size(); k++) {
+      Slot *out = &verts[vbase + k * S];
+      for (size_t i = 0; i < S; i++) out[i] = i < ui.inputs.size() ? ui.v[k].attributes[ui.inputs[i] & 15u] : Slot{};
+      indices.push_back(uint32_t(vbase / S + k));
+    }
     cmds.push_back(d);
   } catch (const std::exception &e) {
     std::fprintf(stderr, "[vulkan][ui] overlay draw skipped: %.200s\n", e.what());
