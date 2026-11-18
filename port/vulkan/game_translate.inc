@@ -406,8 +406,10 @@ struct Rec {
 };
 std::vector<Rec> recs;
 std::vector<RsxVertex> verts;
+std::vector<uint32_t> indices;   // every recorded draw is indexed: Rec::first/count address this list
 std::map<std::array<uint32_t, 10>, uint32_t> pipelines;
 constexpr size_t kMaxVerts = 1000000;
+constexpr size_t kMaxIndices = 3000000;
 
 uint32_t read_index(const rsx_state *st, uint32_t k) {
   const int local = ((st->index_array_dma & 0xF) == 0);
@@ -533,45 +535,68 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
     }
   }
 
-  // Vertices of this batch (plus the carried ones of a continued stream).
-  std::vector<RsxVertex> src;
-  src.reserve(stream.carry.size() + count);
-  src.insert(src.end(), stream.carry.begin(), stream.carry.end());
-  const size_t carried = src.size();
+  // Vertices of this batch, stored once in the frame's vertex array; the draw addresses them through `indices`, so a
+  // quad is 4 vertices instead of 6 and nothing is copied twice. A batch that continues a triangle stream (carried
+  // vertices) or ends mid-primitive goes through a temporary array. Everything is rolled back on an early return.
+  struct Rollback {
+    size_t vbase = verts.size(), ibase = indices.size();
+    bool commit = false;
+    ~Rollback() { if (!commit) { verts.resize(vbase); indices.resize(ibase); } }
+  } rollback;
+  const size_t vbase = rollback.vbase;
+  const bool whole = stream.carry.empty() && (prim == RSX_PRIMITIVE_QUADS ? count % 4 == 0 : tri_list ? count % 3 == 0 : true);
   const auto tf0 = Clock::now();
   const VertexTemplate vt = make_template(st);
-  src.insert(src.end(), count, vt.base);   // one 256-byte write per vertex instead of zero-fill + copy
-  for (u32 k = 0; k < count; k++)
-    fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, src[carried + k]);
-  t_fetch += ms(tf0, Clock::now());
-  std::vector<uint32_t> order;
-  order.reserve(src.size() * 3 / 2 + 6);
-  size_t used = src.size();
-  if (prim == RSX_PRIMITIVE_QUADS) {
-    for (size_t q = 0; q + 3 < src.size(); q += 4) {
-      static const int idx[6] = {0, 1, 2, 0, 2, 3};
-      for (int k : idx) order.push_back(uint32_t(q + k));
-    }
-  } else if (tri_list) {
-    used = src.size() / 3 * 3;
-    for (size_t k = 0; k < used; k++) order.push_back(uint32_t(k));
+  size_t n_src = 0;      // vertices of this batch now in verts[vbase..]
+  size_t used = 0;       // tri_list: vertices that form whole triangles
+  if (whole) {
+    if (verts.size() + count > kMaxVerts) { cnt.skipped_cap++; return; }
+    verts.insert(verts.end(), count, vt.base);   // one 256-byte write per vertex instead of zero-fill + copy
+    for (u32 k = 0; k < count; k++)
+      fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, verts[vbase + k]);
+    n_src = used = count;
+    if (tri_list) stream.carry.clear();
   } else {
-    const bool fan = prim == RSX_PRIMITIVE_TRIANGLE_FAN;
-    for (size_t t = 0; t + 2 < src.size(); t++) {
-      uint32_t i0 = fan ? 0 : uint32_t(t), i1 = uint32_t(t + 1), i2 = uint32_t(t + 2);
-      if (!fan && (t & 1)) std::swap(i1, i2);
-      order.push_back(i0); order.push_back(i1); order.push_back(i2);
-    }
+    std::vector<RsxVertex> src;
+    src.reserve(stream.carry.size() + count);
+    src.insert(src.end(), stream.carry.begin(), stream.carry.end());
+    const size_t carried = src.size();
+    src.insert(src.end(), count, vt.base);
+    for (u32 k = 0; k < count; k++)
+      fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, src[carried + k]);
+    n_src = prim == RSX_PRIMITIVE_QUADS ? src.size() / 4 * 4 : tri_list ? src.size() / 3 * 3 : src.size();
+    used = n_src;
+    if (tri_list) stream.carry.assign(src.begin() + used, src.end());
+    if (verts.size() + n_src > kMaxVerts) { cnt.skipped_cap++; if (tri_list) { stream.valid = true; stream.prim = prim; stream.epoch = st->begin_epoch; stream.end = first + count; } return; }
+    verts.insert(verts.end(), src.begin(), src.begin() + n_src);
   }
+  t_fetch += ms(tf0, Clock::now());
   if (tri_list) {
-    stream.carry.assign(src.begin() + used, src.end());
     stream.valid = true;
     stream.prim = prim;
     stream.epoch = st->begin_epoch;
     stream.end = first + count;
   }
-  if (order.empty()) return;
-  if (verts.size() + order.size() > kMaxVerts) { cnt.skipped_cap++; return; }
+  indices.reserve(indices.size() + n_src * 3 / 2 + 6);
+  const uint32_t vb = uint32_t(vbase);
+  if (prim == RSX_PRIMITIVE_QUADS) {
+    for (size_t q = 0; q + 3 < n_src; q += 4) {
+      static const int idx[6] = {0, 1, 2, 0, 2, 3};
+      for (int k : idx) indices.push_back(vb + uint32_t(q + k));
+    }
+  } else if (tri_list) {
+    for (size_t k = 0; k < used; k++) indices.push_back(vb + uint32_t(k));
+  } else {
+    const bool fan = prim == RSX_PRIMITIVE_TRIANGLE_FAN;
+    for (size_t t = 0; t + 2 < n_src; t++) {
+      uint32_t i0 = fan ? 0 : uint32_t(t), i1 = uint32_t(t + 1), i2 = uint32_t(t + 2);
+      if (!fan && (t & 1)) std::swap(i1, i2);
+      indices.push_back(vb + i0); indices.push_back(vb + i1); indices.push_back(vb + i2);
+    }
+  }
+  const size_t added = indices.size() - rollback.ibase;
+  if (!added) return;
+  if (indices.size() > kMaxIndices) { cnt.skipped_cap++; return; }
 
   // Constants (same layout as the D3D12 backend).
   const auto tc0 = Clock::now();
@@ -623,8 +648,8 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
   t_consts += ms(tc0, Clock::now());
   rec.textures = tex;
   rec.program = program;
-  rec.first = uint32_t(verts.size());
-  rec.count = uint32_t(order.size());
+  rec.first = uint32_t(rollback.ibase);
+  rec.count = uint32_t(added);
   rec.blend = st->blend_enable != 0;
   rec.depth = !st->depth_test_enable ? DepthMode::disabled : st->depth_mask ? DepthMode::read_write : DepthMode::read_only;
   // Guest viewport / scissor, scaled to the output later (kept in guest units).
@@ -640,17 +665,16 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
     if (b.first + b.count == rec.first && b.program == rec.program && b.vs_block == rec.vs_block &&
         b.fp_block == rec.fp_block && b.textures == rec.textures && b.depth == rec.depth &&
         b.blend == rec.blend && same_rect(b.viewport, rec.viewport) && same_rect(b.scissor, rec.scissor)) {
-      for (uint32_t k : order) verts.push_back(src[k]);
       b.count += rec.count;
       cnt.recorded++;
+      rollback.commit = true;
       return;
     }
   }
   if (recs.size() >= 4000) { cnt.skipped_cap++; return; }
-  verts.reserve(verts.size() + order.size());
-  for (uint32_t k : order) verts.push_back(src[k]);
   recs.push_back(rec);
   cnt.recorded++;
+  rollback.commit = true;
 }
 
 // Present: submit everything recorded this frame.
@@ -708,7 +732,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     DrawCommand d;
     d.first = c.first;
     d.count = c.count;
-    d.indexed = false;
+    d.indexed = true;
     d.depth = c.depth;
     d.blend = c.blend;
     d.viewport = scale(c.viewport);
@@ -721,7 +745,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
   }
   ui_flush(r, w, h, cmds); // options menu / FPS counter on top of the game
   const auto g0 = Clock::now();
-  if (!verts.empty()) r.setRsxGeometry(verts);
+  if (!verts.empty()) r.setRsxGeometry(verts, indices);
   const auto g1 = Clock::now();
   const bool ok = r.draw(cmds);
   const_epoch++;
@@ -760,7 +784,7 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     last_uploads = cnt.tex_uploads;
     f_record = 0; f_texup = 0;
   }
-  if (ok) { verts_total += verts.size(); frames_timed++; recs.clear(); verts.clear(); frame_no++; stream.valid = false; stream.carry.clear(); evict_textures(r); }
+  if (ok) { verts_total += verts.size(); frames_timed++; recs.clear(); verts.clear(); indices.clear(); frame_no++; stream.valid = false; stream.carry.clear(); evict_textures(r); }
   return ok;
 }
 
@@ -775,7 +799,7 @@ void init(Renderer &r) {
   ready = true;
 }
 
-void drop_frame() { recs.clear(); verts.clear(); const_epoch++; }
+void drop_frame() { recs.clear(); verts.clear(); indices.clear(); const_epoch++; }
 
 void print_counters() {
   if (frames_timed)

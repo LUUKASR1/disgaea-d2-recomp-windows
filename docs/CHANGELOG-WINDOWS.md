@@ -1,3 +1,7 @@
+# 1.0.25 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: desenhos indexados (quad = 4 vértices) e uma cópia a menos por vértice; menos custo por quadro em cenas pesadas.
+
 # 1.0.24 — Prévia europeia + núcleo Android (prévia)
 
 - Núcleo Android: minimizar/voltar recria a superfície Vulkan (sem tela preta); o jogo pausa em segundo plano.
