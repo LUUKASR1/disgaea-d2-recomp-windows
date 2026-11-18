@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <iterator>
 #include <fstream>
 #include <iostream>
@@ -2320,7 +2321,10 @@ public:
     if (!device || vertices.size() > 1048576 || indices.size() > 3145728 ||
         (indices.empty() ? vertices.size() % 3 : indices.size() % 3))
       throw std::runtime_error("Invalid or oversized triangle-list geometry");
-    {
+    // RSX vertices are sanitised when they are fetched (and the constant template is too), so the scan over every word is
+    // only done on request (D2_VULKAN_CHECK_VERTS=1) or for the legacy vertex layout.
+    static const bool check_rsx = std::getenv("D2_VULKAN_CHECK_VERTS") != nullptr;
+    if (!std::is_same_v<V, RsxVertex> || check_rsx) {
       // Branch-free scan over the raw float words (NaN/Inf have an all-ones exponent); vectorises on NEON/SSE.
       static_assert(sizeof(RsxVertex) % sizeof(uint32_t) == 0);
       const auto *words = reinterpret_cast<const uint32_t *>(vertices.data());

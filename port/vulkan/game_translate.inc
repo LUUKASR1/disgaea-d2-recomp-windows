@@ -410,6 +410,9 @@ std::vector<uint32_t> indices;   // every recorded draw is indexed: Rec::first/c
 std::map<std::array<uint32_t, 10>, uint32_t> pipelines;
 constexpr size_t kMaxVerts = 1000000;
 constexpr size_t kMaxIndices = 3000000;
+// Draw composition (printed with the counters): how many draws per primitive type, and for indexed draws how many index
+// entries there were against distinct vertices.
+uint64_t prim_draws[16] = {}, prim_verts[16] = {}, idx_draws = 0, idx_entries = 0, idx_unique = 0, idx_deduped = 0;
 
 uint32_t read_index(const rsx_state *st, uint32_t k) {
   const int local = ((st->index_array_dma & 0xF) == 0);
@@ -492,6 +495,8 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
     return;
   }
   if (!count) return;
+  prim_draws[prim & 15]++;
+  prim_verts[prim & 15] += count;
   uint64_t vkey = 0, fkey = 0;
   const auto th0 = Clock::now();
   const uint64_t compiles_before = cnt.compiles, pipes_before = cnt.pipelines;
@@ -549,11 +554,50 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
   const VertexTemplate vt = make_template(st);
   size_t n_src = 0;      // vertices of this batch now in verts[vbase..]
   size_t used = 0;       // tri_list: vertices that form whole triangles
+  // An indexed draw usually reuses vertices: fetch each distinct index once and keep the index list. Needs the index range
+  // to fit the lookup table (16-bit index arrays always do).
+  static std::vector<uint32_t> d_idx, d_local, d_uniq, d_slot(65536), d_gen(65536);
+  static uint32_t d_cur = 0;
+  bool dedup = false;
   if (whole) {
-    if (verts.size() + count > kMaxVerts) { cnt.skipped_cap++; return; }
-    verts.insert(verts.end(), count, vt.base);   // one 256-byte write per vertex instead of zero-fill + copy
-    for (u32 k = 0; k < count; k++)
-      fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, verts[vbase + k]);
+    if (indexed && count >= 3) {
+      d_idx.resize(count);
+      uint32_t mn = UINT32_MAX, mx = 0;
+      for (u32 k = 0; k < count; k++) {
+        const uint32_t v = read_index(st, first + k);
+        d_idx[k] = v;
+        mn = std::min(mn, v);
+        mx = std::max(mx, v);
+      }
+      if (mx - mn < 65536u) {
+        dedup = true;
+        d_local.resize(count);
+        d_uniq.clear();
+        if (++d_cur == 0) { std::fill(d_gen.begin(), d_gen.end(), 0u); d_cur = 1; }
+        for (u32 k = 0; k < count; k++) {
+          const uint32_t off = d_idx[k] - mn;
+          if (d_gen[off] != d_cur) {
+            d_gen[off] = d_cur;
+            d_slot[off] = uint32_t(d_uniq.size());
+            d_uniq.push_back(d_idx[k]);
+          }
+          d_local[k] = d_slot[off];
+        }
+      }
+    }
+    const size_t nv = dedup ? d_uniq.size() : size_t(count);
+    if (verts.size() + nv > kMaxVerts) { cnt.skipped_cap++; return; }
+    verts.insert(verts.end(), nv, vt.base);   // one 256-byte write per vertex instead of zero-fill + copy
+    if (dedup) {
+      for (size_t u = 0; u < nv; u++) fetch_vertex(st, vt, d_uniq[u], verts[vbase + u]);
+      idx_deduped++;
+      idx_entries += count;
+      idx_unique += nv;
+    } else {
+      for (u32 k = 0; k < count; k++)
+        fetch_vertex(st, vt, indexed ? read_index(st, first + k) : first + k, verts[vbase + k]);
+    }
+    if (indexed) idx_draws++;
     n_src = used = count;
     if (tri_list) stream.carry.clear();
   } else {
@@ -579,19 +623,20 @@ void record(Renderer &r, const rsx_state *st, bool indexed, u32 prim, u32 first,
   }
   indices.reserve(indices.size() + n_src * 3 / 2 + 6);
   const uint32_t vb = uint32_t(vbase);
+  auto at = [&](size_t k) -> uint32_t { return vb + (dedup ? d_local[k] : uint32_t(k)); };
   if (prim == RSX_PRIMITIVE_QUADS) {
     for (size_t q = 0; q + 3 < n_src; q += 4) {
       static const int idx[6] = {0, 1, 2, 0, 2, 3};
-      for (int k : idx) indices.push_back(vb + uint32_t(q + k));
+      for (int k : idx) indices.push_back(at(q + k));
     }
   } else if (tri_list) {
-    for (size_t k = 0; k < used; k++) indices.push_back(vb + uint32_t(k));
+    for (size_t k = 0; k < used; k++) indices.push_back(at(k));
   } else {
     const bool fan = prim == RSX_PRIMITIVE_TRIANGLE_FAN;
     for (size_t t = 0; t + 2 < n_src; t++) {
       uint32_t i0 = fan ? 0 : uint32_t(t), i1 = uint32_t(t + 1), i2 = uint32_t(t + 2);
       if (!fan && (t & 1)) std::swap(i1, i2);
-      indices.push_back(vb + i0); indices.push_back(vb + i1); indices.push_back(vb + i2);
+      indices.push_back(at(i0)); indices.push_back(at(i1)); indices.push_back(at(i2));
     }
   }
   const size_t added = indices.size() - rollback.ibase;
@@ -809,6 +854,15 @@ void print_counters() {
                  t_consts / frames_timed, t_tex / frames_timed, t_geom / frames_timed,
                  t_draw / frames_timed, double(verts_total) / frames_timed);
   t_record = t_geom = t_draw = t_fetch = t_consts = t_tex = 0; verts_total = 0; frames_timed = 0;
+  {
+    static const char *const names[16] = {"?0", "points", "lines", "line_loop", "line_strip", "triangles", "tri_strip", "tri_fan",
+                                          "quads", "quad_strip", "polygon", "?11", "?12", "?13", "?14", "?15"};
+    std::fprintf(stderr, "[vulkan][m2] draw mix since start:");
+    for (int i = 0; i < 16; i++)
+      if (prim_draws[i]) std::fprintf(stderr, " %s=%llu draws/%llu verts", names[i], (unsigned long long)prim_draws[i], (unsigned long long)prim_verts[i]);
+    std::fprintf(stderr, " | indexed draws=%llu, deduplicated=%llu (%llu index entries -> %llu distinct vertices)\n",
+                 (unsigned long long)idx_draws, (unsigned long long)idx_deduped, (unsigned long long)idx_entries, (unsigned long long)idx_unique);
+  }
   std::fprintf(stderr,
                "[vulkan][m2] recorded=%llu skipped: target=%llu prim=%llu shader=%llu other=%llu cap=%llu | "
                "compiles=%llu (disk cache hits %llu) failures=%llu pipelines=%llu | textures: uploads=%llu unsupported=%llu live=%zu evicted=%llu\n",

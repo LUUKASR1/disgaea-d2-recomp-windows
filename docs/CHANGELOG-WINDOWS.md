@@ -1,3 +1,7 @@
+# 1.0.26 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: reaproveitamento de vértices em desenhos indexados, sem varredura redundante de vértices; log da composição dos desenhos.
+
 # 1.0.25 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: desenhos indexados (quad = 4 vértices) e uma cópia a menos por vértice; menos custo por quadro em cenas pesadas.
