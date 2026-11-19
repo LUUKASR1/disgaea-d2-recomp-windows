@@ -62,9 +62,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         root.addView(surface);
         // Fix the buffer to the Activity's landscape size: on a portrait-mounted panel the default buffer is portrait and
         // would be stretched, squashing the picture.
+        surfaceView = surface;
         root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             int w = r - l, h = b - t;
-            if (w > 0 && h > 0) surface.getHolder().setFixedSize(w, h);
+            if (w > 0 && h > 0) { viewW = w; viewH = h; applyBufferSize(); }
         });
 
         LinearLayout panel = new LinearLayout(this);
@@ -111,6 +112,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             for (int i = 0; i < SCALES.length; i++) if (SCALES[i] == scalePct()) next = (i + 1) % SCALES.length;
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_SCALE, SCALES[next]).apply();
             resolution.setText(resolutionLabel());
+            applyBufferSize();
         });
         fps.setText(fpsLabel());
         fps.setOnClickListener(v -> {
@@ -181,6 +183,18 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps";
     private static final int[] SCALES = {50, 60, 75, 100};
 
+    private SurfaceView surfaceView;
+    private int viewW, viewH;
+
+    // Internal resolution: the surface buffer is made smaller than the screen and Android's compositor scales it up
+    // (free on the GPU), so the core simply renders into a smaller window.
+    private void applyBufferSize() {
+        if (surfaceView == null || viewW <= 0 || viewH <= 0) return;
+        int pct = scalePct();
+        int w = Math.max(64, viewW * pct / 100), h = Math.max(64, viewH * pct / 100);
+        surfaceView.getHolder().setFixedSize(w, h);
+    }
+
     private int scalePct() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SCALE, 100); }
 
     private boolean showFps() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_FPS, false); }
@@ -192,7 +206,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     // The core reads this file from its working directory (next to the log) when the first frame is presented.
     private void writeSettings() {
         try (OutputStream out = new FileOutputStream(new File(getExternalFilesDir(null), "d2_android.cfg"))) {
-            out.write(("scale=" + scalePct() + "\nshowfps=" + (showFps() ? 1 : 0) + "\n").getBytes("UTF-8"));
+            out.write(("scale=100\nbufscale=" + scalePct() + "\nshowfps=" + (showFps() ? 1 : 0) + "\n").getBytes("UTF-8"));
         } catch (java.io.IOException ignored) { }
     }
 
