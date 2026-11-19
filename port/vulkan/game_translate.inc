@@ -963,15 +963,13 @@ void run_fetch_jobs() {
 // The guest blocks in its flip wait until the flip is retired (cellGcmTickFlip). Retiring after the vertex data was
 // copied (instead of after draw + present, which can wait for vsync) overlaps the game's next frame with this frame's
 // GPU submission. Everything the draw needs from here on is host-owned (vertex copies, constants, textures).
-// D2_EARLY_FLIP_OFF=1 restores the old behaviour.
+// Switched by the app's "early flip" option (d2_android.cfg: earlyflip=0|1) or D2_EARLY_FLIP_OFF=1.
 extern "C" void cellGcmTickFlip(void);
+inline bool d2_early_flip = true;
 static void early_flip_retire() {
-  static const bool on = [] {
-    const bool enabled = !std::getenv("D2_EARLY_FLIP_OFF");
-    std::fprintf(stderr, "[vulkan] early flip retire: %s\n", enabled ? "on" : "off");
-    return enabled;
-  }();
-  if (on) cellGcmTickFlip();
+  static bool announced = false;
+  if (!announced) { announced = true; std::fprintf(stderr, "[vulkan] early flip retire: %s\n", d2_early_flip ? "on" : "off"); }
+  if (d2_early_flip) cellGcmTickFlip();
 }
 #endif
 

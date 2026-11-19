@@ -119,10 +119,17 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FPS, !showFps()).apply();
             fps.setText(fpsLabel());
         });
+        Button early = new Button(this);
+        early.setText(earlyLabel());
+        early.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_EARLY, !earlyFlip()).apply();
+            early.setText(earlyLabel());
+        });
         LinearLayout options = new LinearLayout(this);
         options.setOrientation(LinearLayout.HORIZONTAL);
         options.addView(resolution);
         options.addView(fps);
+        options.addView(early);
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.addView(chooseCore);
@@ -180,7 +187,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private File gameRoot() { return new File(getExternalFilesDir(null), "game"); }
 
-    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps";
+    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps", KEY_EARLY = "early_flip";
     private static final int[] SCALES = {50, 60, 75, 100};
 
     private SurfaceView surfaceView;
@@ -199,6 +206,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private boolean showFps() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_FPS, false); }
 
+    private boolean earlyFlip() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_EARLY, true); }
+
+    private String earlyLabel() { return getString(earlyFlip() ? R.string.early_on : R.string.early_off); }
+
     private String resolutionLabel() { return getString(R.string.internal_resolution, scalePct()); }
 
     private String fpsLabel() { return getString(showFps() ? R.string.fps_on : R.string.fps_off); }
@@ -206,7 +217,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     // The core reads this file from its working directory (next to the log) when the first frame is presented.
     private void writeSettings() {
         try (OutputStream out = new FileOutputStream(new File(getExternalFilesDir(null), "d2_android.cfg"))) {
-            out.write(("scale=100\nbufscale=" + scalePct() + "\nshowfps=" + (showFps() ? 1 : 0) + "\n").getBytes("UTF-8"));
+            out.write(("scale=100\nbufscale=" + scalePct() + "\nearlyflip=" + (earlyFlip() ? 1 : 0) + "\nshowfps=" + (showFps() ? 1 : 0) + "\n").getBytes("UTF-8"));
         } catch (java.io.IOException ignored) { }
     }
 

@@ -17,4 +17,6 @@
     <string name="internal_resolution">Resolução interna: %1$d%%</string>
     <string name="fps_on">Contador de FPS: ligado</string>
     <string name="fps_off">Contador de FPS: desligado</string>
+    <string name="early_on">Liberação antecipada: ligada</string>
+    <string name="early_off">Liberação antecipada: desligada</string>
 </resources>

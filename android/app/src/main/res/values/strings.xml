@@ -17,4 +17,6 @@
     <string name="internal_resolution">Internal resolution: %1$d%%</string>
     <string name="fps_on">FPS counter: on</string>
     <string name="fps_off">FPS counter: off</string>
+    <string name="early_on">Early frame release: on</string>
+    <string name="early_off">Early frame release: off</string>
 </resources>

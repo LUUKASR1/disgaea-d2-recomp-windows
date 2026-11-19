@@ -202,8 +202,9 @@ static bool window_force_resize = false;
 //   scale=<25..200>   (legacy) Vulkan-side scene scaling; the app writes 100 because it scales through the surface
 //   bufscale=<25..200> internal resolution the app applied by making the surface buffer smaller (the compositor scales
 //                     it up). Only logged here.
+//   earlyflip=<0|1>   release the game right after the vertex copy (default 1)
 //   showfps=<0|1>     FPS counter in the top-left corner
-struct AndroidSettings { unsigned scale_pct = 100, buffer_pct = 100; bool show_fps = false; };
+struct AndroidSettings { unsigned scale_pct = 100, buffer_pct = 100; bool show_fps = false, early_flip = true; };
 static AndroidSettings load_android_settings() {
   AndroidSettings st;
   if (FILE *f = std::fopen("d2_android.cfg", "r")) {
@@ -212,11 +213,14 @@ static AndroidSettings load_android_settings() {
       unsigned v = 0;
       if (std::sscanf(line, "scale=%u", &v) == 1 && v >= 25 && v <= 200) st.scale_pct = v;
       else if (std::sscanf(line, "bufscale=%u", &v) == 1 && v >= 25 && v <= 200) st.buffer_pct = v;
+      else if (std::sscanf(line, "earlyflip=%u", &v) == 1) st.early_flip = v != 0;
       else if (std::sscanf(line, "showfps=%u", &v) == 1) st.show_fps = v != 0;
     }
     std::fclose(f);
   }
-  D2LOG("[vulkan] android settings: internal resolution %u%% (surface buffer), scene scale %u%%, FPS counter %s\n", st.buffer_pct, st.scale_pct, st.show_fps ? "on" : "off");
+  if (std::getenv("D2_EARLY_FLIP_OFF")) st.early_flip = false;
+  tr::d2_early_flip = st.early_flip;
+  D2LOG("[vulkan] android settings: internal resolution %u%% (surface buffer), scene scale %u%%, FPS counter %s, early flip %s\n", st.buffer_pct, st.scale_pct, st.show_fps ? "on" : "off", st.early_flip ? "on" : "off");
   return st;
 }
 

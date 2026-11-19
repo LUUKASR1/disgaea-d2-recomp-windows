@@ -1,3 +1,7 @@
+# 1.0.36 — Prévia europeia + núcleo Android (prévia)
+
+- Android: botão para ligar/desligar a liberação antecipada do quadro (comparação de desempenho e imagem).
+
 # 1.0.35 — Prévia europeia + núcleo Android (prévia)
 
 - Android: o jogo é liberado no flip logo após a cópia dos vértices, sobrepondo desenho/apresentação ao quadro seguinte; resolução interna refeita via buffer da superfície.
