@@ -13,6 +13,7 @@
 #include "triangle_spv.h"
 #include "vulkan_renderer.h"
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -1498,6 +1499,12 @@ public:
   std::map<uint32_t, VkDescriptorSet> frame_vs_sets;
   std::map<std::array<uint32_t, 17>, VkDescriptorSet> frame_fp_sets;
   bool frame_open = false;
+  // Time the host thread spent blocked (ms, since the last takeWaitStats): fence in uploadGeometry, fence at the start of
+  // draw, vkAcquireNextImageKHR and vkQueuePresentKHR.
+  double stat_fence_upload = 0, stat_fence_draw = 0, stat_acquire = 0, stat_present = 0;
+  static double stat_now() {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
   void makeHostBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                       VkBuffer &buffer, VkDeviceMemory &mem, uint8_t *&mapped,
                       bool &coherent) {
@@ -2350,7 +2357,11 @@ public:
     for (auto i : indices)
       if (i >= vertices.size())
         throw std::runtime_error("Vertex index out of range");
-    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    {
+      const double t0 = stat_now();
+      OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+      stat_fence_upload += stat_now() - t0;
+    }
     geometry = VK_NULL_HANDLE;
     geometry_memory = VK_NULL_HANDLE;
     vertex_count = index_count = 0;
@@ -2500,7 +2511,11 @@ public:
       rect(c.viewport);
       rect(c.scissor);
     }
-    OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    {
+      const double t0 = stat_now();
+      OK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+      stat_fence_draw += stat_now() - t0;
+    }
     // Descriptor sets for the draw-list path are allocated before acquiring a
     // swapchain image so a failure cannot leave the acquire semaphore pending.
     std::vector<std::array<VkDescriptorSet, 2>> frame_sets(commands.size());
@@ -2512,8 +2527,10 @@ public:
       }
     uint32_t index = 0;
     if (surface) {
+      const double t_acq = stat_now();
       VkResult r = vkAcquireNextImageKHR(device, swapchain, 1000000000ull,
                                          acquire, VK_NULL_HANDLE, &index);
+      stat_acquire += stat_now() - t_acq;
       if (r == VK_ERROR_OUT_OF_DATE_KHR) {
         dirty = true;
         return false;
@@ -2728,7 +2745,9 @@ public:
       present.swapchainCount = 1;
       present.pSwapchains = &swapchain;
       present.pImageIndices = &index;
+      const double t_pre = stat_now();
       VkResult r = vkQueuePresentKHR(queue, &present);
+      stat_present += stat_now() - t_pre;
       if (r == VK_ERROR_OUT_OF_DATE_KHR)
         dirty = true;
       else if (r == VK_SUBOPTIMAL_KHR) {
@@ -2833,6 +2852,10 @@ bool Renderer::draw(std::span<const DrawCommand> commands) {
   return impl_->draw(commands);
 }
 bool Renderer::needsResize() const { return impl_->dirty; }
+void Renderer::takeWaitStats(double (&out)[4]) {
+  out[0] = impl_->stat_fence_upload; out[1] = impl_->stat_fence_draw; out[2] = impl_->stat_acquire; out[3] = impl_->stat_present;
+  impl_->stat_fence_upload = impl_->stat_fence_draw = impl_->stat_acquire = impl_->stat_present = 0;
+}
 void Renderer::setRenderScale(float scale) {
   if (!(scale >= 0.25f && scale <= 4.f))
     scale = 1.f;

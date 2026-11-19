@@ -1027,6 +1027,12 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
   const bool ok = r.draw(cmds);
   const_epoch++;
   const auto g2 = Clock::now();
+  static double wait_sum[4] = {0, 0, 0, 0};
+  {
+    double w4[4];
+    r.takeWaitStats(w4);
+    for (int k = 0; k < 4; k++) wait_sum[k] += w4[k];
+  }
   t_geom += ms(g0, g1);
   t_draw += ms(g1, g2);
   {
@@ -1065,6 +1071,11 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
             "[vulkan][pace] last 600 frames: <=17ms=%llu 17-25=%llu 25-34=%llu 34-50=%llu >50=%llu | max=%.1f ms | avg guest/other=%.1f ms | avg cpu per frame: render-thread=%.1f, process=%.1f ms\n",
             (unsigned long long)hist[0], (unsigned long long)hist[1], (unsigned long long)hist[2], (unsigned long long)hist[3],
             (unsigned long long)hist[4], period_max, guest_sum / 600.0, thr_sum / 600.0, proc_sum / 600.0);
+      if (nframes % 600 == 0) {
+        std::fprintf(stderr, "[vulkan][pace] host waits per frame (avg of 600): fence in upload=%.2f ms, fence in draw=%.2f ms, acquire=%.2f ms, present=%.2f ms\n",
+                     wait_sum[0] / 600.0, wait_sum[1] / 600.0, wait_sum[2] / 600.0, wait_sum[3] / 600.0);
+        for (double &x : wait_sum) x = 0;
+      }
       if (nframes % 600 == 0) { print_mix(); for (auto &hh : hist) hh = 0; period_max = 0; guest_sum = 0; thr_sum = 0; proc_sum = 0; }
     }
     last = Clock::now();

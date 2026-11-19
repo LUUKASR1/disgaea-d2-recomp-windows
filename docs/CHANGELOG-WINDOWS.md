@@ -1,3 +1,7 @@
+# 1.0.37 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: diagnóstico das esperas do host (fences, acquire, present) no log de pacing.
+
 # 1.0.36 — Prévia europeia + núcleo Android (prévia)
 
 - Android: botão para ligar/desligar a liberação antecipada do quadro (comparação de desempenho e imagem).

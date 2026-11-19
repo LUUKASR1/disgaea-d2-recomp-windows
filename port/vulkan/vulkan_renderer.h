@@ -125,6 +125,9 @@ public:
   // Internal resolution: the scene is rendered at window size * scale (0.25..4) and scaled to the window. Takes
   // effect at the next resize(). renderExtent() is the size draw commands (viewports/scissors) must use.
   void setRenderScale(float scale);
+  // Milliseconds the host thread spent blocked since the previous call: {fence in geometry upload, fence at the start
+  // of draw, swapchain acquire, queue present}. Diagnostics only.
+  void takeWaitStats(double (&out)[4]);
   void renderExtent(uint32_t &width, uint32_t &height) const;
   // Optional post-processing (before the first resize): SPIR-V for a fullscreen-triangle vertex shader and a
   // fragment shader reading the scene from t0/s0 and constants from b1 (float4[4]: [0] = scene size, output size,
