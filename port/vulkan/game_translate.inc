@@ -156,14 +156,33 @@ Module &get_vs(const rsx_state *st, uint64_t &key) {
   if (it != vs_cache.end()) return it->second;
   Module &m = vs_cache[key];
   static char hlsl[262144];
-  const int n = rsx_vp_decompile(code, len, hlsl, sizeof hlsl);
+  // Declare only the vertex attributes the program reads (static analysis; any doubt keeps all 16). The compact vertex
+  // layout stores one float4 slot per declared input, so this is what makes it compact: 3-4 slots per vertex instead of 16.
+  static const bool narrow_inputs = !std::getenv("D2_VS_FULL_INPUTS");
+  rsx_vp_input_analysis analysis{};
+  const bool narrow = narrow_inputs && rsx_vp_analyze_inputs(code, len, &analysis) >= 0 && analysis.exact &&
+                      (analysis.input_mask & 0xFFFFu) != 0;
+  const int n = narrow ? rsx_vp_decompile_compact_ex(code, len, 0u, 0xFFFFu, hlsl, sizeof hlsl)
+                       : rsx_vp_decompile(code, len, hlsl, sizeof hlsl);
+  log_once(("vsin" + std::to_string(key)).c_str(), "VP %08llX vertex inputs: %s (read mask 0x%04X, analysis %s)",
+           (unsigned long long)(key & 0xFFFFFFFF), narrow ? "narrowed" : "all 16", analysis.input_mask & 0xFFFFu,
+           analysis.exact ? "exact" : "not exact");
   if (n <= 0) {
     log_once(("vsdec" + std::to_string(key)).c_str(), "VP %08llX decompile failed", (unsigned long long)(key & 0xFFFFFFFF));
     cnt.compile_failures++;
     return m;
   }
   try {
-    m.words = compile_cached(hlsl, shader::Stage::vertex);
+    try {
+      m.words = compile_cached(hlsl, shader::Stage::vertex);
+    } catch (const std::exception &e) {
+      if (!narrow) throw;
+      // The narrowed source did not compile: use the full 16-input shader for this program.
+      log_once(("vsn" + std::to_string(key)).c_str(), "VP %08llX narrowed shader failed (%.200s); using all 16 inputs",
+               (unsigned long long)(key & 0xFFFFFFFF), e.what());
+      if (rsx_vp_decompile(code, len, hlsl, sizeof hlsl) <= 0) throw;
+      m.words = compile_cached(hlsl, shader::Stage::vertex);
+    }
     m.inputs = vertex_inputs(m.words);
     m.ok = true;
     cnt.compiles++;

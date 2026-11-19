@@ -1,3 +1,7 @@
+# 1.0.38 — Prévia europeia + núcleo Android (prévia)
+
+- Vulkan: vertex shaders declaram só os atributos lidos (vértices de ~3-4 slots em vez de 16).
+
 # 1.0.37 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: diagnóstico das esperas do host (fences, acquire, present) no log de pacing.
