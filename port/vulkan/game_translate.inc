@@ -959,6 +959,22 @@ void run_fetch_jobs() {
   fetch_jobs.clear();
   t_fetch += ms(t0, Clock::now());
 }
+#ifdef D2_EARLY_FLIP_RETIRE
+// The guest blocks in its flip wait until the flip is retired (cellGcmTickFlip). Retiring after the vertex data was
+// copied (instead of after draw + present, which can wait for vsync) overlaps the game's next frame with this frame's
+// GPU submission. Everything the draw needs from here on is host-owned (vertex copies, constants, textures).
+// D2_EARLY_FLIP_OFF=1 restores the old behaviour.
+extern "C" void cellGcmTickFlip(void);
+static void early_flip_retire() {
+  static const bool on = [] {
+    const bool enabled = !std::getenv("D2_EARLY_FLIP_OFF");
+    std::fprintf(stderr, "[vulkan] early flip retire: %s\n", enabled ? "on" : "off");
+    return enabled;
+  }();
+  if (on) cellGcmTickFlip();
+}
+#endif
+
 bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &clear,
             uint32_t guest_w, uint32_t guest_h) {
   DrawParameters params;
@@ -1003,6 +1019,9 @@ bool submit(Renderer &r, uint32_t w, uint32_t h, const std::array<float, 4> &cle
     cmds.push_back(d);
   }
   run_fetch_jobs();        // fill the vertex ranges reserved by record()
+#ifdef D2_EARLY_FLIP_RETIRE
+  early_flip_retire();     // guest data is copied: let the game start its next frame while we draw and present this one
+#endif
   ui_flush(r, w, h, cmds); // options menu / FPS counter on top of the game
   const auto g0 = Clock::now();
   if (!verts.empty()) r.setRsxGeometryCompact(verts, indices);

@@ -1,3 +1,7 @@
+# 1.0.35 — Prévia europeia + núcleo Android (prévia)
+
+- Android: o jogo é liberado no flip logo após a cópia dos vértices, sobrepondo desenho/apresentação ao quadro seguinte; resolução interna refeita via buffer da superfície.
+
 # 1.0.34 — Prévia europeia + núcleo Android (prévia)
 
 - Android: botões de resolução interna (50–100 %) e contador de FPS no painel do app.

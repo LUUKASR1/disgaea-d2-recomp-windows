@@ -83,6 +83,7 @@ const rsx_state *g_state = nullptr;
 
 #define D2LOG(...) do { std::fprintf(stderr, __VA_ARGS__); } while (0)
 
+#define D2_EARLY_FLIP_RETIRE 1
 #include "game_translate.inc"
 
 void cb_init_unused() {}
