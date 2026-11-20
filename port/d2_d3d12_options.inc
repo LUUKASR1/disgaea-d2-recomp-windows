@@ -956,7 +956,7 @@ static void paint(HDC dc, int W_, int H_)
     SelectObject(dc, fsmall);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, soft);
-    std::wstring text = W(hint + "\n" + std::string(L("F1 ou Esc fecha · as opções são salvas sozinhas.", "F1 or Esc closes · options are saved automatically.")));
+    std::wstring text = W(hint + "\n" + std::string(L("F1, Start+Select ou Esc fecha · as opções são salvas sozinhas.", "F1, Start+Select or Esc closes · options are saved automatically.")));
     RECT tr = {(int)(35 * s), fy + (int)(10 * s), W_ - (int)(35 * s), H_ - (int)(4 * s)};
     DrawTextW(dc, text.c_str(), (int)text.size(), &tr, DT_WORDBREAK | DT_NOPREFIX);
     (void)foot_h;
@@ -1477,6 +1477,63 @@ static void poll_controllers()
     }
 }
 
+/* Controller access to the menu: Start + Select opens/closes it; with it open the D-pad moves, left/right change a value,
+ * A selects, B closes and LB/RB switch tabs. Polled from the toast timer (16 ms); XInput is loaded at run time like above. */
+static void pad_menu_poll()
+{
+    static XInputGetStateFn get = nullptr;
+    static bool tried = false;
+    static WORD prev = 0;
+    static ULONGLONG repeat_at = 0;
+    if (!tried) {
+        tried = true;
+        for (const wchar_t* dll : {L"xinput1_4.dll", L"xinput1_3.dll", L"xinput9_1_0.dll"})
+            if (HMODULE m = LoadLibraryW(dll)) { get = (XInputGetStateFn)GetProcAddress(m, "XInputGetState"); if (get) break; }
+    }
+    if (!get) return;
+    WORD buttons = 0;
+    for (DWORD i = 0; i < 4; i++) {
+        char state[32] = {};
+        WORD b = 0;
+        if (get(i, state) == ERROR_SUCCESS) { memcpy(&b, state + 4, sizeof b); buttons |= b; }
+    }
+    constexpr WORD kUp = 0x0001, kDown = 0x0002, kLeft = 0x0004, kRight = 0x0008, kStart = 0x0010, kBack = 0x0020, kLb = 0x0100, kRb = 0x0200, kA = 0x1000, kB = 0x2000;
+    const WORD pressed = (WORD)(buttons & ~prev);
+    const bool combo = (buttons & (kStart | kBack)) == (kStart | kBack) && (prev & (kStart | kBack)) != (kStart | kBack);
+    prev = buttons;
+    if (!game || IsIconic(game)) return;
+    if (combo) {
+        if (dlg && IsWindowVisible(dlg)) return;   // a save/load dialog owns the pad
+        if (is_open) close_panel(); else open_panel();
+        return;
+    }
+    if (!is_open || listening >= 0) return;
+    const ULONGLONG now = GetTickCount64();
+    const WORD dirs = (WORD)(kUp | kDown | kLeft | kRight);
+    WORD moves = (WORD)(pressed & dirs);
+    if (moves) repeat_at = now + 400;
+    else if ((buttons & dirs) && now >= repeat_at) { moves = (WORD)(buttons & dirs); repeat_at = now + 110; }
+    int nav[kMaxHits], nnav = 0;
+    for (int i = 0; i < nhits; i++)
+        if (!(hits[i].act >= A_TAB0 && hits[i].act < A_TAB0 + kTabs) && nnav < kMaxHits) nav[nnav++] = hits[i].act;
+    int at = -1;
+    for (int i = 0; i < nnav; i++) if (nav[i] == hover) at = i;
+    if (moves & (kUp | kDown) && nnav > 0) {
+        at = at < 0 ? 0 : (at + ((moves & kDown) ? 1 : nnav - 1)) % nnav;
+        hover = nav[at];
+        panel_redraw();
+    } else if ((moves & (kLeft | kRight)) && at >= 0 && hover != A_CLOSE) {
+        activate(hover, (moves & kRight) ? 1 : -1);
+    }
+    if ((pressed & kA) && hover != A_NONE) {
+        if (hover == A_CLOSE) close_panel(); else activate(hover, 1);
+    } else if (pressed & kB) {
+        close_panel();
+    } else if (pressed & (kLb | kRb)) {
+        activate(A_TAB0 + (page + ((pressed & kRb) ? 1 : kTabs - 1)) % kTabs, 1);
+    }
+}
+
 static double ease_out(double t) { t = t < 0 ? 0 : t > 1 ? 1 : t; return 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t); }
 
 static double toast_scale()
@@ -1495,6 +1552,7 @@ static LRESULT CALLBACK toast_proc(HWND h, UINT m, WPARAM w, LPARAM l)
     case WM_TIMER: {
         char path[520] = {};
         poll_controllers();
+        pad_menu_poll();
         const unsigned n = d2_screenshot_last(path, sizeof path);
         if (n != toast_seen) {
             toast_seen = n;
