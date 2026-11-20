@@ -78,17 +78,17 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{0xFFFFFBF0, 0xFFF3ECFF}));
         info = new TextView(this);
         info.setTextColor(0xFF6B6285);
-        info.setTextSize(12);
+        info.setTextSize(11);
         iso = new TextView(this);
         iso.setTextColor(0xFFB45F00);
-        iso.setTextSize(16);
+        iso.setTextSize(15);
         iso.setTypeface(null, android.graphics.Typeface.BOLD);
         iso.setSingleLine(false);
-        iso.setPadding(dp(18), dp(10), dp(18), dp(10));
+        iso.setPadding(dp(16), dp(6), dp(16), dp(6));
         iso.setBackground(glass(0xFFFFFFFF, 0xFF2A2140, 22));
         coreInfo = new TextView(this);
         coreInfo.setTextColor(0xFF4A4263);
-        coreInfo.setTextSize(13);
+        coreInfo.setTextSize(11);
         logView = new TextView(this);
         logView.setTextColor(0xFF6B6285);
         logView.setTextSize(10);
@@ -97,12 +97,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         TextView title = new TextView(this);
         title.setText("DISGAEA D2");
         title.setTextColor(ink);
-        title.setTextSize(40);
+        title.setTextSize(32);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         TextView subtitle = new TextView(this);
         subtitle.setText(R.string.home_subtitle);
         subtitle.setTextColor(0xFFD2342F);
-        subtitle.setTextSize(18);
+        subtitle.setTextSize(16);
         subtitle.setTypeface(null, android.graphics.Typeface.BOLD);
 
         Button play = chunkyButton(getString(R.string.home_play), 0xFFFF5E73, 0xFFD12A3F, 26);
@@ -115,12 +115,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         });
         Button settings = chunkyButton(getString(R.string.home_settings), 0xFF5B9BFF, 0xFF2554C7, 18);
         settings.setOnClickListener(v -> showGameMenu(false));
-        Button chooseCore = chunkyButton(getString(R.string.choose_core), 0xFFA27BFF, 0xFF6A3FD6, 16);
+        Button chooseCore = chunkyButton(getString(R.string.home_core), 0xFFA27BFF, 0xFF6A3FD6, 15);
         chooseCore.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
             startActivityForResult(intent, PICK_CORE);
         });
-        Button share = chunkyButton(getString(R.string.share_log), 0xFFA27BFF, 0xFF6A3FD6, 16);
+        Button share = chunkyButton(getString(R.string.share_log), 0xFFA27BFF, 0xFF6A3FD6, 15);
         share.setOnClickListener(v -> {
             Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, logTail(120, 200));
             startActivity(Intent.createChooser(send, getString(R.string.share_log)));
@@ -128,35 +128,35 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
-        left.setPadding(dp(36), dp(28), dp(24), dp(20));
+        left.setPadding(dp(32), dp(16), dp(20), dp(12));
         left.addView(title);
         left.addView(subtitle);
         LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        pillLp.topMargin = dp(18);
+        pillLp.topMargin = dp(10);
         left.addView(iso, pillLp);
-        LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(84));
-        playLp.topMargin = dp(14);
+        LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(72));
+        playLp.topMargin = dp(10);
         left.addView(play, playLp);
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(64), 1f);
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(58), 1f);
         half.rightMargin = dp(10);
         row1.addView(choose, half);
-        row1.addView(settings, new LinearLayout.LayoutParams(0, dp(64), 1f));
+        row1.addView(settings, new LinearLayout.LayoutParams(0, dp(58), 1f));
         LinearLayout.LayoutParams row1Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        row1Lp.topMargin = dp(10);
+        row1Lp.topMargin = dp(8);
         left.addView(row1, row1Lp);
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams half2 = new LinearLayout.LayoutParams(0, dp(52), 1f);
+        LinearLayout.LayoutParams half2 = new LinearLayout.LayoutParams(0, dp(50), 1f);
         half2.rightMargin = dp(10);
         row2.addView(chooseCore, half2);
-        row2.addView(share, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        row2.addView(share, new LinearLayout.LayoutParams(0, dp(50), 1f));
         LinearLayout.LayoutParams row2Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         row2Lp.topMargin = dp(8);
         left.addView(row2, row2Lp);
         LinearLayout.LayoutParams coreLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        coreLp.topMargin = dp(16);
+        coreLp.topMargin = dp(10);
         left.addView(coreInfo, coreLp);
         left.addView(logView);
         TextView footer = new TextView(this);
@@ -164,14 +164,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
         footer.setText(getString(R.string.home_footer, version));
         footer.setTextColor(0xFF6B6285);
-        footer.setTextSize(12);
+        footer.setTextSize(11);
         LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        footerLp.topMargin = dp(12);
+        footerLp.topMargin = dp(6);
         left.addView(info);
         left.addView(footer, footerLp);
         android.widget.ScrollView leftScroll = new android.widget.ScrollView(this);
         leftScroll.setFillViewport(true);
         leftScroll.addView(left);
+        leftScroll.post(() -> leftScroll.scrollTo(0, 0));   // never open scrolled past the title
         panel.addView(leftScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 5f));
         panel.addView(new ArtView(this), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 6f));
         root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
