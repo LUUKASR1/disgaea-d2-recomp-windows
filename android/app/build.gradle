@@ -13,6 +13,14 @@ android {
             keyPassword 'android'
         }
     }
+    buildTypes {
+        release {
+            // Same fixed key as the debug builds so a public build installs over a test build (the app's data stays).
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+    lint { checkReleaseBuilds false; abortOnError false }
     defaultConfig {
         applicationId 'org.disgaead2.port'
         minSdk 29
