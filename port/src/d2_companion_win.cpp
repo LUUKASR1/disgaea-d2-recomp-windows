@@ -15,7 +15,7 @@
  *   exp <multiplier>           -> result code
  *   disable                    -> result code
  *   preset <save|load> <slot>  -> result code
- *   trophy                     -> "kind|id" (kind 0 recorded, 1 blocked by the lock) or "" when none
+ *   trophy                     -> "kind|id" (kind 0 recorded, 1 blocked by the lock) or "none"
  *   trophylock <0|1>           -> "0"
  * Result codes: 0 queued, -1 refused (unknown name / out of range), -2 not available. */
 #ifdef _WIN32
@@ -154,6 +154,7 @@ void serve()
                 std::string request(buffer.get(), n);
                 while (!request.empty() && (request.back() == '\n' || request.back() == '\r')) request.pop_back();
                 std::string reply = handle(request);
+                if (reply.empty()) reply = "none";   /* never write an empty message: some clients would block on it */
                 if (reply.size() > BUFFER - 16) reply.resize(BUFFER - 16);
                 DWORD written = 0;
                 if (!WriteFile(pipe, reply.data(), (DWORD)reply.size(), &written, nullptr)) break;

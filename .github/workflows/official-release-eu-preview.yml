@@ -1,5 +1,5 @@
 name: Validate DirectX 12 European preview package
-run-name: Verify 1.0.52 European preview launcher and installer
+run-name: Verify 1.0.53 European preview launcher and installer
 on:
   push:
     branches: [eu-preview]
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Publish the verified assets as the v1.0.52-eu-preview pre-release'
+        description: 'Publish the verified assets as the v1.0.53-eu-preview pre-release'
         type: boolean
         default: false
       official:
-        description: 'Official release: build the Windows package AND the Android APK, and with publish create the stable v1.0.52 release (latest) with both'
+        description: 'Official release: build the Windows package AND the Android APK, and with publish create the stable v1.0.53 release (latest) with both'
         type: boolean
         default: false
       android_release:
@@ -46,7 +46,7 @@ jobs:
         run: python windows/preview_launcher.py --official
       - uses: actions/upload-artifact@v4
         with:
-          name: Official-1.0.52-Launcher-UI
+          name: Official-1.0.53-Launcher-UI
           path: launcher-previews/
       - name: Package official single-file launcher
         run: python tools/package_launcher.py --onefile --official
@@ -90,15 +90,15 @@ jobs:
               data = Path(source).read_bytes()
               assert data[:2] == b'MZ' and len(data) > 1_000_000
               shutil.copy2(source, out / Path(source).name)
-          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-1.0.52-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-1.0.52.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
+          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-1.0.53-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-1.0.53.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
                   z.write(source, name)
-          (out / 'release-build.json').write_text(json.dumps({'version': '1.0.52', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
+          (out / 'release-build.json').write_text(json.dumps({'version': '1.0.53', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
           sums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(out.iterdir()))
           (out / 'SHA256SUMS.txt').write_text(sums)
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-1.0.52-Official-Verified-Assets
+          name: DisgaeaD2-1.0.53-Official-Verified-Assets
           path: official-assets/
           if-no-files-found: error
 
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: DisgaeaD2-1.0.52-Official-Verified-Assets
+          name: DisgaeaD2-1.0.53-Official-Verified-Assets
           path: verified-assets
       - name: Verify checksums and publish the stable release
         env:
@@ -123,23 +123,23 @@ jobs:
         run: |
           set -euo pipefail
           cd verified-assets
-          expected="DisgaeaD2Launcher.exe DisgaeaD2Launcher-Setup-Windows-x64.exe DisgaeaD2Launcher-1.0.52-Windows-x64.zip SHA256SUMS.txt release-build.json"
+          expected="DisgaeaD2Launcher.exe DisgaeaD2Launcher-Setup-Windows-x64.exe DisgaeaD2Launcher-1.0.53-Windows-x64.zip SHA256SUMS.txt release-build.json"
           for name in $expected; do test -s "$name" || { echo "missing $name"; exit 1; }; done
           test "$(ls | wc -l)" = 5
           sha256sum --check --ignore-missing SHA256SUMS.txt
           python3 - <<'PY'
           import json
           meta = json.load(open('release-build.json'))
-          assert meta['version'] == '1.0.52' and meta['renderer'] == 'd3d12' and not meta['game_content_bundled']
+          assert meta['version'] == '1.0.53' and meta['renderer'] == 'd3d12' and not meta['game_content_bundled']
           PY
           cd ..
-          if gh release view v1.0.52-eu-preview >/dev/null 2>&1; then echo "v1.0.52-eu-preview already exists; refusing to overwrite"; exit 1; fi
+          if gh release view v1.0.53-eu-preview >/dev/null 2>&1; then echo "v1.0.53-eu-preview already exists; refusing to overwrite"; exit 1; fi
           # Draft first, upload every asset, then make it public.
-          gh release create v1.0.52-eu-preview --target "$GITHUB_SHA" --title "Disgaea D2 Windows 1.0.52 — European preview (BLES01939)" \
-            --notes-file docs/RELEASE-1.0.52.md --draft --prerelease
-          gh release upload v1.0.52-eu-preview verified-assets/* 
-          gh release edit v1.0.52-eu-preview --draft=false --prerelease=true --latest=false
-          gh release view v1.0.52-eu-preview --json url,isDraft,isPrerelease,assets --jq '.url'
+          gh release create v1.0.53-eu-preview --target "$GITHUB_SHA" --title "Disgaea D2 Windows 1.0.53 — European preview (BLES01939)" \
+            --notes-file docs/RELEASE-1.0.53.md --draft --prerelease
+          gh release upload v1.0.53-eu-preview verified-assets/* 
+          gh release edit v1.0.53-eu-preview --draft=false --prerelease=true --latest=false
+          gh release view v1.0.53-eu-preview --json url,isDraft,isPrerelease,assets --jq '.url'
 
   android-release:
     name: Android APK (and release when publish is on)
@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: DisgaeaD2-1.0.52-Official-Verified-Assets
+          name: DisgaeaD2-1.0.53-Official-Verified-Assets
           path: verified-assets
       - uses: actions/download-artifact@v4
         with:
@@ -228,14 +228,14 @@ jobs:
         run: |
           set -euo pipefail
           (cd verified-assets
-           for name in DisgaeaD2Launcher.exe DisgaeaD2Launcher-Setup-Windows-x64.exe DisgaeaD2Launcher-1.0.52-Windows-x64.zip SHA256SUMS.txt release-build.json; do test -s "$name" || { echo "missing $name"; exit 1; }; done
+           for name in DisgaeaD2Launcher.exe DisgaeaD2Launcher-Setup-Windows-x64.exe DisgaeaD2Launcher-1.0.53-Windows-x64.zip SHA256SUMS.txt release-build.json; do test -s "$name" || { echo "missing $name"; exit 1; }; done
            test "$(ls | wc -l)" = 5
            sha256sum --check --ignore-missing SHA256SUMS.txt)
           (cd android-assets && test "$(ls *.apk | wc -l)" = 1 && sha256sum --check SHA256SUMS.txt)
           mv android-assets/SHA256SUMS.txt android-assets/SHA256SUMS-Android.txt
-          tag=v1.0.52
+          tag=v1.0.53
           if gh release view "$tag" >/dev/null 2>&1; then echo "$tag already exists; refusing to overwrite"; exit 1; fi
-          gh release create "$tag" --target "$GITHUB_SHA" --title "Disgaea D2 Recomp 1.0.52 — Windows + Android" --notes-file docs/RELEASE-1.0.52.md --draft
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Disgaea D2 Recomp 1.0.53 — Windows + Android" --notes-file docs/RELEASE-1.0.53.md --draft
           gh release upload "$tag" verified-assets/* android-assets/*
           gh release edit "$tag" --draft=false --prerelease=false --latest=true
           gh release view "$tag" --json url,isDraft,isPrerelease,assets --jq '.url'
