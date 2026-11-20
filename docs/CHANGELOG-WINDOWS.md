@@ -1,3 +1,7 @@
+# 1.0.46 — Prévia europeia + núcleo Android (prévia)
+
+- Android: o áudio é pausado quando o app vai para segundo plano (antes o último trecho ficava tocando em loop); voltar ao app pelo ícone retorna direto ao jogo (sem cair no launcher); "Compartilhar log" mantém as linhas importantes do meio do log. Precisa do núcleo desta versão.
+
 # 1.0.45 — Prévia europeia + núcleo Android (prévia)
 
 - Android: menu do jogo refeito em estilo "vidro" (translúcido, com desfoque no Android 12+), com abas **Vídeo / Filtros / Sistema**, rolagem e botão Continuar sempre visível. Tela inicial refeita no estilo do launcher do Windows (JOGAR, Escolher ISO, Configurações). Correção provável das texturas trocadas depois de minimizar e voltar.
