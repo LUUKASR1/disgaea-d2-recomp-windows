@@ -15,6 +15,9 @@ import sys
 import urllib.request
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import android_sdk_tweaks
+
 NDK_VERSION = '28.2.13676358'
 NDK_FOLDER = 'android-ndk-r28c'
 NDK_WINDOWS = ('https://dl.google.com/android/repository/android-ndk-r28c-windows.zip',
@@ -144,6 +147,7 @@ def prepare_sdk(source, destination):
             '        return;\n'
             '    }\n#endif')
     write_text(pad, pad_text.replace(marker, hook, 1))
+    android_sdk_tweaks.apply(destination)   # runtime speed-ups kept out of the pinned SDK (see that file)
 
 
 def toolchain_args(ndk):

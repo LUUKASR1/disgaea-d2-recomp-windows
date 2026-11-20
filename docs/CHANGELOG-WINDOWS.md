@@ -1,3 +1,7 @@
+# 1.0.42 — Prévia europeia + núcleo Android (prévia)
+
+- Android: o caminho rápido de acesso à memória do jogo (anunciado na 1.0.41, que não o continha por engano) agora é aplicado pela geração do núcleo, numa cópia do SDK.
+
 # 1.0.41 — Prévia europeia + núcleo Android (prévia)
 
 - Runtime (Android e Linux): caminho rápido para leituras/escritas de memória do jogo (vm_read32/64, vm_write32/64) quando nenhum diagnóstico está ativo.
