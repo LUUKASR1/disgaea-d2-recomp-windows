@@ -108,8 +108,11 @@ final class TrophyInfo {
     }
 
     /** TROP_xx.SFM numbers of the PS3 languages, best match for the device language first. */
+    /** Interface language ("pt", "ja"...), set by the activity; picks the TROP_xx.SFM the names come from. */
+    static String language = "en";
+
     private static String[] languageCodes() {
-        switch (java.util.Locale.getDefault().getLanguage()) {
+        switch (language) {
             case "pt": return new String[]{"17", "07"};
             case "es": return new String[]{"03"};
             case "fr": return new String[]{"02"};

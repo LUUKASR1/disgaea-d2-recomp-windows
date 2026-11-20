@@ -130,4 +130,7 @@
     <string name="trophy_icons_found">Game icons found (%1$d trophies)</string>
     <string name="trophy_icons_missing">Names and icons not found. Choose the game ISO (button below) or a TROPHY.TRP.</string>
     <string name="trophy_icons_bad">That file is not a valid TROPHY.TRP</string>
+    <string name="lang_label">Language: %1$s</string>
+    <string name="lang_auto">Auto (device language)</string>
+    <string name="trophy_icons_found2">Game icons found (%1$d trophies, %2$d names)</string>
 </resources>

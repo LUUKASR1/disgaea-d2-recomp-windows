@@ -50,6 +50,48 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     // On-screen controls (touch) merged with the physical controller.
     private TouchControls touchView;
     private TrophyToast trophyToast;
+
+    // ---- Language: automatic (device) or one chosen inside the app ----
+    private static final String KEY_LANG = "lang";
+    private static final String[] LANGS = {"auto", "pt", "en", "ja", "es"};
+    private static final String[] LANG_NAMES = {null, "Português", "English", "日本語", "Español"};
+
+    private static java.util.Locale localeFor(String lang) {
+        switch (lang) {
+            case "pt": return new java.util.Locale("pt", "BR");
+            case "en": return java.util.Locale.ENGLISH;
+            case "ja": return java.util.Locale.JAPANESE;
+            case "es": return new java.util.Locale("es");
+            default: return null;
+        }
+    }
+
+    @Override protected void attachBaseContext(android.content.Context base) {
+        java.util.Locale loc = localeFor(base.getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "auto"));
+        if (loc != null) {
+            android.content.res.Configuration cfg = new android.content.res.Configuration(base.getResources().getConfiguration());
+            cfg.setLocale(loc);
+            base = base.createConfigurationContext(cfg);
+        }
+        super.attachBaseContext(base);
+    }
+
+    /** "pt", "es", "ja", "en"... the language the interface is showing now. */
+    private String appLang() { return getResources().getConfiguration().getLocales().get(0).getLanguage(); }
+
+    private String langLabel() {
+        String cur = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "auto");
+        for (int i = 0; i < LANGS.length; i++) if (LANGS[i].equals(cur)) return getString(R.string.lang_label, LANG_NAMES[i] != null ? LANG_NAMES[i] : getString(R.string.lang_auto));
+        return getString(R.string.lang_label, getString(R.string.lang_auto));
+    }
+
+    private void cycleLanguage() {
+        String cur = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "auto");
+        int i = 0;
+        for (int k = 0; k < LANGS.length; k++) if (LANGS[k].equals(cur)) i = k;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LANG, LANGS[(i + 1) % LANGS.length]).apply();
+        recreate();   // the interface is rebuilt in the new language; a running game keeps running
+    }
     private android.app.Dialog menuDialog;
     private int tButtons;
     private float tlx, tly, trx, try_;
@@ -250,6 +292,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (trophyToast == null) return;
         TrophyInfo.Entry e = null;
         try {
+            TrophyInfo.language = appLang();
             trophyInfo.load(gameRoot(), trpExtra());
             e = trophyInfo.get(Integer.parseInt(id));
         } catch (NumberFormatException ignored) { }
@@ -567,7 +610,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 }
                 trophyInfo.reset();
                 final boolean good = trophyInfo.load(new File("/nonexistent"), trpExtra());
-                runOnUiThread(() -> toast(good ? getString(R.string.trophy_icons_found, trophyInfo.count()) + ", " + trophyInfo.namedCount() + " names"
+                runOnUiThread(() -> toast(good ? getString(R.string.trophy_icons_found2, trophyInfo.count(), trophyInfo.namedCount())
                         : getString(R.string.trophy_icons_bad, 0)));
             }).start();
             return;
@@ -1132,7 +1175,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             if (menuDialog != null) menuDialog.dismiss();   // the menu would cover the banner
             handler.postDelayed(() -> {
                 boolean have = trophyInfo.load(gameRoot(), trpExtra());
-                toast(have ? getString(R.string.trophy_icons_found, trophyInfo.count()) + ", " + trophyInfo.namedCount() + " names\n" + trophyInfo.fileList() : getString(R.string.trophy_icons_missing));
+                toast(have ? getString(R.string.trophy_icons_found2, trophyInfo.count(), trophyInfo.namedCount()) + "\n" + trophyInfo.fileList() : getString(R.string.trophy_icons_missing));
                 trophyToast.show(getString(R.string.trophy_gold), getString(R.string.trophy_sample), false,
                         have && trophyInfo.get(1) != null ? trophyInfo.get(1).icon : null, "G");
                 trophyToast.show(getString(R.string.trophy_platinum), getString(R.string.trophy_sample), false,
@@ -1191,7 +1234,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             if (part.length < 4) continue;
             fields.add(part);
             final String[] f = part;
-            Button b = glassButton(f[1], false, accent);
+            Button b = glassButton(Labels.tr(f[1], appLang()), false, accent);
             b.setTextSize(14);
             b.setOnClickListener(v -> askCheatValue(f));
             fieldButtons.add(b);
@@ -1247,7 +1290,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         input.setSingleLine(true);
         input.setTextColor(0xFF2A2140);
         input.setHint(field[2] + " - " + field[3]);
-        glassPrompt(field[1], null, input, getString(android.R.string.ok), () -> {
+        glassPrompt(Labels.tr(field[1], appLang()), null, input, getString(android.R.string.ok), () -> {
             try { cheatsResult(NativeBridge.cheatsSetGeneral(field[0], Long.parseLong(input.getText().toString().trim()))); }
             catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
         });
@@ -1330,7 +1373,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             if (part.length < 4) continue;
             fields.add(part);
             final String[] f = part;
-            Button b = glassButton(f[1], false, accent);
+            Button b = glassButton(Labels.tr(f[1], appLang()), false, accent);
             b.setTextSize(14);
             b.setOnClickListener(v -> {
                 java.util.Map<String, String> now = parseState(NativeBridge.cheatsState());
@@ -1372,7 +1415,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         input.setSingleLine(true);
         input.setTextColor(0xFF2A2140);
         input.setHint(field[2] + " - " + field[3]);
-        glassPrompt(field[1], null, input, getString(android.R.string.ok), () -> {
+        glassPrompt(Labels.tr(field[1], appLang()), null, input, getString(android.R.string.ok), () -> {
             try { cheatsResult(NativeBridge.cheatsSetCharacter(unit, field[0], Long.parseLong(input.getText().toString().trim()), generation)); }
             catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
         });
@@ -1535,6 +1578,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             } else if (current[0] == 4) {
                 buildCheatsTab(content, accent, () -> dialog.isShowing() && current[0] == 4);
             } else {
+                Button language = glassButton(langLabel(), false, accent);
+                language.setOnClickListener(v -> { dialog.dismiss(); cycleLanguage(); });
+                addRow(content, language);
                 Button diagnostics = glassButton(getString(R.string.menu_diagnostics), false, accent);
                 Button quit = glassButton(getString(R.string.menu_quit), false, 0xFFB3261E);
                 diagnostics.setOnClickListener(v -> { dialog.dismiss(); panelView.setVisibility(View.VISIBLE); });
