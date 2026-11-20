@@ -36,6 +36,7 @@ struct CheatApi {
 };
 CheatApi g_cheats;
 std::atomic<void (*)()> g_save_unlock{nullptr};
+std::atomic<int (*)(int*, int*)> g_trophy_event{nullptr};
 
 std::string str(JNIEnv* env, jstring s) {
     const char* c = env->GetStringUTFChars(s, nullptr);
@@ -83,6 +84,7 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
     g_cheats.set_character = reinterpret_cast<int (*)(unsigned, const char*, uint64_t, uint64_t)>(dlsym(lib, "d2_cheats_set_character"));
     g_save_lock = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_save_lock"));
     g_save_unlock = reinterpret_cast<void (*)()>(dlsym(lib, "d2_core_save_unlock"));
+    g_trophy_event = reinterpret_cast<int (*)(int*, int*)>(dlsym(lib, "d2_core_trophy_event"));
     g_result = -1000;
     // The core draws with its own Vulkan swapchain: stop the milestone-0 renderer, then give it the window.
     d2_demo_stop();
@@ -231,6 +233,17 @@ extern "C" JNIEXPORT void JNICALL
 Java_org_disgaead2_port_NativeBridge_saveUnlock(JNIEnv*, jclass) {
     auto fn = g_save_unlock.load();
     if (fn) fn();
+}
+
+// Next trophy event from the core as "kind|id" (kind 0 = recorded, 1 = blocked by the lock), or null when none / old core.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_disgaead2_port_NativeBridge_trophyEvent(JNIEnv* env, jclass) {
+    auto fn = g_trophy_event.load();
+    int kind = 0, id = 0;
+    if (!fn || !fn(&kind, &id)) return nullptr;
+    char text[32];
+    snprintf(text, sizeof text, "%d|%d", kind, id);
+    return env->NewStringUTF(text);
 }
 
 // 1 = no save operation is running (the game can be ended), 0 = a save is being written, -1 = no core / old core.

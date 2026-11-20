@@ -29,6 +29,10 @@ extern "C" void d2_save_host_unlock(void);
  * (1 = quiet, safe to end the process; 0 = a save is being written, ask again). Same gate the Windows host uses. */
 extern "C" __attribute__((visibility("default"))) int d2_core_request_stop(void) { return cellSaveDataHostRequestStop(); }
 
+/* Trophy pop-up: pops one pending trophy event (1 = got one; kind 0 = recorded, 1 = blocked by the trophy lock). */
+extern "C" int d2_trophy_event_pop(int* kind, int* trophy);
+extern "C" __attribute__((visibility("default"))) int d2_core_trophy_event(int* kind, int* trophy) { return d2_trophy_event_pop(kind, trophy); }
+
 /* Save slots while the game runs: hold the savedata gate (1 = held, 0 = a save is being written) around a copy/swap. */
 extern "C" __attribute__((visibility("default"))) int d2_core_save_lock(void) { return d2_save_host_lock(); }
 extern "C" __attribute__((visibility("default"))) void d2_core_save_unlock(void) { d2_save_host_unlock(); }

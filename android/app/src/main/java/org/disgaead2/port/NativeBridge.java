@@ -39,6 +39,9 @@ final class NativeBridge {
     static native int saveLock();
     static native void saveUnlock();
 
+    /** Next trophy event as "kind|id" (kind 0 = recorded, 1 = blocked by the trophy lock); null when none or with an older core. */
+    static native String trophyEvent();
+
     /** -1000 while running, otherwise the value returned by the game main. */
     static native int coreResult();
 }

@@ -109,4 +109,16 @@
     <string name="trophy_lock_on">Block trophies when cheats are used: on</string>
     <string name="trophy_lock_off">Block trophies when cheats are used: off</string>
     <string name="trophy_lock_note">Optional. When on, once you use any cheat in this session the game stops recording new trophies. Off by default.</string>
+    <string name="trophy_unlocked_title">Trophy unlocked!</string>
+    <string name="trophy_unlocked_sub">Trophy #%1$s recorded</string>
+    <string name="trophy_blocked_title">Trophy not recorded</string>
+    <string name="trophy_blocked_sub">Trophy #%1$s blocked (cheats used)</string>
+    <string name="trophy_test_button">Test the trophy banner</string>
+    <string name="trophy_reset_button">Reset trophies (%1$d recorded)</string>
+    <string name="trophy_reset_title">Reset the trophies?</string>
+    <string name="trophy_reset_msg">Deletes every trophy recorded on this device. The game saves are not touched.</string>
+    <string name="trophy_reset_msg_running">Deletes every trophy recorded on this device and closes the game (open it again afterwards). The game saves are not touched.</string>
+    <string name="trophy_reset_do">Reset</string>
+    <string name="trophy_reset_done">Trophies reset.</string>
+    <string name="trophy_reset_done_running">Trophies reset. Closing the game; open it again.</string>
 </resources>

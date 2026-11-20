@@ -109,4 +109,16 @@
     <string name="trophy_lock_on">Bloquear troféus ao usar cheats: ligado</string>
     <string name="trophy_lock_off">Bloquear troféus ao usar cheats: desligado</string>
     <string name="trophy_lock_note">Opcional. Ligado, depois que você usar qualquer cheat nesta sessão o jogo deixa de registrar novos troféus. Desligado por padrão.</string>
+    <string name="trophy_unlocked_title">Troféu desbloqueado!</string>
+    <string name="trophy_unlocked_sub">Troféu nº %1$s registrado</string>
+    <string name="trophy_blocked_title">Troféu não registrado</string>
+    <string name="trophy_blocked_sub">Troféu nº %1$s bloqueado (cheats usados)</string>
+    <string name="trophy_test_button">Testar o aviso de troféu</string>
+    <string name="trophy_reset_button">Resetar troféus (%1$d registrados)</string>
+    <string name="trophy_reset_title">Resetar os troféus?</string>
+    <string name="trophy_reset_msg">Apaga todos os troféus registrados neste aparelho. Os saves do jogo não são mexidos.</string>
+    <string name="trophy_reset_msg_running">Apaga todos os troféus registrados neste aparelho e fecha o jogo (abra de novo depois). Os saves do jogo não são mexidos.</string>
+    <string name="trophy_reset_do">Resetar</string>
+    <string name="trophy_reset_done">Troféus resetados.</string>
+    <string name="trophy_reset_done_running">Troféus resetados. Fechando o jogo; abra de novo.</string>
 </resources>

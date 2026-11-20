@@ -25,6 +25,19 @@ extern "C" void vm_write32(uint64_t addr, uint32_t value);
 namespace {
 std::atomic<unsigned> blocked_count{0};
 
+/* Small lock-free event ring read by the host app (Android pop-up): kind 0 = trophy recorded, 1 = blocked by the lock. */
+constexpr unsigned EVENT_CAP = 16;
+std::atomic<uint32_t> events[EVENT_CAP];   /* (kind << 16) | (trophy id & 0xFFFF), plus 0x80000000 = present */
+std::atomic<unsigned> ev_head{0}, ev_tail{0};
+
+void push_event(int kind, int trophy)
+{
+    const unsigned head = ev_head.load();
+    if (head - ev_tail.load() >= EVENT_CAP) return;   /* nobody is listening: drop */
+    events[head % EVENT_CAP].store(0x80000000u | (uint32_t(kind) << 16) | (uint32_t(trophy) & 0xFFFFu));
+    ev_head.store(head + 1);
+}
+
 bool setting_on()
 {
     static std::atomic<int64_t> next_check_ms{0};
@@ -56,15 +69,29 @@ void unlock_trophy(ppu_context* ctx)
         const unsigned n = ++blocked_count;
         std::printf("[d2] trophy lock: trophy #%d not recorded (cheats were used this session; %u blocked so far)\n", trophy, n);
         std::fflush(stdout);
+        push_event(1, trophy);
         if (platinum) vm_write32(platinum, 0xFFFFFFFFu);   // "no platinum", the same value the SDK writes
         ctx->gpr[3] = 0;                                    // CELL_OK: the game must not retry or show an error
         return;
     }
     const int32_t result = sceNpTrophyUnlockTrophy(context, handle, trophy,
                                                    reinterpret_cast<int32_t*>(uintptr_t(platinum)));
+    if (result == 0) push_event(0, trophy);   // newly recorded (already-unlocked and error results show nothing)
     ctx->gpr[3] = uint32_t(result);
 }
 } // namespace
+
+/* Pops the oldest pending trophy event: returns 1 and fills *kind / *trophy, or 0 when there is none. */
+extern "C" int d2_trophy_event_pop(int* kind, int* trophy)
+{
+    const unsigned tail = ev_tail.load();
+    if (tail == ev_head.load()) return 0;
+    const uint32_t v = events[tail % EVENT_CAP].load();
+    ev_tail.store(tail + 1);
+    if (kind) *kind = int((v >> 16) & 0xFF);
+    if (trophy) *trophy = int(v & 0xFFFFu);
+    return 1;
+}
 
 extern "C" unsigned d2_trophy_lock_blocked(void) { return blocked_count.load(); }
 

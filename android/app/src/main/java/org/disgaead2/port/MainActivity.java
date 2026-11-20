@@ -49,6 +49,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private float lx, ly, rx, ry;
     // On-screen controls (touch) merged with the physical controller.
     private TouchControls touchView;
+    private TrophyToast trophyToast;
+    private android.app.Dialog menuDialog;
     private int tButtons;
     private float tlx, tly, trx, try_;
     private int hat;   // D-pad reported as a hat axis (bits 1024..8192)
@@ -200,6 +202,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         });
         root.addView(touchView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+        trophyToast = new TrophyToast(this);
+        root.addView(trophyToast, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
         applyTouchSettings();
         setContentView(root);
         showIso(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ISO, null));
@@ -221,10 +226,76 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             info.setText(vulkan);
             if (coreStarted) logView.setText(logTail(0, 10));
             updateTouchControls();
+            pollTrophyEvents();
             if (second != null) second.setStatus(vulkan + "\n" + getString(R.string.status_input, describeInput()));
             handler.postDelayed(this, 500);
         }
     };
+
+    /** Trophy banners: the core reports each trophy it records (or blocks because of the trophy lock). */
+    private void pollTrophyEvents() {
+        if (trophyToast == null || !coreStarted) return;
+        for (int i = 0; i < 6; i++) {
+            String e = NativeBridge.trophyEvent();
+            if (e == null) break;
+            int bar = e.indexOf('|');
+            if (bar < 0) continue;
+            showTrophyBanner(e.substring(0, bar).equals("1"), e.substring(bar + 1));
+        }
+    }
+
+    private void showTrophyBanner(boolean blocked, String id) {
+        if (trophyToast == null) return;
+        trophyToast.show(getString(blocked ? R.string.trophy_blocked_title : R.string.trophy_unlocked_title),
+                getString(blocked ? R.string.trophy_blocked_sub : R.string.trophy_unlocked_sub, id), blocked);
+    }
+
+    private int trophyCount() {
+        File[] files = new File(getExternalFilesDir(null), "gamedata/trophies").listFiles((d, n) -> n.endsWith(".json"));
+        int count = 0;
+        if (files != null) for (File f : files) {
+            try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                String line;
+                while ((line = r.readLine()) != null) if (line.contains("\"id\"")) count++;
+            } catch (java.io.IOException ignored) { }
+        }
+        return count;
+    }
+
+    // Reset: with the game running the SDK keeps the trophies in memory and writes them back, so the game is closed through
+    // the same quit gate (no save being written) right after the trophy files are deleted; the next start has none.
+    private void confirmTrophyReset(final Button label) {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.trophy_reset_title)
+                .setMessage(coreStarted ? R.string.trophy_reset_msg_running : R.string.trophy_reset_msg)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.trophy_reset_do, (d, w) -> doTrophyReset(label))
+                .show();
+    }
+
+    private void doTrophyReset(final Button label) {
+        final boolean running = coreStarted;
+        final int[] tries = {0};
+        handler.post(new Runnable() {
+            @Override public void run() {
+                int state = running ? NativeBridge.requestStop() : 1;
+                if (state == 0 && ++tries[0] <= 120) { handler.postDelayed(this, 250); return; }   // a save is being written
+                File[] files = new File(getExternalFilesDir(null), "gamedata/trophies").listFiles((dir, n) -> n.endsWith(".json"));
+                if (files != null) for (File f : files) //noinspection ResultOfMethodCallIgnored
+                    f.delete();
+                if (running) {
+                    android.widget.Toast.makeText(MainActivity.this, R.string.trophy_reset_done_running, android.widget.Toast.LENGTH_LONG).show();
+                    handler.postDelayed(() -> {
+                        finishAndRemoveTask();
+                        android.os.Process.killProcess(android.os.Process.myPid());
+                    }, 1500);
+                } else {
+                    android.widget.Toast.makeText(MainActivity.this, R.string.trophy_reset_done, android.widget.Toast.LENGTH_LONG).show();
+                    label.setText(getString(R.string.trophy_reset_button, trophyCount()));
+                }
+            }
+        });
+    }
 
     private String describeInput() {
         if (buttons == 0 && lx == 0 && ly == 0) return getString(R.string.no_pad);
@@ -955,6 +1026,16 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             writeSettings();   // the core notices the new file within a couple of seconds
         });
         addRow(content, trophy);
+        final Button trophyTest = glassButton(getString(R.string.trophy_test_button), false, accent);
+        trophyTest.setOnClickListener(v -> {
+            if (menuDialog != null) menuDialog.dismiss();   // the menu would cover the banner
+            handler.postDelayed(() -> showTrophyBanner(false, "1"), 300);
+            handler.postDelayed(() -> showTrophyBanner(true, "2"), 900);
+        });
+        addRow(content, trophyTest);
+        final Button trophyReset = glassButton(getString(R.string.trophy_reset_button, trophyCount()), false, accent);
+        trophyReset.setOnClickListener(v -> confirmTrophyReset(trophyReset));
+        addRow(content, trophyReset);
         TextView trophyNote = new TextView(this);
         trophyNote.setText(R.string.trophy_lock_note);
         trophyNote.setTextColor(0xFFCFC6E6);
@@ -1271,6 +1352,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         addRow(root, resume);
 
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        menuDialog = dialog;
         gameMenu = dialog;
         final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_controls, R.string.tab_saves, R.string.tab_cheats, R.string.tab_system};
         final int tabCount = inGame ? 6 : 3;
