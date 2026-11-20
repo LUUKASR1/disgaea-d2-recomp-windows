@@ -50,10 +50,19 @@ final class TrophyInfo {
                     int n = 0;
                     while (n < 32 && table[o + n] != 0) n++;
                     String name = new String(table, o, n, "US-ASCII");
-                    files.put(name, new long[]{u64(table, o + 0x20), u64(table, o + 0x28)});
+                    files.put(name.toUpperCase(java.util.Locale.ROOT), new long[]{u64(table, o + 0x20), u64(table, o + 0x28)});
                 }
-                byte[] conf = read(f, "TROPCONF.SFM");
-                if (conf != null) parse(new String(conf, "UTF-8"));
+                // Names: the file of the device language first (TROP_xx.SFM), then TROP.SFM, English, and TROPCONF.SFM last.
+                // The grade comes from whichever file carries it.
+                java.util.List<String> order = new java.util.ArrayList<>();
+                for (String code : languageCodes()) order.add("TROP_" + code + ".SFM");
+                order.add("TROP.SFM");
+                order.add("TROP_01.SFM");
+                order.add("TROPCONF.SFM");
+                for (String name : order) {
+                    byte[] xml = read(f, name);
+                    if (xml != null) parse(new String(xml, "UTF-8"));
+                }
             }
         } catch (IOException | RuntimeException e) {
             files.clear();
@@ -79,14 +88,39 @@ final class TrophyInfo {
             String attrs = m.group(1), body = m.group(2);
             Matcher id = Pattern.compile("\\bid=\"(\\d+)\"").matcher(attrs);
             if (!id.find()) continue;
-            Entry e = new Entry();
+            String key = String.format("%03d", Integer.parseInt(id.group(1)));
+            Entry e = entries.get(key);
+            if (e == null) { e = new Entry(); entries.put(key, e); }
             Matcher t = Pattern.compile("\\bttype=\"(\\w)\"").matcher(attrs);
-            if (t.find()) e.grade = t.group(1);
-            Matcher n = Pattern.compile("<name>(.*?)</name>", Pattern.DOTALL).matcher(body);
-            if (n.find()) e.name = n.group(1).replace("<![CDATA[", "").replace("]]>", "").trim();
-            entries.put(String.format("%03d", Integer.parseInt(id.group(1))), e);
+            if (t.find() && e.grade.isEmpty()) e.grade = t.group(1);
+            Matcher n = Pattern.compile("<name[^>]*>(.*?)</name>", Pattern.DOTALL).matcher(body);
+            if (n.find() && e.name.isEmpty()) e.name = clean(n.group(1));
         }
     }
+
+    private static String clean(String raw) {
+        return raw.replace("<![CDATA[", "").replace("]]>", "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&apos;", "'").trim();
+    }
+
+    /** TROP_xx.SFM numbers of the PS3 languages, best match for the device language first. */
+    private static String[] languageCodes() {
+        switch (java.util.Locale.getDefault().getLanguage()) {
+            case "pt": return new String[]{"17", "07"};
+            case "es": return new String[]{"03"};
+            case "fr": return new String[]{"02"};
+            case "de": return new String[]{"04"};
+            case "it": return new String[]{"05"};
+            case "ja": return new String[]{"00"};
+            case "en": return new String[]{"01", "18"};
+            default: return new String[]{};
+        }
+    }
+
+    int namedCount() { int n = 0; for (Entry e : entries.values()) if (!e.name.isEmpty()) n++; return n; }
+
+    /** Names of the files inside the TRP (for diagnostics). */
+    String fileList() { return files.keySet().toString(); }
 
     private byte[] read(RandomAccessFile f, String name) throws IOException {
         long[] at = files.get(name);

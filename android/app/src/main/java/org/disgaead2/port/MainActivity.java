@@ -1123,7 +1123,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             if (menuDialog != null) menuDialog.dismiss();   // the menu would cover the banner
             handler.postDelayed(() -> {
                 boolean have = trophyInfo.load(gameRoot(), trpExtra());
-                toast(have ? getString(R.string.trophy_icons_found, trophyInfo.count()) : getString(R.string.trophy_icons_missing));
+                toast(have ? getString(R.string.trophy_icons_found, trophyInfo.count()) + ", " + trophyInfo.namedCount() + " names\n" + trophyInfo.fileList() : getString(R.string.trophy_icons_missing));
                 trophyToast.show(getString(R.string.trophy_gold), getString(R.string.trophy_sample), false,
                         have && trophyInfo.get(1) != null ? trophyInfo.get(1).icon : null, "G");
                 trophyToast.show(getString(R.string.trophy_platinum), getString(R.string.trophy_sample), false,
