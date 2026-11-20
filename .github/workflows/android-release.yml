@@ -1,11 +1,9 @@
 name: Android release (public preview)
-# Pushing a change to this file on eu-preview only builds the APK (kept as an artifact, nothing is published).
-# Pushing a tag android-v<versionName> builds it and publishes the GitHub release.
+# A tag android-test-* only builds the APK (kept as an artifact, nothing is published).
+# A tag android-v<versionName> builds it and publishes the GitHub release.
 on:
   push:
-    branches: [eu-preview]
-    paths: ['.github/workflows/android-release.yml']
-    tags: ['android-v*']
+    tags: ['android-v*', 'android-test-*']
   workflow_dispatch:
 permissions:
   contents: read
