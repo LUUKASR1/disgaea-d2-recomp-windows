@@ -46,8 +46,8 @@
     <string name="home_footer">Bring your own game. No game files are distributed. v%1$s</string>
     <string name="home_core">Choose core</string>
     <string name="tab_filters">Filters</string>
-    <string name="saves_title">Saves & slots</string>
-    <string name="saves_button">Saves & slots</string>
+    <string name="saves_title">Saves &amp; slots</string>
+    <string name="saves_button">Saves &amp; slots</string>
     <string name="saves_help">Import a save folder (or a .zip) from Windows/PC or another device: it becomes a new slot. Tap a slot and choose Load. Before loading, the current save is kept in another slot. PS3 saves must be decrypted; compatibility between regions is not guaranteed.</string>
     <string name="saves_save_current">Save current game to a slot</string>
     <string name="saves_import_folder">Import save (folder)</string>
