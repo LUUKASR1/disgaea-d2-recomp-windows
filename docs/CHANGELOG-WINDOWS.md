@@ -254,6 +254,10 @@ Android/Odin 2 Portal support is future work.
 Save/reopen/load confirmed manually by LUUKASR1 after the close correction.
 A clean build from the consolidated source-only candidate is still pending.
 
+## 1.0.45 (prévia europeia)
+
+- Android: menu do jogo refeito em estilo vidro, com abas Vídeo / Filtros / Sistema, rolagem e botão Continuar sempre visível.
+
 ## Launcher 0.1.8-preview
 
 - Interface personalizada em Tk: abas Início, Vídeo, Preparação e Arquivos e suporte.

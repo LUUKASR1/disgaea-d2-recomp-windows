@@ -217,45 +217,6 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return getString(name) + ": " + value;
     }
 
-    private void showFiltersMenu() {
-        releaseGameInput();
-        LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(32, 24, 32, 24);
-        TextView title = new TextView(this);
-        title.setText(R.string.menu_filters);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
-        title.setPadding(0, 0, 0, 16);
-        column.addView(title);
-        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
-        final Button[] rows = new Button[FILTER_KEYS.length];
-        for (int i = 0; i < FILTER_KEYS.length; i++) {
-            final String key = FILTER_KEYS[i];
-            final int index = i;
-            rows[i] = menuButton(column, filterLabel(key));
-            rows[i].setOnClickListener(v -> {
-                int max = key.equals("aa") ? 1 : 3;
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("f_" + key, (filterLevel(key) + 1) % (max + 1)).apply();
-                rows[index].setText(filterLabel(key));
-                writeSettings();
-            });
-        }
-        Button reset = menuButton(column, getString(R.string.filters_reset));
-        reset.setOnClickListener(v -> {
-            SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
-            for (String key : FILTER_KEYS) e.putInt("f_" + key, 0);
-            e.apply();
-            for (int i = 0; i < FILTER_KEYS.length; i++) rows[i].setText(filterLabel(FILTER_KEYS[i]));
-            writeSettings();
-        });
-        Button back = menuButton(column, getString(R.string.menu_resume));
-        back.setOnClickListener(v -> dialog.dismiss());
-        dialog.setContentView(column);
-        dialog.show();
-        rows[0].requestFocus();
-    }
-
     private int scalePct() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SCALE, 100); }
 
     private boolean showFps() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_FPS, false); }
@@ -444,61 +405,178 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return b;
     }
 
+    // ---- Game menu: dark "glass" panel with tabs (Video / Filters / System), like the Windows panel ----
+    private int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+
+    private android.graphics.drawable.Drawable glass(int fill, int stroke, float radiusDp) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(radiusDp));
+        d.setStroke(dp(1), stroke);
+        return d;
+    }
+
+    // Button with a translucent fill; the focused state (D-pad / controller) gets a bright accent outline.
+    private Button glassButton(String text, boolean selected, int accent) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextColor(Color.WHITE);
+        b.setTextSize(16);
+        b.setPadding(dp(16), dp(10), dp(16), dp(10));
+        b.setMinHeight(0);
+        b.setMinimumHeight(dp(44));
+        android.graphics.drawable.StateListDrawable states = new android.graphics.drawable.StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_focused}, glass(0x55FFFFFF, 0xFFFFFFFF, 12));
+        states.addState(new int[]{android.R.attr.state_pressed}, glass(0x66FFFFFF, 0xCCFFFFFF, 12));
+        states.addState(new int[]{}, selected ? glass((accent & 0x00FFFFFF) | 0x99000000, 0x88FFFFFF, 12) : glass(0x22FFFFFF, 0x33FFFFFF, 12));
+        b.setBackground(states);
+        return b;
+    }
+
+    private void addRow(LinearLayout column, Button b) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        column.addView(b, lp);
+    }
+
     private void showGameMenu() {
         if (gameMenu != null && gameMenu.isShowing()) return;
         releaseGameInput();   // key releases now go to the dialog, so nothing may stay held in the game
-        LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(32, 24, 32, 24);
+        final int accent = 0xFF7A1B3D;
+        final LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(16), dp(20), dp(16));
+        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
         TextView title = new TextView(this);
         title.setText(R.string.menu_title);
         title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
-        title.setPadding(0, 0, 0, 16);
-        column.addView(title);
-        Button resume = menuButton(column, getString(R.string.menu_resume));
-        Button resolution = menuButton(column, resolutionLabel());
-        Button fps = menuButton(column, fpsLabel());
-        Button early = menuButton(column, earlyLabel());
-        Button filters = menuButton(column, getString(R.string.menu_filters));
-        Button diagnostics = menuButton(column, getString(R.string.menu_diagnostics));
-        Button quit = menuButton(column, getString(R.string.menu_quit));
-        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        title.setTextSize(22);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(title);
+
+        final LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(tabs, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        final LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(content);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollLp.topMargin = dp(8);
+        root.addView(scroll, scrollLp);   // only the options scroll; the Resume button below always stays visible
+        final Button resume = glassButton(getString(R.string.menu_resume), true, accent);
+        addRow(root, resume);
+
+        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
         gameMenu = dialog;
-        resume.setOnClickListener(v -> dialog.dismiss());
-        resolution.setOnClickListener(v -> {
-            int next = 0;
-            for (int i = 0; i < SCALES.length; i++) if (SCALES[i] == scalePct()) next = (i + 1) % SCALES.length;
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_SCALE, SCALES[next]).apply();
-            resolution.setText(resolutionLabel());
-            applyBufferSize();
-            writeSettings();
-        });
-        fps.setOnClickListener(v -> {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FPS, !showFps()).apply();
-            fps.setText(fpsLabel());
-            writeSettings();   // the core notices the new file within a couple of seconds
-        });
-        early.setOnClickListener(v -> {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_EARLY, !earlyFlip()).apply();
-            early.setText(earlyLabel());
-            writeSettings();
-        });
-        filters.setOnClickListener(v -> { dialog.dismiss(); showFiltersMenu(); });
-        diagnostics.setOnClickListener(v -> { dialog.dismiss(); panelView.setVisibility(View.VISIBLE); });
-        final boolean[] armed = {false};
-        quit.setOnClickListener(v -> {
-            if (!armed[0]) {
-                armed[0] = true;
-                quit.setText(R.string.menu_quit_confirm);
-                return;
+        final int[] tabNames = {R.string.tab_video, R.string.menu_filters, R.string.tab_system};
+        final Button[] tabButtons = new Button[3];
+        final int[] current = {0};
+        final Runnable[] fill = new Runnable[1];
+
+        fill[0] = () -> {
+            content.removeAllViews();
+            for (int i = 0; i < 3; i++) tabButtons[i].setBackground(null);
+            for (int i = 0; i < 3; i++) {
+                Button t = tabButtons[i];
+                android.graphics.drawable.StateListDrawable st = new android.graphics.drawable.StateListDrawable();
+                st.addState(new int[]{android.R.attr.state_focused}, glass(0x55FFFFFF, 0xFFFFFFFF, 12));
+                st.addState(new int[]{}, i == current[0] ? glass((accent & 0x00FFFFFF) | 0xAA000000, 0x99FFFFFF, 12) : glass(0x11FFFFFF, 0x22FFFFFF, 12));
+                t.setBackground(st);
             }
-            quitGame(dialog, column);
-        });
-        dialog.setContentView(column);
+            if (current[0] == 0) {
+                Button resolution = glassButton(resolutionLabel(), false, accent);
+                Button fps = glassButton(fpsLabel(), false, accent);
+                Button early = glassButton(earlyLabel(), false, accent);
+                resolution.setOnClickListener(v -> {
+                    int next = 0;
+                    for (int i = 0; i < SCALES.length; i++) if (SCALES[i] == scalePct()) next = (i + 1) % SCALES.length;
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_SCALE, SCALES[next]).apply();
+                    resolution.setText(resolutionLabel());
+                    applyBufferSize();
+                    writeSettings();
+                });
+                fps.setOnClickListener(v -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FPS, !showFps()).apply();
+                    fps.setText(fpsLabel());
+                    writeSettings();   // the core notices the new file within a couple of seconds
+                });
+                early.setOnClickListener(v -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_EARLY, !earlyFlip()).apply();
+                    early.setText(earlyLabel());
+                    writeSettings();
+                });
+                addRow(content, resolution); addRow(content, fps); addRow(content, early);
+            } else if (current[0] == 1) {
+                final Button[] rows = new Button[FILTER_KEYS.length];
+                for (int i = 0; i < FILTER_KEYS.length; i++) {
+                    final String key = FILTER_KEYS[i];
+                    final int index = i;
+                    rows[i] = glassButton(filterLabel(key), false, accent);
+                    rows[i].setOnClickListener(v -> {
+                        int max = key.equals("aa") ? 1 : 3;
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("f_" + key, (filterLevel(key) + 1) % (max + 1)).apply();
+                        rows[index].setText(filterLabel(key));
+                        writeSettings();
+                    });
+                    addRow(content, rows[i]);
+                }
+                Button reset = glassButton(getString(R.string.filters_reset), false, accent);
+                reset.setOnClickListener(v -> {
+                    SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+                    for (String key : FILTER_KEYS) e.putInt("f_" + key, 0);
+                    e.apply();
+                    for (int i = 0; i < FILTER_KEYS.length; i++) rows[i].setText(filterLabel(FILTER_KEYS[i]));
+                    writeSettings();
+                });
+                addRow(content, reset);
+            } else {
+                Button diagnostics = glassButton(getString(R.string.menu_diagnostics), false, accent);
+                Button quit = glassButton(getString(R.string.menu_quit), false, 0xFFB3261E);
+                diagnostics.setOnClickListener(v -> { dialog.dismiss(); panelView.setVisibility(View.VISIBLE); });
+                final boolean[] armed = {false};
+                quit.setOnClickListener(v -> {
+                    if (!armed[0]) {
+                        armed[0] = true;
+                        quit.setText(R.string.menu_quit_confirm);
+                        quit.setBackground(glass(0xCCB3261E, 0xFFFFFFFF, 12));
+                        return;
+                    }
+                    quitGame(dialog, root);
+                });
+                addRow(content, diagnostics); addRow(content, quit);
+            }
+        };
+        for (int i = 0; i < 3; i++) {
+            final int index = i;
+            Button t = glassButton(getString(tabNames[i]), false, accent);
+            t.setOnClickListener(v -> { current[0] = index; fill[0].run(); });
+            tabButtons[i] = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            lp.topMargin = dp(10);
+            lp.rightMargin = i < 2 ? dp(8) : 0;
+            tabs.addView(t, lp);
+        }
+        fill[0].run();
+        resume.setOnClickListener(v -> dialog.dismiss());
+        dialog.setContentView(root);
         dialog.setOnDismissListener(d -> { if (gameMenu == dialog) gameMenu = null; });
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            window.setDimAmount(0.45f);
+            if (android.os.Build.VERSION.SDK_INT >= 31) {   // real frosted glass where the system supports it
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+                window.getAttributes().setBlurBehindRadius(24);
+            }
+        }
         dialog.show();
-        resume.requestFocus();
+        if (window != null) {
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            window.setLayout(Math.min(dp(520), dm.widthPixels * 9 / 10), dm.heightPixels * 85 / 100);
+        }
+        tabButtons[0].requestFocus();
     }
 
     // Same order as the Windows build: stop new save/load operations, wait until none is being written, then end the process

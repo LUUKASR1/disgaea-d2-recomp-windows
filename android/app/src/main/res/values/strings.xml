@@ -38,4 +38,6 @@
     <string name="level_low">Low</string>
     <string name="level_mid">Medium</string>
     <string name="level_high">Strong</string>
+    <string name="tab_video">Video</string>
+    <string name="tab_system">System</string>
 </resources>
