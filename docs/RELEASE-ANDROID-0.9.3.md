@@ -4,7 +4,7 @@ Porte **experimental** de Disgaea D2: A Brighter Darkness (PS3) para Android, fe
 
 **Nenhum arquivo do jogo, atualização, firmware, chave ou código compilado do jogo é distribuído.** Você precisa da sua própria cópia do jogo. Projeto independente da comunidade, não é um lançamento oficial dos detentores dos direitos.
 
-![Tela inicial do app](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/85d20b7c6f1d106be52a58df257e1859290452e8/docs/images/android/00-tela-inicial.jpg)
+![Tela inicial do app](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/00-tela-inicial.jpg)
 
 ## Requisitos
 
@@ -24,7 +24,7 @@ Se o aparelho for atualizado depois por uma nova versão do app, gere de novo o 
 
 ## Novidades
 
-![Batalha a 60 fps](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/85d20b7c6f1d106be52a58df257e1859290452e8/docs/images/android/08-batalha-60fps.jpg)
+![Batalha a 60 fps](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/08-batalha-60fps.jpg)
 
 - **Menu do jogo** (botão Voltar ou **L3 + R3**) no mesmo visual da tela inicial, com abas **Vídeo, Filtros, Controles, Saves, Cheats e Sistema**.
 - **Controles na tela** (direcional ou analógico, ✕ ○ □ △, L1/L2/R1/R2, Start/Select, analógico direito opcional), com tamanho, opacidade e vibração ajustáveis. Somem sozinhos quando há um controle físico conectado.
@@ -34,10 +34,19 @@ Se o aparelho for atualizado depois por uma nova versão do app, gere de novo o 
 - **Vídeo**: resolução interna, contador de FPS, liberação antecipada e filtros (nitidez, scanlines, CRT, vinheta, cores vivas, FXAA).
 - O relógio e o áudio do jogo pausam em segundo plano, e as texturas do chão não saem mais trocadas depois de minimizar e voltar.
 
-![Controles na tela](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/85d20b7c6f1d106be52a58df257e1859290452e8/docs/images/android/controles-na-tela.jpg)
-![Menu do jogo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/85d20b7c6f1d106be52a58df257e1859290452e8/docs/images/android/menu-do-jogo.jpg)
-![Editor de personagens](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/85d20b7c6f1d106be52a58df257e1859290452e8/docs/images/android/editor-personagens-valores.jpg)
-![Resultado do editor no jogo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/85d20b7c6f1d106be52a58df257e1859290452e8/docs/images/android/editor-personagens-resultado-no-jogo.jpg)
+![Controles na tela](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/controles-na-tela.jpg)
+![Editor de personagens](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/editor-personagens-valores.jpg)
+![Resultado do editor no jogo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/editor-personagens-resultado-no-jogo.jpg)
+
+
+### Menu do jogo (L3 + R3)
+
+![Menu: Vídeo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/menu-video.jpg)
+![Menu: Filtros](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/menu-filtros.jpg)
+![Menu: Controles](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/menu-controles.jpg)
+![Menu: Saves](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/menu-saves.jpg)
+![Menu: Cheats](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/menu-cheats.jpg)
+![Menu: Sistema](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/03146694be21e4c2a3b1980aa553e72b33c69688/docs/images/android/menu-sistema.jpg)
 
 ## Limitações conhecidas
 
