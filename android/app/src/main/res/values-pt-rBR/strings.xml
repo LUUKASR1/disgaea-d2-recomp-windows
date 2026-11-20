@@ -92,4 +92,18 @@
     <string name="cheats_refused">Valor recusado (fora do limite ou jogo ocupado).</string>
     <string name="cheat_characters">Personagens…</string>
     <string name="cheat_char_hint">Toque num valor para editar. Mudanças valem na hora; salve o jogo para mantê-las.</string>
+    <string name="tab_controls">Controles</string>
+    <string name="tc_note">Controles na tela para quem joga sem controle. No modo Auto eles somem quando um controle está conectado.</string>
+    <string name="tc_mode">Mostrar: %1$s</string>
+    <string name="tc_auto">Auto (sem controle)</string>
+    <string name="tc_always">Sempre</string>
+    <string name="tc_never">Nunca</string>
+    <string name="tc_size">Tamanho: %1$d%%</string>
+    <string name="tc_alpha">Opacidade: %1$d%%</string>
+    <string name="tc_haptic_on">Vibração: ligada</string>
+    <string name="tc_haptic_off">Vibração: desligada</string>
+    <string name="tc_left_dpad">Lado esquerdo: direcional</string>
+    <string name="tc_left_stick">Lado esquerdo: analógico</string>
+    <string name="tc_right_on">Analógico direito: visível</string>
+    <string name="tc_right_off">Analógico direito: oculto</string>
 </resources>

@@ -47,6 +47,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private DisplayManager displays;
     private int buttons;
     private float lx, ly, rx, ry;
+    // On-screen controls (touch) merged with the physical controller.
+    private TouchControls touchView;
+    private int tButtons;
+    private float tlx, tly, trx, try_;
     private int hat;   // D-pad reported as a hat axis (bits 1024..8192)
 
     @Override
@@ -185,6 +189,18 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         panel.addView(new ArtView(this), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 6f));
         root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+        touchView = new TouchControls(this);
+        touchView.setVisibility(View.GONE);
+        touchView.setListener(new TouchControls.Listener() {
+            @Override public void onTouchState(int b, float a, float c, float d, float e) {
+                tButtons = b; tlx = a; tly = c; trx = d; try_ = e;
+                pushInput();
+            }
+            @Override public void onMenu() { if (coreStarted) showGameMenu(true); }
+        });
+        root.addView(touchView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        applyTouchSettings();
         setContentView(root);
         showIso(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ISO, null));
         showCore();
@@ -204,6 +220,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             String vulkan = NativeBridge.info();
             info.setText(vulkan);
             if (coreStarted) logView.setText(logTail(0, 10));
+            updateTouchControls();
             if (second != null) second.setStatus(vulkan + "\n" + getString(R.string.status_input, describeInput()));
             handler.postDelayed(this, 500);
         }
@@ -484,7 +501,56 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private void releaseGameInput() {
         buttons = 0; hat = 0; lx = ly = rx = ry = 0;
+        tButtons = 0; tlx = tly = trx = try_ = 0;
+        if (touchView != null) touchView.releaseAll();
         NativeBridge.setInput(0, 0, 0, 0, 0);
+    }
+
+    // Physical controller and touch controls are merged: buttons OR together, a stick follows whichever is moved.
+    private void pushInput() {
+        float ax = lx != 0 || ly != 0 ? lx : tlx, ay = lx != 0 || ly != 0 ? ly : tly;
+        float bx = rx != 0 || ry != 0 ? rx : trx, by = rx != 0 || ry != 0 ? ry : try_;
+        NativeBridge.setInput(buttons | hat | tButtons, ax, ay, bx, by);
+    }
+
+    private static final String KEY_TC_MODE = "tc_mode", KEY_TC_SIZE = "tc_size", KEY_TC_ALPHA = "tc_alpha",
+            KEY_TC_HAPTIC = "tc_haptic", KEY_TC_LSTICK = "tc_lstick", KEY_TC_RSTICK = "tc_rstick";
+    private static final int[] TC_SIZES = {80, 100, 120, 140};
+    private static final int[] TC_ALPHAS = {30, 45, 60, 80};
+
+    private int tcMode() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_TC_MODE, 0); }   // 0 auto, 1 always, 2 never
+    private int tcSize() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_TC_SIZE, 100); }
+    private int tcAlpha() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_TC_ALPHA, 45); }
+    private boolean tcHaptic() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TC_HAPTIC, true); }
+    private boolean tcLeftStick() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TC_LSTICK, false); }
+    private boolean tcRightStick() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TC_RSTICK, false); }
+
+    private void applyTouchSettings() {
+        if (touchView != null) touchView.configure(tcSize() / 100f, tcAlpha(), tcHaptic(), tcLeftStick(), tcRightStick());
+    }
+
+    /** A real gamepad (handheld controls count) is connected: the on-screen controls are not needed in Auto mode. */
+    private boolean hasGamepad() {
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d == null || d.isVirtual()) continue;
+            int src = d.getSources();
+            if ((src & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+                    || (src & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) return true;
+        }
+        return false;
+    }
+
+    private void updateTouchControls() {
+        if (touchView == null) return;
+        boolean want = coreStarted && panelView.getVisibility() != View.VISIBLE
+                && !(gameMenu != null && gameMenu.isShowing())
+                && (tcMode() == 1 || (tcMode() == 0 && !hasGamepad()));
+        int target = want ? View.VISIBLE : View.GONE;
+        if (touchView.getVisibility() != target) {
+            if (!want) touchView.releaseAll();
+            touchView.setVisibility(target);
+        }
     }
 
     private Button menuButton(LinearLayout column, String text) {
@@ -1105,6 +1171,59 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 .setNegativeButton(android.R.string.cancel, null).show();
     }
 
+    private String tcModeLabel() {
+        return getString(R.string.tc_mode, getString(tcMode() == 0 ? R.string.tc_auto : tcMode() == 1 ? R.string.tc_always : R.string.tc_never));
+    }
+
+    private void buildControlsTab(LinearLayout content, int accent) {
+        TextView note = new TextView(this);
+        note.setText(R.string.tc_note);
+        note.setTextColor(0xFFCFC6E6);
+        note.setTextSize(13);
+        content.addView(note);
+        final Button mode = glassButton(tcModeLabel(), false, accent);
+        final Button size = glassButton(getString(R.string.tc_size, tcSize()), false, accent);
+        final Button alpha = glassButton(getString(R.string.tc_alpha, tcAlpha()), false, accent);
+        final Button haptic = glassButton(getString(tcHaptic() ? R.string.tc_haptic_on : R.string.tc_haptic_off), false, accent);
+        final Button left = glassButton(getString(tcLeftStick() ? R.string.tc_left_stick : R.string.tc_left_dpad), false, accent);
+        final Button right = glassButton(getString(tcRightStick() ? R.string.tc_right_on : R.string.tc_right_off), false, accent);
+        mode.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_TC_MODE, (tcMode() + 1) % 3).apply();
+            mode.setText(tcModeLabel());
+        });
+        size.setOnClickListener(v -> {
+            int next = 0;
+            for (int i = 0; i < TC_SIZES.length; i++) if (TC_SIZES[i] == tcSize()) next = (i + 1) % TC_SIZES.length;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_TC_SIZE, TC_SIZES[next]).apply();
+            size.setText(getString(R.string.tc_size, tcSize()));
+            applyTouchSettings();
+        });
+        alpha.setOnClickListener(v -> {
+            int next = 0;
+            for (int i = 0; i < TC_ALPHAS.length; i++) if (TC_ALPHAS[i] == tcAlpha()) next = (i + 1) % TC_ALPHAS.length;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_TC_ALPHA, TC_ALPHAS[next]).apply();
+            alpha.setText(getString(R.string.tc_alpha, tcAlpha()));
+            applyTouchSettings();
+        });
+        haptic.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_TC_HAPTIC, !tcHaptic()).apply();
+            haptic.setText(getString(tcHaptic() ? R.string.tc_haptic_on : R.string.tc_haptic_off));
+            applyTouchSettings();
+        });
+        left.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_TC_LSTICK, !tcLeftStick()).apply();
+            left.setText(getString(tcLeftStick() ? R.string.tc_left_stick : R.string.tc_left_dpad));
+            applyTouchSettings();
+        });
+        right.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_TC_RSTICK, !tcRightStick()).apply();
+            right.setText(getString(tcRightStick() ? R.string.tc_right_on : R.string.tc_right_off));
+            applyTouchSettings();
+        });
+        addRow(content, mode); addRow(content, size); addRow(content, alpha);
+        addRow(content, haptic); addRow(content, left); addRow(content, right);
+    }
+
     private void showGameMenu(boolean inGame) {
         if (gameMenu != null && gameMenu.isShowing()) return;
         releaseGameInput();   // key releases now go to the dialog, so nothing may stay held in the game
@@ -1135,8 +1254,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
         gameMenu = dialog;
-        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_saves, R.string.tab_cheats, R.string.tab_system};
-        final int tabCount = inGame ? 5 : 2;
+        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_controls, R.string.tab_saves, R.string.tab_cheats, R.string.tab_system};
+        final int tabCount = inGame ? 6 : 3;
         final Button[] tabButtons = new Button[tabCount];
         final int[] current = {0};
         final Runnable[] fill = new Runnable[1];
@@ -1199,6 +1318,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 });
                 addRow(content, reset);
             } else if (current[0] == 2) {
+                buildControlsTab(content, accent);
+            } else if (current[0] == 3) {
                 TextView note = new TextView(this);
                 note.setText(R.string.saves_ingame_note);
                 note.setTextColor(0xFFCFC6E6);
@@ -1207,8 +1328,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 Button open = glassButton(getString(R.string.saves_button), true, accent);
                 open.setOnClickListener(v -> showSaves());
                 addRow(content, open);
-            } else if (current[0] == 3) {
-                buildCheatsTab(content, accent, () -> dialog.isShowing() && current[0] == 3);
+            } else if (current[0] == 4) {
+                buildCheatsTab(content, accent, () -> dialog.isShowing() && current[0] == 4);
             } else {
                 Button diagnostics = glassButton(getString(R.string.menu_diagnostics), false, accent);
                 Button quit = glassButton(getString(R.string.menu_quit), false, 0xFFB3261E);
@@ -1304,7 +1425,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             showGameMenu(true);
             return true;
         }
-        NativeBridge.setInput(buttons | hat, lx, ly, rx, ry);
+        pushInput();
         return true;
     }
 
@@ -1318,7 +1439,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             ry = dead(event.getAxisValue(MotionEvent.AXIS_RZ));
             float hx = event.getAxisValue(MotionEvent.AXIS_HAT_X), hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
             hat = (hx < -0.5f ? 4096 : 0) | (hx > 0.5f ? 8192 : 0) | (hy < -0.5f ? 1024 : 0) | (hy > 0.5f ? 2048 : 0);
-            NativeBridge.setInput(buttons | hat, lx, ly, rx, ry);
+            pushInput();
             return true;
         }
         return super.dispatchGenericMotionEvent(event);

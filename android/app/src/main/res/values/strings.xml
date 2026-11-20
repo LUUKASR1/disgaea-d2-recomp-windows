@@ -92,4 +92,18 @@
     <string name="cheats_refused">Value refused (out of range or game busy).</string>
     <string name="cheat_characters">Characters...</string>
     <string name="cheat_char_hint">Tap a value to edit it. Changes apply at once; save the game to keep them.</string>
+    <string name="tab_controls">Controls</string>
+    <string name="tc_note">On-screen controls for phones without a gamepad. Auto hides them while a controller is connected.</string>
+    <string name="tc_mode">Show: %1$s</string>
+    <string name="tc_auto">Auto (no gamepad)</string>
+    <string name="tc_always">Always</string>
+    <string name="tc_never">Never</string>
+    <string name="tc_size">Size: %1$d%%</string>
+    <string name="tc_alpha">Opacity: %1$d%%</string>
+    <string name="tc_haptic_on">Vibration: on</string>
+    <string name="tc_haptic_off">Vibration: off</string>
+    <string name="tc_left_dpad">Left side: D-pad</string>
+    <string name="tc_left_stick">Left side: analog stick</string>
+    <string name="tc_right_on">Right stick: shown</string>
+    <string name="tc_right_off">Right stick: hidden</string>
 </resources>
