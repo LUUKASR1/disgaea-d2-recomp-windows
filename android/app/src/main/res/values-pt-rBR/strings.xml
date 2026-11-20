@@ -73,4 +73,21 @@
     <string name="saves_need_new_core">Para mexer nos saves com o jogo aberto é preciso o núcleo da 1.0.46 ou mais novo (gere de novo no launcher).</string>
     <string name="saves_loaded_ingame">Slot carregado. Use Carregar no menu do jogo para ler o save. O save anterior foi guardado como antes-de-carregar.</string>
     <string name="saves_ingame_note">Salve, importe e carregue slots sem sair do jogo. Depois de carregar um slot, abra o Carregar do próprio jogo para ler o save novo. Se você salvar no jogo antes disso, o save do slot é sobrescrito (o anterior fica em antes-de-carregar).</string>
+    <string name="tab_cheats">Cheats</string>
+    <string name="cheats_warning">Cheats editam a memória do jogo e podem estragar o save. O app guarda um slot automático antes de cada JOGAR; crie outro na aba Saves antes de mexer em valores grandes.</string>
+    <string name="cheat_hp">HP infinito</string>
+    <string name="cheat_sp">SP infinito</string>
+    <string name="cheat_onehit">Golpe único</string>
+    <string name="cheat_shop">Loja grátis</string>
+    <string name="cheat_exp">Multiplicador de EXP:  ×%1$d</string>
+    <string name="cheat_off">Desligar todos os cheats</string>
+    <string name="cheat_on">LIGADO</string>
+    <string name="cheat_off_label">desligado</string>
+    <string name="cheats_status">Perfil %1$s (%2$s). %3$s.</string>
+    <string name="cheats_verified">validado</string>
+    <string name="cheats_unverified">não validado</string>
+    <string name="cheats_ready">Pronto para editar</string>
+    <string name="cheats_wait">Aguardando o save carregar (não edite durante carregar/salvar)</string>
+    <string name="cheats_nocore">Este núcleo não tem o motor de cheats (ou o jogo ainda não começou).</string>
+    <string name="cheats_refused">Valor recusado (fora do limite ou jogo ocupado).</string>
 </resources>

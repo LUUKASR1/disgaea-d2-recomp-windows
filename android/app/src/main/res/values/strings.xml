@@ -73,4 +73,21 @@
     <string name="saves_need_new_core">Touching saves while the game runs needs the 1.0.46 core or newer (prepare it again in the launcher).</string>
     <string name="saves_loaded_ingame">Slot loaded. Use Load in the game menu to read the new save. The previous save was kept as antes-de-carregar.</string>
     <string name="saves_ingame_note">Save, import and load slots without leaving the game. After loading a slot, open the games own Load screen to read the new save. If you save in the game first, the slot save is overwritten (the previous one stays in antes-de-carregar).</string>
+    <string name="tab_cheats">Cheats</string>
+    <string name="cheats_warning">Cheats edit the game memory and can damage your save. The app keeps an automatic slot before every PLAY; make another in the Saves tab before big edits.</string>
+    <string name="cheat_hp">Infinite HP</string>
+    <string name="cheat_sp">Infinite SP</string>
+    <string name="cheat_onehit">One-hit kills</string>
+    <string name="cheat_shop">Free shop</string>
+    <string name="cheat_exp">EXP multiplier:  x%1$d</string>
+    <string name="cheat_off">Turn all cheats off</string>
+    <string name="cheat_on">ON</string>
+    <string name="cheat_off_label">off</string>
+    <string name="cheats_status">Profile %1$s (%2$s). %3$s.</string>
+    <string name="cheats_verified">validated</string>
+    <string name="cheats_unverified">not validated</string>
+    <string name="cheats_ready">Ready to edit</string>
+    <string name="cheats_wait">Waiting for the save to load (do not edit while loading/saving)</string>
+    <string name="cheats_nocore">This core has no cheat engine (or the game has not started yet).</string>
+    <string name="cheats_refused">Value refused (out of range or game busy).</string>
 </resources>

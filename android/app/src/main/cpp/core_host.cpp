@@ -4,6 +4,11 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <atomic>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+#include <string>
+#include "d2_cheats.h"
 #include <string>
 #include <thread>
 
@@ -17,6 +22,17 @@ std::atomic<void (*)(void*)> g_set_window{nullptr};
 std::atomic<void (*)(int, float, float, float, float)> g_set_pad{nullptr};
 std::atomic<int (*)()> g_request_stop{nullptr};
 std::atomic<int (*)()> g_save_lock{nullptr};
+// Cheat API exported by the core (port/src/d2_cheats.cpp). Missing in an old core: every call then reports "unavailable".
+struct CheatApi {
+    int (*snapshot)(D2CheatsSnapshot*) = nullptr;
+    unsigned (*fields)(int, const D2CheatsField**) = nullptr;
+    int (*set_general)(const char*, uint64_t, uint64_t) = nullptr;
+    int (*set_toggle)(const char*, int) = nullptr;
+    int (*set_exp)(unsigned) = nullptr;
+    int (*disable_all)() = nullptr;
+    int (*preset)(int, unsigned) = nullptr;
+};
+CheatApi g_cheats;
 std::atomic<void (*)()> g_save_unlock{nullptr};
 
 std::string str(JNIEnv* env, jstring s) {
@@ -54,6 +70,13 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
     }
     g_set_pad = reinterpret_cast<void (*)(int, float, float, float, float)>(dlsym(lib, "d2_android_pad_set"));
     g_request_stop = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_request_stop"));
+    g_cheats.snapshot = reinterpret_cast<int (*)(D2CheatsSnapshot*)>(dlsym(lib, "d2_cheats_snapshot"));
+    g_cheats.fields = reinterpret_cast<unsigned (*)(int, const D2CheatsField**)>(dlsym(lib, "d2_cheats_fields"));
+    g_cheats.set_general = reinterpret_cast<int (*)(const char*, uint64_t, uint64_t)>(dlsym(lib, "d2_cheats_set_general"));
+    g_cheats.set_toggle = reinterpret_cast<int (*)(const char*, int)>(dlsym(lib, "d2_cheats_set_toggle"));
+    g_cheats.set_exp = reinterpret_cast<int (*)(unsigned)>(dlsym(lib, "d2_cheats_set_exp_multiplier"));
+    g_cheats.disable_all = reinterpret_cast<int (*)()>(dlsym(lib, "d2_cheats_disable_all"));
+    g_cheats.preset = reinterpret_cast<int (*)(int, unsigned)>(dlsym(lib, "d2_cheats_preset"));
     g_save_lock = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_save_lock"));
     g_save_unlock = reinterpret_cast<void (*)()>(dlsym(lib, "d2_core_save_unlock"));
     g_result = -1000;
@@ -76,6 +99,90 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_disgaead2_port_NativeBridge_coreResult(JNIEnv*, jclass) { return g_result.load(); }
+
+// ---- Cheats (the engine lives in the core; this only passes text and numbers across) ----
+
+// "ok=0" when the core has no cheat engine or nothing was published yet; otherwise "key=value" lines:
+// ok, supported, verified, ready, version, status, hp_lock, sp_lock, one_hit, free_shop, exp, and g.<field key>=<value>.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsState(JNIEnv* env, jclass) {
+    if (!g_cheats.snapshot) return env->NewStringUTF("ok=0\nstatus=no cheat engine in this core\n");
+    std::unique_ptr<D2CheatsSnapshot> snap(new D2CheatsSnapshot());
+    std::memset(snap.get(), 0, sizeof(D2CheatsSnapshot));
+    if (!g_cheats.snapshot(snap.get())) return env->NewStringUTF("ok=0\nstatus=waiting for the game\n");
+    std::string out = "ok=1\n";
+    char line[256];
+    snprintf(line, sizeof line, "supported=%d\nverified=%d\nready=%d\n", snap->supported, snap->verified, snap->ready);
+    out += line;
+    snap->version[sizeof snap->version - 1] = 0;
+    snap->status[sizeof snap->status - 1] = 0;
+    out += std::string("version=") + snap->version + "\nstatus=" + snap->status + "\n";
+    snprintf(line, sizeof line, "hp_lock=%d\nsp_lock=%d\none_hit=%d\nfree_shop=%d\nexp=%u\n", snap->hp_lock, snap->sp_lock,
+             snap->one_hit, snap->free_shop, snap->exp_multiplier);
+    out += line;
+    if (g_cheats.fields) {
+        const D2CheatsField* f = nullptr;
+        unsigned n = g_cheats.fields(D2_CHEATS_GENERAL, &f);
+        for (unsigned i = 0; f && i < n && i < D2_CHEATS_MAX_FIELDS; i++) {
+            snprintf(line, sizeof line, "g.%s=%llu\n", f[i].key, (unsigned long long)snap->general[i]);
+            out += line;
+        }
+    }
+    return env->NewStringUTF(out.c_str());
+}
+
+// "key|label|min|max" per general field, so the screen shows what the engine allows. Empty without the engine.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsFields(JNIEnv* env, jclass) {
+    std::string out;
+    if (g_cheats.fields) {
+        const D2CheatsField* f = nullptr;
+        unsigned n = g_cheats.fields(D2_CHEATS_GENERAL, &f);
+        char line[256];
+        for (unsigned i = 0; f && i < n; i++) {
+            snprintf(line, sizeof line, "%s|%s|%llu|%llu\n", f[i].key, f[i].label, (unsigned long long)f[i].minimum,
+                     (unsigned long long)f[i].maximum);
+            out += line;
+        }
+    }
+    return env->NewStringUTF(out.c_str());
+}
+
+// 0 = queued, -1 = refused (unknown name or out of range), -2 = no cheat engine.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsSetToggle(JNIEnv* env, jclass, jstring name, jboolean on) {
+    if (!g_cheats.set_toggle) return -2;
+    const char* c = env->GetStringUTFChars(name, nullptr);
+    int rc = g_cheats.set_toggle(c, on ? 1 : 0);
+    env->ReleaseStringUTFChars(name, c);
+    return rc;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsSetGeneral(JNIEnv* env, jclass, jstring key, jlong value) {
+    if (!g_cheats.set_general) return -2;
+    if (value < 0) return -1;
+    const char* c = env->GetStringUTFChars(key, nullptr);
+    int rc = g_cheats.set_general(c, (uint64_t)value, D2_CHEATS_ANY_GENERATION);
+    env->ReleaseStringUTFChars(key, c);
+    return rc;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsSetExp(JNIEnv*, jclass, jint multiplier) {
+    return g_cheats.set_exp ? g_cheats.set_exp((unsigned)multiplier) : -2;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsDisableAll(JNIEnv*, jclass) {
+    return g_cheats.disable_all ? g_cheats.disable_all() : -2;
+}
+
+// Save the current toggles as a preset (save=true) or load one (slot 0 = default, 1..3 = numbered).
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsPreset(JNIEnv*, jclass, jboolean save, jint slot) {
+    return g_cheats.preset ? g_cheats.preset(save ? 1 : 0, (unsigned)slot) : -2;
+}
 
 // Save slots while the game runs: 1 = gate held, 0 = a save is being written right now, -1 = old core without the gate.
 extern "C" JNIEXPORT jint JNICALL

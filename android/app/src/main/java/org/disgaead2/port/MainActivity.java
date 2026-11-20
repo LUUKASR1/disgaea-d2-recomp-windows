@@ -846,6 +846,127 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         }).start();
     }
 
+    // ---- Cheats tab: the engine runs inside the core; this screen only shows its snapshot and queues changes ----
+    private Runnable cheatsTick = () -> { };
+
+    private static java.util.Map<String, String> parseState(String text) {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        if (text == null) return map;
+        for (String line : text.split("\n")) {
+            int eq = line.indexOf('=');
+            if (eq > 0) map.put(line.substring(0, eq), line.substring(eq + 1));
+        }
+        return map;
+    }
+
+    private void buildCheatsTab(LinearLayout content, int accent, java.util.function.BooleanSupplier visible) {
+        final TextView status = new TextView(this);
+        status.setTextColor(0xFFCFC6E6);
+        status.setTextSize(13);
+        content.addView(status);
+        TextView warn = new TextView(this);
+        warn.setText(R.string.cheats_warning);
+        warn.setTextColor(0xFFFFC857);
+        warn.setTextSize(12);
+        warn.setPadding(0, dp(6), 0, 0);
+        content.addView(warn);
+
+        final String[][] toggles = {
+            {"hp_lock", getString(R.string.cheat_hp)}, {"sp_lock", getString(R.string.cheat_sp)},
+            {"one_hit", getString(R.string.cheat_onehit)}, {"free_shop", getString(R.string.cheat_shop)}};
+        final Button[] toggleButtons = new Button[toggles.length];
+        for (int i = 0; i < toggles.length; i++) {
+            final String name = toggles[i][0];
+            toggleButtons[i] = glassButton(toggles[i][1], false, accent);
+            toggleButtons[i].setOnClickListener(v -> {
+                java.util.Map<String, String> now = parseState(NativeBridge.cheatsState());
+                boolean on = "1".equals(now.get(name));
+                cheatsResult(NativeBridge.cheatsSetToggle(name, !on));
+            });
+            addRow(content, toggleButtons[i]);
+        }
+        final Button exp = glassButton(getString(R.string.cheat_exp, 1), false, accent);
+        exp.setOnClickListener(v -> {
+            java.util.Map<String, String> now = parseState(NativeBridge.cheatsState());
+            int cur = 1;
+            try { cur = Integer.parseInt(now.get("exp")); } catch (RuntimeException ignored) { }
+            cheatsResult(NativeBridge.cheatsSetExp(cur >= 1024 ? 1 : cur * 2));
+        });
+        addRow(content, exp);
+
+        // General values (HL, Bonus Gauge, Cheat Shop ...) straight from the engine's field list.
+        final java.util.List<String[]> fields = new java.util.ArrayList<>();
+        final java.util.List<Button> fieldButtons = new java.util.ArrayList<>();
+        for (String line : NativeBridge.cheatsFields().split("\n")) {
+            String[] part = line.split("\\|");
+            if (part.length < 4) continue;
+            fields.add(part);
+            final String[] f = part;
+            Button b = glassButton(f[1], false, accent);
+            b.setTextSize(14);
+            b.setOnClickListener(v -> askCheatValue(f));
+            fieldButtons.add(b);
+            addRow(content, b);
+        }
+        Button off = glassButton(getString(R.string.cheat_off), false, 0xFFB3261E);
+        off.setOnClickListener(v -> cheatsResult(NativeBridge.cheatsDisableAll()));
+        addRow(content, off);
+
+        final java.text.NumberFormat number = java.text.NumberFormat.getInstance();
+        cheatsTick = new Runnable() {
+            @Override public void run() {
+                if (!visible.getAsBoolean()) return;
+                java.util.Map<String, String> st = parseState(NativeBridge.cheatsState());
+                boolean ok = "1".equals(st.get("ok")), ready = "1".equals(st.get("ready"));
+                String line = ok ? getString(R.string.cheats_status, st.get("version") == null ? "?" : st.get("version"),
+                        getString("1".equals(st.get("verified")) ? R.string.cheats_verified : R.string.cheats_unverified),
+                        getString(ready ? R.string.cheats_ready : R.string.cheats_wait))
+                        : getString(R.string.cheats_nocore);
+                String detail = st.get("status");
+                status.setText(detail == null || detail.isEmpty() ? line : line + "\n" + detail);
+                for (int i = 0; i < toggles.length; i++) {
+                    boolean on = "1".equals(st.get(toggles[i][0]));
+                    toggleButtons[i].setText(toggles[i][1] + ":  " + getString(on ? R.string.cheat_on : R.string.cheat_off_label));
+                    toggleButtons[i].setEnabled(ok);
+                }
+                String e = st.get("exp");
+                exp.setText(getString(R.string.cheat_exp, e == null ? 1 : parseInt(e)));
+                exp.setEnabled(ok);
+                for (int i = 0; i < fields.size(); i++) {
+                    String raw = st.get("g." + fields.get(i)[0]);
+                    String shown = raw == null ? "-" : raw;
+                    try { if (raw != null) shown = number.format(Long.parseLong(raw)); } catch (NumberFormatException ignored) { }
+                    fieldButtons.get(i).setText(fields.get(i)[1] + ":  " + shown);
+                    fieldButtons.get(i).setEnabled(ok && ready);
+                }
+                handler.postDelayed(this, 600);
+            }
+        };
+        handler.post(cheatsTick);
+    }
+
+    private static int parseInt(String s) { try { return Integer.parseInt(s); } catch (RuntimeException e) { return 1; } }
+
+    private void cheatsResult(int rc) {
+        if (rc == -2) toast(getString(R.string.cheats_nocore));
+        else if (rc < 0) toast(getString(R.string.cheats_refused));
+    }
+
+    private void askCheatValue(String[] field) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        input.setHint(field[2] + " - " + field[3]);
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(field[1]).setView(input)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    try { cheatsResult(NativeBridge.cheatsSetGeneral(field[0], Long.parseLong(input.getText().toString().trim()))); }
+                    catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
     private void showGameMenu(boolean inGame) {
         if (gameMenu != null && gameMenu.isShowing()) return;
         releaseGameInput();   // key releases now go to the dialog, so nothing may stay held in the game
@@ -876,14 +997,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
         gameMenu = dialog;
-        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_saves, R.string.tab_system};
-        final int tabCount = inGame ? 4 : 2;
+        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_saves, R.string.tab_cheats, R.string.tab_system};
+        final int tabCount = inGame ? 5 : 2;
         final Button[] tabButtons = new Button[tabCount];
         final int[] current = {0};
         final Runnable[] fill = new Runnable[1];
 
         fill[0] = () -> {
             content.removeAllViews();
+            handler.removeCallbacks(cheatsTick);
             for (int i = 0; i < tabCount; i++) tabButtons[i].setBackground(null);
             for (int i = 0; i < tabCount; i++) {
                 Button t = tabButtons[i];
@@ -947,6 +1069,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 Button open = glassButton(getString(R.string.saves_button), true, accent);
                 open.setOnClickListener(v -> showSaves());
                 addRow(content, open);
+            } else if (current[0] == 3) {
+                buildCheatsTab(content, accent, () -> dialog.isShowing() && current[0] == 3);
             } else {
                 Button diagnostics = glassButton(getString(R.string.menu_diagnostics), false, accent);
                 Button quit = glassButton(getString(R.string.menu_quit), false, 0xFFB3261E);
@@ -968,6 +1092,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             final int index = i;
             Button t = glassButton(getString(tabNames[i]), false, accent);
             t.setSingleLine(true);
+            t.setTextSize(14);
+            t.setPadding(dp(4), dp(10), dp(4), dp(10));
             t.setOnClickListener(v -> { current[0] = index; fill[0].run(); });
             tabButtons[i] = t;
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);   // same height for every tab
@@ -978,7 +1104,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         fill[0].run();
         resume.setOnClickListener(v -> dialog.dismiss());
         dialog.setContentView(root);
-        dialog.setOnDismissListener(d -> { if (gameMenu == dialog) gameMenu = null; });
+        dialog.setOnDismissListener(d -> { handler.removeCallbacks(cheatsTick); if (gameMenu == dialog) gameMenu = null; });
         android.view.Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
