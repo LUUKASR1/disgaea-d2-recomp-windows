@@ -20,7 +20,7 @@ Porte **experimental** de Disgaea D2: A Brighter Darkness (PS3) para Android, fe
 4. No app, toque em **Escolher núcleo** e selecione o `libd2core.so`.
 5. Toque em **JOGAR DISGAEA D2**.
 
-Se o aparelho for atualizado depois por uma nova versão do app, gere de novo o núcleo só quando as notas disserem que ele mudou.
+Ao atualizar o app para uma versão nova, só gere o núcleo de novo se as notas dessa versão disserem que ele mudou.
 
 ## Novidades
 
