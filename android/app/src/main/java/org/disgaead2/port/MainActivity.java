@@ -683,7 +683,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         android.graphics.drawable.GradientDrawable face = new android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, new int[]{top, bottom});
         face.setCornerRadius(dp(18));
-        face.setStroke(dp(focused ? 4 : 3), focused ? 0xFFFFFFFF : 0xFF2A2140);
+        face.setStroke(dp(focused ? 4 : 3), focused ? 0xFFFFB300 : 0xFF2A2140);
         android.graphics.drawable.GradientDrawable gloss = new android.graphics.drawable.GradientDrawable();
         gloss.setColor(0x33FFFFFF);
         gloss.setCornerRadius(dp(10));
@@ -768,22 +768,31 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return d;
     }
 
-    // Button with a translucent fill; the focused state (D-pad / controller) gets a bright accent outline.
+    // Menu / pop-up button: the same chunky candy look as the home screen. Selected = red (main action), danger = orange,
+    // otherwise blue; the focused state (D-pad / controller) gets a gold outline.
     private Button glassButton(String text, boolean selected, int accent) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        b.setTextColor(Color.WHITE);
-        b.setTextSize(16);
-        b.setPadding(dp(16), dp(10), dp(16), dp(10));
-        b.setMinHeight(0);
-        b.setMinimumHeight(dp(44));
-        android.graphics.drawable.StateListDrawable states = new android.graphics.drawable.StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_focused}, glass(0x55FFFFFF, 0xFFFFFFFF, 12));
-        states.addState(new int[]{android.R.attr.state_pressed}, glass(0x66FFFFFF, 0xCCFFFFFF, 12));
-        states.addState(new int[]{}, selected ? glass((accent & 0x00FFFFFF) | 0x99000000, 0x88FFFFFF, 12) : glass(0x22FFFFFF, 0x33FFFFFF, 12));
-        b.setBackground(states);
+        final boolean danger = accent == 0xFFB3261E;
+        Button b = chunkyButton(text, selected ? 0xFFFF5E73 : danger ? 0xFFFF8A3D : 0xFF5B9BFF,
+                selected ? 0xFFD12A3F : danger ? 0xFFD1551A : 0xFF2554C7, 16);
+        b.setMinimumHeight(dp(50));
         return b;
+    }
+
+    private void setCandy(Button b, int top, int bottom) {
+        android.graphics.drawable.StateListDrawable states = new android.graphics.drawable.StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed}, chunkyLayers(top, bottom, true, false));
+        states.addState(new int[]{android.R.attr.state_focused}, chunkyLayers(top, bottom, false, true));
+        states.addState(new int[]{}, chunkyLayers(top, bottom, false, false));
+        b.setBackground(states);
+    }
+
+    // Light panel of the home screen (cream with a dark outline) for the menu and the pop-ups.
+    private android.graphics.drawable.Drawable launcherPanel() {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(0xFFFFF8F3);
+        d.setCornerRadius(dp(26));
+        d.setStroke(dp(3), 0xFF2A2140);
+        return d;
     }
 
     private void addRow(LinearLayout column, Button b) {
@@ -818,17 +827,17 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(22), dp(18), dp(22), dp(18));
-        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        root.setBackground(launcherPanel());
         TextView t = new TextView(this);
         t.setText(title);
-        t.setTextColor(Color.WHITE);
+        t.setTextColor(0xFF2A2140);
         t.setTextSize(20);
         t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         root.addView(t);
         if (message != null) {
             TextView m = new TextView(this);
             m.setText(message);
-            m.setTextColor(0xFFCFC6E6);
+            m.setTextColor(0xFF4A4060);
             m.setTextSize(14);
             m.setPadding(0, dp(10), 0, 0);
             root.addView(m);
@@ -836,9 +845,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (input != null) {
             if (input instanceof android.widget.EditText) {
                 android.widget.EditText e = (android.widget.EditText) input;
-                e.setBackground(glass(0x33FFFFFF, 0x55FFFFFF, 12));
+                e.setBackground(glass(0xFFFFFFFF, 0xFF2A2140, 14));
+                e.setTextColor(0xFF2A2140);
                 e.setPadding(dp(12), dp(10), dp(12), dp(10));
-                e.setHintTextColor(0xFF9C93B8);
+                e.setHintTextColor(0xFF7A7090);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             lp.topMargin = dp(10);
@@ -861,7 +871,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private void toast(String text) { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show(); }
 
     private android.app.Dialog glassDialog(LinearLayout root) {
-        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Light_Dialog_NoActionBar);
         dialog.setContentView(root);
         android.view.Window window = dialog.getWindow();
         if (window != null) {
@@ -889,10 +899,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(16), dp(20), dp(16));
-        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        root.setBackground(launcherPanel());
         TextView title = new TextView(this);
         title.setText(R.string.saves_title);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(0xFF2A2140);
         title.setTextSize(22);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(title);
@@ -912,7 +922,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             content.removeAllViews();
             TextView help = new TextView(this);
             help.setText(R.string.saves_help);
-            help.setTextColor(0xFFCFC6E6);
+            help.setTextColor(0xFF4A4060);
             help.setTextSize(13);
             content.addView(help);
             Button saveNow = glassButton(getString(R.string.saves_save_current), false, accent);
@@ -929,7 +939,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             if (slots.isEmpty()) {
                 TextView empty = new TextView(this);
                 empty.setText(R.string.saves_empty);
-                empty.setTextColor(0xFF9C93B8);
+                empty.setTextColor(0xFF7A7090);
                 empty.setPadding(0, dp(14), 0, 0);
                 content.addView(empty);
             }
@@ -954,7 +964,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private void askSlotName(File files, Runnable refresh) {
         final android.widget.EditText input = new android.widget.EditText(this);
         input.setSingleLine(true);
-        input.setTextColor(Color.WHITE);
+        input.setTextColor(0xFF2A2140);
         glassPrompt(getString(R.string.saves_name_title), null, input, getString(android.R.string.ok), () -> {
             try {
                 final java.io.File[] made = {null};
@@ -972,10 +982,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(16), dp(20), dp(16));
-        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        root.setBackground(launcherPanel());
         TextView title = new TextView(this);
         title.setText(getString(R.string.saves_slot_fmt, slot.title(), slot.saves));
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(0xFF2A2140);
         title.setTextSize(18);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(title);
@@ -1070,12 +1080,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private void buildCheatsTab(LinearLayout content, int accent, java.util.function.BooleanSupplier visible) {
         final TextView status = new TextView(this);
-        status.setTextColor(0xFFCFC6E6);
+        status.setTextColor(0xFF4A4060);
         status.setTextSize(13);
         content.addView(status);
         TextView warn = new TextView(this);
         warn.setText(R.string.cheats_warning);
-        warn.setTextColor(0xFFFFC857);
+        warn.setTextColor(0xFFB36B00);
         warn.setTextSize(12);
         warn.setPadding(0, dp(6), 0, 0);
         content.addView(warn);
@@ -1098,7 +1108,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         addRow(content, trophyReset);
         TextView trophyNote = new TextView(this);
         trophyNote.setText(R.string.trophy_lock_note);
-        trophyNote.setTextColor(0xFFCFC6E6);
+        trophyNote.setTextColor(0xFF4A4060);
         trophyNote.setTextSize(12);
         trophyNote.setPadding(0, 0, 0, dp(6));
         content.addView(trophyNote);
@@ -1191,7 +1201,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final android.widget.EditText input = new android.widget.EditText(this);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         input.setSingleLine(true);
-        input.setTextColor(Color.WHITE);
+        input.setTextColor(0xFF2A2140);
         input.setHint(field[2] + " - " + field[3]);
         glassPrompt(field[1], null, input, getString(android.R.string.ok), () -> {
             try { cheatsResult(NativeBridge.cheatsSetGeneral(field[0], Long.parseLong(input.getText().toString().trim()))); }
@@ -1214,10 +1224,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(16), dp(20), dp(16));
-        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        root.setBackground(launcherPanel());
         TextView t = new TextView(this);
         t.setText(title);
-        t.setTextColor(Color.WHITE);
+        t.setTextColor(0xFF2A2140);
         t.setTextSize(20);
         t.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(t);
@@ -1256,7 +1266,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final int accent = 0xFF7A1B3D;
         LinearLayout root = dialogColumn(name);
         final TextView note = new TextView(this);
-        note.setTextColor(0xFFCFC6E6);
+        note.setTextColor(0xFF4A4060);
         note.setTextSize(12);
         root.addView(note);
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
@@ -1316,7 +1326,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final android.widget.EditText input = new android.widget.EditText(this);
         input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         input.setSingleLine(true);
-        input.setTextColor(Color.WHITE);
+        input.setTextColor(0xFF2A2140);
         input.setHint(field[2] + " - " + field[3]);
         glassPrompt(field[1], null, input, getString(android.R.string.ok), () -> {
             try { cheatsResult(NativeBridge.cheatsSetCharacter(unit, field[0], Long.parseLong(input.getText().toString().trim()), generation)); }
@@ -1331,7 +1341,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private void buildControlsTab(LinearLayout content, int accent) {
         TextView note = new TextView(this);
         note.setText(R.string.tc_note);
-        note.setTextColor(0xFFCFC6E6);
+        note.setTextColor(0xFF4A4060);
         note.setTextSize(13);
         content.addView(note);
         final Button mode = glassButton(tcModeLabel(), false, accent);
@@ -1384,10 +1394,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(16), dp(20), dp(16));
-        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        root.setBackground(launcherPanel());
         TextView title = new TextView(this);
         title.setText(inGame ? R.string.menu_title : R.string.home_settings);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(0xFF2A2140);
         title.setTextSize(22);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(title);
@@ -1405,7 +1415,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final Button resume = glassButton(getString(R.string.menu_resume), true, accent);
         addRow(root, resume);
 
-        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Light_Dialog_NoActionBar);
         menuDialog = dialog;
         gameMenu = dialog;
         final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_controls, R.string.tab_saves, R.string.tab_cheats, R.string.tab_system};
@@ -1417,13 +1427,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         fill[0] = () -> {
             content.removeAllViews();
             handler.removeCallbacks(cheatsTick);
-            for (int i = 0; i < tabCount; i++) tabButtons[i].setBackground(null);
             for (int i = 0; i < tabCount; i++) {
                 Button t = tabButtons[i];
-                android.graphics.drawable.StateListDrawable st = new android.graphics.drawable.StateListDrawable();
-                st.addState(new int[]{android.R.attr.state_focused}, glass(0x55FFFFFF, 0xFFFFFFFF, 12));
-                st.addState(new int[]{}, i == current[0] ? glass((accent & 0x00FFFFFF) | 0xAA000000, 0x99FFFFFF, 12) : glass(0x11FFFFFF, 0x22FFFFFF, 12));
-                t.setBackground(st);
+                if (i == current[0]) setCandy(t, 0xFFFF5E73, 0xFFD12A3F); else setCandy(t, 0xFFA27BFF, 0xFF6A3FD6);
             }
             if (current[0] == 0) {
                 Button resolution = glassButton(resolutionLabel(), false, accent);
@@ -1476,7 +1482,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             } else if (current[0] == 3) {
                 TextView note = new TextView(this);
                 note.setText(R.string.saves_ingame_note);
-                note.setTextColor(0xFFCFC6E6);
+                note.setTextColor(0xFF4A4060);
                 note.setTextSize(13);
                 content.addView(note);
                 Button open = glassButton(getString(R.string.saves_button), true, accent);
@@ -1493,7 +1499,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     if (!armed[0]) {
                         armed[0] = true;
                         quit.setText(R.string.menu_quit_confirm);
-                        quit.setBackground(glass(0xCCB3261E, 0xFFFFFFFF, 12));
+                        setCandy(quit, 0xFFFF6A5E, 0xFFB3261E);
                         return;
                     }
                     quitGame(dialog, root);
@@ -1506,10 +1512,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             Button t = glassButton(getString(tabNames[i]), false, accent);
             t.setSingleLine(true);
             t.setTextSize(14);
-            t.setPadding(dp(4), dp(10), dp(4), dp(10));
+            t.setPadding(dp(4), dp(4), dp(4), dp(10));
             t.setOnClickListener(v -> { current[0] = index; fill[0].run(); });
             tabButtons[i] = t;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);   // same height for every tab
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(54), 1f);   // same height for every tab
             lp.topMargin = dp(10);
             lp.rightMargin = i < tabCount - 1 ? dp(8) : 0;
             tabs.addView(t, lp);
@@ -1541,7 +1547,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         column.removeAllViews();
         TextView saving = new TextView(this);
         saving.setText(R.string.menu_quitting);
-        saving.setTextColor(Color.WHITE);
+        saving.setTextColor(0xFF2A2140);
         saving.setTextSize(18);
         column.addView(saving);
         dialog.setCancelable(false);
