@@ -99,7 +99,16 @@ def main():
     for name in ('source', 'workspace', 'preview', 'json-include'):
         parser.add_argument('--' + name, required=True, type=Path)
     args = parser.parse_args()
-    def run(command, env): subprocess.run(list(map(str, command)), env=env, check=True)
+    def run(command, env):
+        # 0xC000013A (STATUS_CONTROL_C_EXIT) can be raised by a tool that something interrupted (antivirus, a download
+        # manager hooking the process); the step is idempotent, so try once more before failing.
+        for attempt in range(2):
+            result = subprocess.run(list(map(str, command)), env=env)
+            if result.returncode == 0:
+                return
+            if attempt == 0 and result.returncode in (3221225786, -1073741510):
+                continue
+            raise subprocess.CalledProcessError(result.returncode, result.args)
     executable = build(args.source, args.workspace, args.preview, args.json_include, run, os.environ, args.profile)
     print('ISO runtime ready:', executable)
 
