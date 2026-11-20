@@ -1,3 +1,7 @@
+# 1.0.45 — Prévia europeia + núcleo Android (prévia)
+
+- Android: menu do jogo refeito em estilo "vidro" (translúcido, com desfoque no Android 12+), com abas **Vídeo / Filtros / Sistema**, rolagem e botão Continuar sempre visível.
+
 # 1.0.44 — Prévia europeia + núcleo Android (prévia)
 
 - Android: menu dentro do jogo (Voltar ou L3+R3) com resolução interna, contador de FPS, liberação antecipada e **Sair do jogo** (salva e fecha); filtros de imagem (nitidez, scanlines, CRT, vinheta, cores vivas, FXAA); ícone próprio do app.
@@ -253,10 +257,6 @@ Android/Odin 2 Portal support is future work.
 
 Save/reopen/load confirmed manually by LUUKASR1 after the close correction.
 A clean build from the consolidated source-only candidate is still pending.
-
-## 1.0.45 (prévia europeia)
-
-- Android: menu do jogo refeito em estilo vidro, com abas Vídeo / Filtros / Sistema, rolagem e botão Continuar sempre visível.
 
 ## Launcher 0.1.8-preview
 
