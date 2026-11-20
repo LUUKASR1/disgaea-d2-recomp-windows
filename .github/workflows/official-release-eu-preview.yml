@@ -1,5 +1,5 @@
 name: Validate DirectX 12 European preview package
-run-name: Verify 1.0.39 European preview launcher and installer
+run-name: Verify 1.0.40 European preview launcher and installer
 on:
   push:
     branches: [eu-preview]
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Publish the verified assets as the v1.0.39-eu-preview pre-release'
+        description: 'Publish the verified assets as the v1.0.40-eu-preview pre-release'
         type: boolean
         default: false
 permissions:
@@ -38,7 +38,7 @@ jobs:
         run: python windows/preview_launcher.py --official
       - uses: actions/upload-artifact@v4
         with:
-          name: Official-1.0.39-Launcher-UI
+          name: Official-1.0.40-Launcher-UI
           path: launcher-previews/
       - name: Package official single-file launcher
         run: python tools/package_launcher.py --onefile --official
@@ -82,15 +82,15 @@ jobs:
               data = Path(source).read_bytes()
               assert data[:2] == b'MZ' and len(data) > 1_000_000
               shutil.copy2(source, out / Path(source).name)
-          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-1.0.39-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-1.0.39.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
+          with zipfile.ZipFile(out / 'DisgaeaD2Launcher-1.0.40-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-1.0.40.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
                   z.write(source, name)
-          (out / 'release-build.json').write_text(json.dumps({'version': '1.0.39', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
+          (out / 'release-build.json').write_text(json.dumps({'version': '1.0.40', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
           sums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(out.iterdir()))
           (out / 'SHA256SUMS.txt').write_text(sums)
       - uses: actions/upload-artifact@v4
         with:
-          name: DisgaeaD2-1.0.39-Official-Verified-Assets
+          name: DisgaeaD2-1.0.40-Official-Verified-Assets
           path: official-assets/
           if-no-files-found: error
 
@@ -106,7 +106,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: DisgaeaD2-1.0.39-Official-Verified-Assets
+          name: DisgaeaD2-1.0.40-Official-Verified-Assets
           path: verified-assets
       - name: Verify checksums and publish the stable release
         env:
@@ -115,20 +115,20 @@ jobs:
         run: |
           set -euo pipefail
           cd verified-assets
-          expected="DisgaeaD2Launcher.exe DisgaeaD2Launcher-Setup-Windows-x64.exe DisgaeaD2Launcher-1.0.39-Windows-x64.zip SHA256SUMS.txt release-build.json"
+          expected="DisgaeaD2Launcher.exe DisgaeaD2Launcher-Setup-Windows-x64.exe DisgaeaD2Launcher-1.0.40-Windows-x64.zip SHA256SUMS.txt release-build.json"
           for name in $expected; do test -s "$name" || { echo "missing $name"; exit 1; }; done
           test "$(ls | wc -l)" = 5
           sha256sum --check --ignore-missing SHA256SUMS.txt
           python3 - <<'PY'
           import json
           meta = json.load(open('release-build.json'))
-          assert meta['version'] == '1.0.39' and meta['renderer'] == 'd3d12' and not meta['game_content_bundled']
+          assert meta['version'] == '1.0.40' and meta['renderer'] == 'd3d12' and not meta['game_content_bundled']
           PY
           cd ..
-          if gh release view v1.0.39-eu-preview >/dev/null 2>&1; then echo "v1.0.39-eu-preview already exists; refusing to overwrite"; exit 1; fi
+          if gh release view v1.0.40-eu-preview >/dev/null 2>&1; then echo "v1.0.40-eu-preview already exists; refusing to overwrite"; exit 1; fi
           # Draft first, upload every asset, then make it public.
-          gh release create v1.0.39-eu-preview --target "$GITHUB_SHA" --title "Disgaea D2 Windows 1.0.39 — European preview (BLES01939)" \
-            --notes-file docs/RELEASE-1.0.39.md --draft --prerelease
-          gh release upload v1.0.39-eu-preview verified-assets/* 
-          gh release edit v1.0.39-eu-preview --draft=false --prerelease=true --latest=false
-          gh release view v1.0.39-eu-preview --json url,isDraft,isPrerelease,assets --jq '.url'
+          gh release create v1.0.40-eu-preview --target "$GITHUB_SHA" --title "Disgaea D2 Windows 1.0.40 — European preview (BLES01939)" \
+            --notes-file docs/RELEASE-1.0.40.md --draft --prerelease
+          gh release upload v1.0.40-eu-preview verified-assets/* 
+          gh release edit v1.0.40-eu-preview --draft=false --prerelease=true --latest=false
+          gh release view v1.0.40-eu-preview --json url,isDraft,isPrerelease,assets --jq '.url'

@@ -1,3 +1,7 @@
+# 1.0.40 — Prévia europeia + núcleo Android (prévia)
+
+- Android: perfilador de amostragem das duas threads mais ocupadas (log `[profile]` a cada 30 s) para achar o que consome a thread do jogo.
+
 # 1.0.39 — Prévia europeia + núcleo Android (prévia)
 
 - Android: o código traduzido do PS3 é compilado com -O2 (antes -O1) para acelerar a thread do jogo; a geração do núcleo demora mais.

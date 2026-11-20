@@ -1,6 +1,11 @@
 /* Exported entry point of libd2core.so (the recompiled game for Android ARM64).
  * The app loads this library from its private storage, calls d2_core_run on a worker thread and reads the log. */
 #include <android/log.h>
+#include <atomic>
+#include <csignal>
+#include <dlfcn.h>
+#include <ucontext.h>
+#include <sys/syscall.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -87,6 +92,111 @@ static void thread_report() {
     }
 }
 
+
+/* Preview profiler: samples the program counter of the two busiest threads (normally the guest PPU thread and the
+ * render thread) with a real-time signal every 2 ms and every 30 s logs the hottest 64-byte code buckets as
+ * "module+offset". Offsets inside libd2core.so resolve to lifted-function names with `nm -nC libd2core.so`.
+ * D2_PROFILE_OFF=1 disables it. The handler only stores into a lock-free array. */
+static constexpr int kProfSlots = 2, kProfRing = 16384;
+static std::atomic<int> g_prof_tid[kProfSlots];
+static std::atomic<unsigned> g_prof_n[kProfSlots];
+static std::atomic<unsigned long long> g_prof_pc[kProfSlots][kProfRing];
+
+static void prof_handler(int, siginfo_t*, void* ctx) {
+    const int tid = (int)syscall(SYS_gettid);
+    for (int k = 0; k < kProfSlots; k++) {
+        if (g_prof_tid[k].load(std::memory_order_relaxed) != tid) continue;
+        const ucontext_t* uc = (const ucontext_t*)ctx;
+#if defined(__aarch64__)
+        const unsigned long long pc = uc->uc_mcontext.pc;
+#else
+        const unsigned long long pc = 0; (void)uc;
+#endif
+        const unsigned i = g_prof_n[k].fetch_add(1, std::memory_order_relaxed);
+        g_prof_pc[k][i % kProfRing].store(pc, std::memory_order_relaxed);
+        return;
+    }
+}
+
+static int busiest_threads(int out[kProfSlots]) {
+    // two threads with the most CPU time so far (utime+stime)
+    unsigned long long best[kProfSlots] = {0, 0};
+    for (int k = 0; k < kProfSlots; k++) out[k] = 0;
+    if (DIR* d = opendir("/proc/self/task")) {
+        while (dirent* e = readdir(d)) {
+            const int tid = std::atoi(e->d_name);
+            if (tid <= 0) continue;
+            char path[64];
+            std::snprintf(path, sizeof path, "/proc/self/task/%d/stat", tid);
+            FILE* f = std::fopen(path, "r");
+            if (!f) continue;
+            char buf[1024] = {};
+            const size_t n = std::fread(buf, 1, sizeof buf - 1, f);
+            std::fclose(f);
+            buf[n] = 0;
+            char* close = std::strrchr(buf, ')');
+            if (!close) continue;
+            unsigned long long ut = 0, st = 0;
+            int field = 3;
+            for (char* tok = std::strtok(close + 2, " "); tok; tok = std::strtok(nullptr, " "), field++) {
+                if (field == 14) ut = std::strtoull(tok, nullptr, 10);
+                else if (field == 15) { st = std::strtoull(tok, nullptr, 10); break; }
+            }
+            const unsigned long long t = ut + st;
+            for (int k = 0; k < kProfSlots; k++)
+                if (t > best[k]) {
+                    for (int j = kProfSlots - 1; j > k; j--) { best[j] = best[j - 1]; out[j] = out[j - 1]; }
+                    best[k] = t; out[k] = tid; break;
+                }
+        }
+        closedir(d);
+    }
+    return out[0];
+}
+
+static void profiler_thread() {
+    const int sig = SIGRTMIN + 2;
+    struct sigaction sa;
+    std::memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = prof_handler;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigaction(sig, &sa, nullptr);
+    Dl_info self{};
+    dladdr((void*)&profiler_thread, &self);
+    const unsigned long long base = (unsigned long long)(uintptr_t)self.dli_fbase;
+    std::this_thread::sleep_for(std::chrono::seconds(20));      // let the game boot
+    for (;;) {
+        int tids[kProfSlots];
+        busiest_threads(tids);
+        for (int k = 0; k < kProfSlots; k++) { g_prof_tid[k] = tids[k]; g_prof_n[k] = 0; }
+        for (int i = 0; i < 15000; i++) {                       // 30 s at one sample per 2 ms
+            for (int k = 0; k < kProfSlots; k++)
+                if (tids[k] > 0) syscall(SYS_tgkill, getpid(), tids[k], sig);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        for (int k = 0; k < kProfSlots; k++) {
+            const unsigned total = std::min<unsigned>(g_prof_n[k].load(), kProfRing);
+            std::map<unsigned long long, unsigned> buckets;
+            for (unsigned i = 0; i < total; i++) buckets[g_prof_pc[k][i].load() & ~63ull]++;
+            std::vector<std::pair<unsigned, unsigned long long>> top;
+            for (auto& b : buckets) top.push_back({b.second, b.first});
+            std::sort(top.rbegin(), top.rend());
+            std::fprintf(stderr, "[profile] thread %d: %u samples (last %u kept), hottest 64-byte buckets (d2core offsets):\n",
+                         tids[k], g_prof_n[k].load(), total);
+            for (size_t i = 0; i < top.size() && i < 60; i++) {
+                Dl_info di{};
+                dladdr((void*)(uintptr_t)top[i].second, &di);
+                if (di.dli_fbase == self.dli_fbase)
+                    std::fprintf(stderr, "[profile]   %5.1f%%  d2core+0x%llx\n", 100.0 * top[i].first / total, top[i].second - base);
+                else
+                    std::fprintf(stderr, "[profile]   %5.1f%%  %s+0x%llx\n", 100.0 * top[i].first / total,
+                                 di.dli_fname ? di.dli_fname : "?", di.dli_fbase ? top[i].second - (unsigned long long)(uintptr_t)di.dli_fbase : top[i].second);
+            }
+            g_prof_tid[k] = 0;
+        }
+    }
+}
+
 // Big.LITTLE: the game threads were seen drifting onto the 2.0 GHz little cores. Threads created from here inherit the
 // mask, so restrict this worker (and everything it starts) to the cores whose maximum frequency is near the fastest.
 static void pin_to_fast_cores() {
@@ -129,6 +239,7 @@ int d2_core_run(const char* eboot_path, const char* vfs_root, const char* log_pa
     setenv("AUDIO_PEAK", "1", 0);
     pin_to_fast_cores();
     if (!std::getenv("D2_THREAD_REPORT_OFF")) std::thread(thread_report).detach();
+    if (!std::getenv("D2_PROFILE_OFF")) std::thread(profiler_thread).detach();
 
     /* The process starts in a read-only directory. Give the game a writable "disc" for saves and caches next to the log. */
     if (log_path && *log_path) {
