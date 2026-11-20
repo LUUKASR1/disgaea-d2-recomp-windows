@@ -1,0 +1,3 @@
+Prints reservados para a página da versão Android (ainda não publicados).
+01-04: sem filtros ativos. 05-07: capturas com filtros (CRT) ligados e contador de FPS visível.
+A captura da batalha com texturas do chão trocadas NÃO está aqui (defeito a corrigir).

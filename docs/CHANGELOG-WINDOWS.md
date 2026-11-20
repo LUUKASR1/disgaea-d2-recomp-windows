@@ -1,3 +1,7 @@
+# 1.0.48 — Prévia europeia + núcleo Android (prévia)
+
+- **Android: teste contra o chão errado depois de minimizar, entrar num mapa e sair.** Depois que o app volta do segundo plano, o núcleo passa a conferir todas as palavras de cada textura (antes amostrava cerca de 1024), para não reaproveitar a textura antiga do mapa no lugar da do hub. Experimental; se o chão ainda sair errado, envie captura e log. Precisa do núcleo desta versão.
+
 # 1.0.47 — Prévia europeia + núcleo Android (prévia)
 
 - Android: **saves e slots** (salvar o save atual num slot, importar saves do Windows/PC por pasta ou .zip, carregar, exportar e apagar slots), também **dentro do jogo** (aba Saves do menu); backup automático antes de cada JOGAR. O relógio do jogo agora para quando o app vai para segundo plano. Precisa do núcleo desta versão.
