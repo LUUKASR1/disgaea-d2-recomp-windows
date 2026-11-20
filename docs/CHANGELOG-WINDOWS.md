@@ -1,3 +1,9 @@
+# 1.0.51 — Prévia europeia + núcleo Android (prévia)
+
+- **Android: aviso de troféu no estilo PlayStation, com o nome do troféu.** Cada troféu registrado faz um banner descer do topo da tela, com a taça do tipo (bronze, prata, ouro ou platina), o nome do troféu e o ícone original do jogo quando disponível. Com a trava ligada, um troféu bloqueado mostra o aviso em vermelho. Os 74 nomes vêm embutidos no app; escolhendo a ISO do jogo (tela inicial ou **Cheats → Escolher ISO do jogo ou TROPHY.TRP**) o app também pega os ícones originais. Em **Cheats**: **Testar o aviso de troféu** e **Resetar troféus**.
+- **Android: menu, abas e pop-ups com o visual da tela inicial** (painel claro e botões 3D brilhantes). Atalho L3 + R3 abre o menu do jogo.
+- Esta versão do Android vem no APK 0.9.3; o núcleo é o mesmo da 1.0.50.
+
 # 1.0.50 — Prévia europeia + núcleo Android (prévia)
 
 - **Android: aviso de troféu na tela, no estilo PlayStation.** Cada troféu registrado faz um banner descer do topo da tela por alguns segundos ("Troféu desbloqueado!"); com a trava ligada, um troféu bloqueado mostra um banner vermelho ("Troféu não registrado"). No menu do jogo → **Cheats** há o botão **Testar o aviso de troféu**. Precisa do núcleo desta versão.
