@@ -226,6 +226,8 @@ def main():
     parser.add_argument('--game-version', default='140')
     parser.add_argument('--json-include', type=Path)
     parser.add_argument('--output', type=Path, help='where libd2core.so is copied')
+    parser.add_argument('--ppu-opt', choices=['1', '2'], default='2',
+                        help='optimisation level of the lifted PPU code (2 = faster game thread, slower to build; 1 = old behaviour)')
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -260,7 +262,7 @@ def main():
                '-DRECOMP_DIR=' + str(args.recomp_dir.resolve()), '-DD2_OUT_DIR=' + str(args.out_dir.resolve()),
                '-DSPU_DIR=' + str(args.spu_dir.resolve()), '-DD2_JSON_INCLUDE_DIR=' + str(args.json_include.resolve()),
                '-DD2_GLSLANG_DIR=' + str(glslang), '-DD2_ENABLE_ISO_VFS=OFF', '-DD2_SPU_SIMD_SSE41=OFF', '-DBUILD_TESTING=OFF',
-               '-DCMAKE_CXX_FLAGS_RELEASE=-O1 -DNDEBUG', '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG',   # the lifted PPU files are huge
+               '-DCMAKE_CXX_FLAGS_RELEASE=-O' + args.ppu_opt + ' -DNDEBUG', '-DCMAKE_C_FLAGS_RELEASE=-O2 -DNDEBUG',   # the lifted PPU files are huge
                '-DPython3_EXECUTABLE=' + sys.executable]
     run(command)
     # -k 0: keep going after a failure so a single run reports every error, not just the first.

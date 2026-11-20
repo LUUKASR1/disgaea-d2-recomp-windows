@@ -1,3 +1,7 @@
+# 1.0.39 — Prévia europeia + núcleo Android (prévia)
+
+- Android: o código traduzido do PS3 é compilado com -O2 (antes -O1) para acelerar a thread do jogo; a geração do núcleo demora mais.
+
 # 1.0.38 — Prévia europeia + núcleo Android (prévia)
 
 - Vulkan: vertex shaders declaram só os atributos lidos (vértices de ~3-4 slots em vez de 16).
