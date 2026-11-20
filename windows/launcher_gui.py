@@ -762,7 +762,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         path.mkdir(parents=True, exist_ok=True)
         os.startfile(path)
     europe = card(page)
-    label(europe, 'VERSÃO EUROPEIA (BLES01939) — PRÉVIA', 12, GOLD, True)
+    label(europe, 'VERSÃO EUROPEIA (BLES01939)', 12, GOLD, True)
     label(europe, 'Use a pasta do jogo ou a ISO europeia e o EBOOT.elf descriptografado do seu disco. A primeira preparação compila o jogo e pode demorar bastante. Os perfis americano e europeu ficam salvos separadamente.', 10, MUTED)
     button(europe, 'Preparar versão europeia', prepare_europe)
     button(europe, 'Usar perfil europeu', lambda: use_profile('eu100'))
@@ -819,9 +819,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             library = backend.prepare_android_core()
             events.put(('android_ready', str(library)))
         task(work)
-    label(page, 'Prévia Android: compila o jogo já preparado neste PC para o Odin 2 (ARM64). Baixa o NDK na primeira vez (~750 MB).', 10, MUTED)
-    button(page, 'Preparar núcleo Android (prévia)', build_android_core)
-    label(page, 'Não apague a pasta local para atualizar o launcher. O Android ainda está em desenvolvimento (prévia).', 10, MUTED)
+    label(page, 'Android: compila o jogo já preparado neste PC para o Odin 2 (ARM64). Baixa o NDK na primeira vez (~750 MB).', 10, MUTED)
+    button(page, 'Preparar núcleo Android', build_android_core)
+    label(page, 'Não apague a pasta local para atualizar o launcher. O Android está em melhoria contínua; ajuda é bem-vinda.', 10, MUTED)
     for variable in (resolution, mode, vsync):
         variable.trace_add('write', update_summary)
     update_summary()
@@ -854,7 +854,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
                 config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
                 ready = True
                 active = config.get('profile')
-                build_status.set('PRÉVIA EUROPEIA (BLES01939)' if active == 'eu100' else
+                build_status.set('VERSÃO EUROPEIA (BLES01939)' if active == 'eu100' else
                                  'PRÉVIA JAPONESA (BLJS10206 1.30)' if active == 'jp130' else 'BUILD LOCAL DISPONÍVEL')
                 status.set('Perfil europeu ativo. Clique em Jogar.' if active == 'eu100' else
                            'Perfil japonês ativo. Clique em Jogar.' if active == 'jp130' else

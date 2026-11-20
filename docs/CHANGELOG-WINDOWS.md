@@ -1,3 +1,8 @@
+# 1.0.52 — Lançamento oficial Windows + Android
+
+- Primeira release oficial com **Windows e Android juntos** (APK 0.10.1 anexado). Rótulos de "prévia" removidos da versão europeia e do núcleo Android no launcher (a japonesa continua marcada como experimental).
+- Android 0.10.1: idiomas English (padrão), Português, 日本語 e Español, com seletor na tela inicial.
+
 # 1.0.51 — Prévia europeia + núcleo Android (prévia)
 
 - **Android: aviso de troféu no estilo PlayStation, com o nome do troféu.** Cada troféu registrado faz um banner descer do topo da tela, com a taça do tipo (bronze, prata, ouro ou platina), o nome do troféu e o ícone original do jogo quando disponível. Com a trava ligada, um troféu bloqueado mostra o aviso em vermelho. Os 74 nomes vêm embutidos no app; escolhendo a ISO do jogo (tela inicial ou **Cheats → Escolher ISO do jogo ou TROPHY.TRP**) o app também pega os ícones originais. Em **Cheats**: **Testar o aviso de troféu** e **Resetar troféus**.
