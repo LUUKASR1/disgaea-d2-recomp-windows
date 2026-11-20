@@ -46,4 +46,26 @@
     <string name="home_footer">Bring your own game. No game files are distributed. v%1$s</string>
     <string name="home_core">Choose core</string>
     <string name="tab_filters">Filters</string>
+    <string name="saves_title">Saves & slots</string>
+    <string name="saves_button">Saves & slots</string>
+    <string name="saves_help">Import a save folder (or a .zip) from Windows/PC or another device: it becomes a new slot. Tap a slot and choose Load. Before loading, the current save is kept in another slot. PS3 saves must be decrypted; compatibility between regions is not guaranteed.</string>
+    <string name="saves_save_current">Save current game to a slot</string>
+    <string name="saves_import_folder">Import save (folder)</string>
+    <string name="saves_import_zip">Import save (.zip)</string>
+    <string name="saves_empty">No slots yet.</string>
+    <string name="saves_slot_fmt">%1$s  ·  %2$d save(s)</string>
+    <string name="saves_load">Load this slot</string>
+    <string name="saves_export">Export (.zip)</string>
+    <string name="saves_delete">Delete slot</string>
+    <string name="saves_delete_confirm">Tap again to delete</string>
+    <string name="saves_back">Back</string>
+    <string name="saves_name_title">Slot name (optional)</string>
+    <string name="saves_saved">Slot saved.</string>
+    <string name="saves_nothing">There is no current save to keep.</string>
+    <string name="saves_loaded">Slot loaded. The previous save was kept as \"antes-de-carregar\".</string>
+    <string name="saves_imported">Imported: %1$d save(s). See the list.</string>
+    <string name="saves_import_none">No save (folder with PARAM.SFO) found there.</string>
+    <string name="saves_error">Failed: %1$s</string>
+    <string name="saves_exported">Exported.</string>
+    <string name="saves_running">Close the game before touching saves.</string>
 </resources>

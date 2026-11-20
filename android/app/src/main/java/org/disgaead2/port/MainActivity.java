@@ -33,7 +33,7 @@ import android.widget.TextView;
 
 /** Milestone 0: Vulkan surface + gamepad + ISO document picker + secondary display (Thor). */
 public final class MainActivity extends Activity implements DisplayManager.DisplayListener {
-    private static final int PICK_ISO = 1, PICK_CORE = 2;
+    private static final int PICK_ISO = 1, PICK_CORE = 2, PICK_SAVE_TREE = 3, PICK_SAVE_ZIP = 4, EXPORT_SAVE = 5;
     private static final String PREFS = "d2", KEY_ISO = "iso_uri";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -158,6 +158,11 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout.LayoutParams row2Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         row2Lp.topMargin = dp(8);
         left.addView(row2, row2Lp);
+        Button saves = chunkyButton(getString(R.string.saves_button), 0xFF5B9BFF, 0xFF2554C7, 15);
+        saves.setOnClickListener(v -> showSaves());
+        LinearLayout.LayoutParams savesLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+        savesLp.topMargin = dp(8);
+        left.addView(saves, savesLp);
         LinearLayout.LayoutParams coreLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         coreLp.topMargin = dp(10);
         left.addView(coreInfo, coreLp);
@@ -316,7 +321,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     String line = kept.get(i);
                     boolean key = line.startsWith("[vulkan]") || line.startsWith("[profile]") || line.contains("rror")
                             || line.contains("fail") || line.contains("exhausted") || line.contains("unsupported")
-                            || line.contains("texture") || line.contains("surface");
+                            || line.contains("texture") || line.contains("surface") || line.startsWith("[cellAudio] AAudio paused")
+                            || line.startsWith("[cellAudio] AAudio resumed");
+                    if (line.startsWith("[vulkan][slow]")) {   // only the real stalls: hundreds of 35 ms lines would fill the cap
+                        int p = line.indexOf("period=");
+                        key = p >= 0 && parseMs(line, p + 7) >= 150;
+                    }
                     if (key && shown < 260 && !line.startsWith("[vulkan][pace]")) { out.append(line).append('\n'); shown++; }
                     else skipped++;
                 }
@@ -328,6 +338,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         } catch (java.io.IOException e) {
             return "(log: " + e + ")";
         }
+    }
+
+    private static double parseMs(String line, int from) {
+        int end = from;
+        while (end < line.length() && (Character.isDigit(line.charAt(end)) || line.charAt(end) == '.')) end++;
+        try { return Double.parseDouble(line.substring(from, end)); } catch (NumberFormatException e) { return 0; }
     }
 
     private static File child(File dir, String name) {
@@ -379,6 +395,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             return;
         }
         writeSettings();
+        try { SaveSlots.autoBackup(getExternalFilesDir(null)); } catch (java.io.IOException | RuntimeException ignored) { }
         String error = NativeBridge.startCore(coreFile().getAbsolutePath(), eboot.getAbsolutePath(),
                 root.getAbsolutePath(), logFile().getAbsolutePath());
         if (error != null) { logView.setText(error); return; }
@@ -408,6 +425,18 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         super.onActivityResult(request, result, data);
         if (request == PICK_CORE && result == RESULT_OK && data != null && data.getData() != null) {
             importCore(data.getData());
+            return;
+        }
+        if (request == PICK_SAVE_TREE && result == RESULT_OK && data != null && data.getData() != null) {
+            importSave(data.getData(), true);
+            return;
+        }
+        if (request == PICK_SAVE_ZIP && result == RESULT_OK && data != null && data.getData() != null) {
+            importSave(data.getData(), false);
+            return;
+        }
+        if (request == EXPORT_SAVE && result == RESULT_OK && data != null && data.getData() != null && exportSlot != null) {
+            exportSave(data.getData());
             return;
         }
         if (request != PICK_ISO || result != RESULT_OK || data == null || data.getData() == null) return;
@@ -595,6 +624,211 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.topMargin = dp(8);
         column.addView(b, lp);
+    }
+
+    // ---- Save slots (same idea as the Windows launcher's save selector) ----
+    private SaveSlots.Slot exportSlot;
+    private android.app.Dialog savesDialog;
+
+    private void toast(String text) { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show(); }
+
+    private android.app.Dialog glassDialog(LinearLayout root) {
+        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        dialog.setContentView(root);
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            window.setDimAmount(0.45f);
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+                window.getAttributes().setBlurBehindRadius(24);
+            }
+        }
+        return dialog;
+    }
+
+    private void sizeDialog(android.app.Dialog dialog, int heightPercent) {
+        android.view.Window window = dialog.getWindow();
+        if (window == null) return;
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        window.setLayout(Math.min(dp(520), dm.widthPixels * 9 / 10), dm.heightPixels * heightPercent / 100);
+    }
+
+    private void showSaves() {
+        if (coreRunning) { toast(getString(R.string.saves_running)); return; }
+        if (savesDialog != null && savesDialog.isShowing()) savesDialog.dismiss();
+        final int accent = 0xFF7A1B3D;
+        final File files = getExternalFilesDir(null);
+        final LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(16), dp(20), dp(16));
+        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        TextView title = new TextView(this);
+        title.setText(R.string.saves_title);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(22);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(title);
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        final LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(content);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollLp.topMargin = dp(8);
+        root.addView(scroll, scrollLp);
+        final Button back = glassButton(getString(R.string.saves_back), true, accent);
+        addRow(root, back);
+        final android.app.Dialog dialog = glassDialog(root);
+        savesDialog = dialog;
+        final Runnable[] fill = new Runnable[1];
+        fill[0] = () -> {
+            content.removeAllViews();
+            TextView help = new TextView(this);
+            help.setText(R.string.saves_help);
+            help.setTextColor(0xFFCFC6E6);
+            help.setTextSize(13);
+            content.addView(help);
+            Button saveNow = glassButton(getString(R.string.saves_save_current), false, accent);
+            Button importFolder = glassButton(getString(R.string.saves_import_folder), false, accent);
+            Button importZip = glassButton(getString(R.string.saves_import_zip), false, accent);
+            saveNow.setOnClickListener(v -> askSlotName(files, fill[0]));
+            importFolder.setOnClickListener(v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_SAVE_TREE));
+            importZip.setOnClickListener(v -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+                startActivityForResult(intent, PICK_SAVE_ZIP);
+            });
+            addRow(content, saveNow); addRow(content, importFolder); addRow(content, importZip);
+            java.util.List<SaveSlots.Slot> slots = SaveSlots.list(files);
+            if (slots.isEmpty()) {
+                TextView empty = new TextView(this);
+                empty.setText(R.string.saves_empty);
+                empty.setTextColor(0xFF9C93B8);
+                empty.setPadding(0, dp(14), 0, 0);
+                content.addView(empty);
+            }
+            for (SaveSlots.Slot slot : slots) {
+                Button b = glassButton(getString(R.string.saves_slot_fmt, slot.title(), slot.saves), false, accent);
+                b.setTextSize(14);
+                b.setOnClickListener(v -> showSlotActions(files, slot, fill[0]));
+                addRow(content, b);
+            }
+        };
+        savesRefresh = fill[0];
+        fill[0].run();
+        back.setOnClickListener(v -> dialog.dismiss());
+        dialog.setOnDismissListener(d -> { if (savesDialog == dialog) { savesDialog = null; savesRefresh = null; } });
+        dialog.show();
+        sizeDialog(dialog, 85);
+        back.requestFocus();
+    }
+
+    private Runnable savesRefresh;
+
+    private void askSlotName(File files, Runnable refresh) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(R.string.saves_name_title).setView(input)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    try {
+                        java.io.File made = SaveSlots.create(files, input.getText().toString());
+                        toast(getString(made == null ? R.string.saves_nothing : R.string.saves_saved));
+                    } catch (java.io.IOException | RuntimeException e) {
+                        toast(getString(R.string.saves_error, e.getMessage()));
+                    }
+                    refresh.run();
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void showSlotActions(File files, SaveSlots.Slot slot, Runnable refresh) {
+        final int accent = 0xFF7A1B3D;
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(16), dp(20), dp(16));
+        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        TextView title = new TextView(this);
+        title.setText(getString(R.string.saves_slot_fmt, slot.title(), slot.saves));
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(title);
+        final android.app.Dialog dialog = glassDialog(root);
+        Button load = glassButton(getString(R.string.saves_load), true, accent);
+        Button export = glassButton(getString(R.string.saves_export), false, accent);
+        final Button delete = glassButton(getString(R.string.saves_delete), false, 0xFFB3261E);
+        Button back = glassButton(getString(R.string.saves_back), false, accent);
+        addRow(root, load); addRow(root, export); addRow(root, delete); addRow(root, back);
+        load.setOnClickListener(v -> {
+            if (coreRunning) { toast(getString(R.string.saves_running)); return; }
+            try { SaveSlots.load(files, slot); toast(getString(R.string.saves_loaded)); }
+            catch (java.io.IOException | RuntimeException e) { toast(getString(R.string.saves_error, e.getMessage())); }
+            dialog.dismiss();
+            refresh.run();
+        });
+        export.setOnClickListener(v -> {
+            exportSlot = slot;
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("application/zip").putExtra(Intent.EXTRA_TITLE, "disgaea-d2-save-" + slot.name + ".zip");
+            startActivityForResult(intent, EXPORT_SAVE);
+            dialog.dismiss();
+        });
+        final boolean[] armed = {false};
+        delete.setOnClickListener(v -> {
+            if (!armed[0]) { armed[0] = true; delete.setText(R.string.saves_delete_confirm); return; }
+            try { SaveSlots.delete(files, slot); } catch (java.io.IOException | RuntimeException e) { toast(getString(R.string.saves_error, e.getMessage())); }
+            dialog.dismiss();
+            refresh.run();
+        });
+        back.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+        sizeDialog(dialog, 60);
+        load.requestFocus();
+    }
+
+    private void importSave(Uri uri, boolean tree) {
+        final File files = getExternalFilesDir(null);
+        String name = null;
+        if (!tree) {
+            try (Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+                if (c != null && c.moveToFirst()) { int i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (i >= 0) name = c.getString(i); }
+            } catch (RuntimeException ignored) { }
+        } else {
+            try (Cursor c = getContentResolver().query(android.provider.DocumentsContract.buildDocumentUriUsingTree(uri,
+                    android.provider.DocumentsContract.getTreeDocumentId(uri)), new String[]{android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst()) name = c.getString(0);
+            } catch (RuntimeException ignored) { }
+        }
+        final String shownName = name;
+        new Thread(() -> {
+            String message;
+            try {
+                int n = tree ? SaveSlots.importTree(getContentResolver(), uri, shownName, files)
+                             : SaveSlots.importZip(getContentResolver(), uri, shownName, files);
+                message = n == 0 ? getString(R.string.saves_import_none) : getString(R.string.saves_imported, n);
+            } catch (java.io.IOException | RuntimeException e) {
+                message = getString(R.string.saves_error, e.getMessage());
+            }
+            final String shown = message;
+            handler.post(() -> { toast(shown); if (savesRefresh != null) savesRefresh.run(); });
+        }).start();
+    }
+
+    private void exportSave(Uri uri) {
+        final SaveSlots.Slot slot = exportSlot;
+        exportSlot = null;
+        new Thread(() -> {
+            String message;
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                SaveSlots.exportZip(slot, out);
+                message = getString(R.string.saves_exported);
+            } catch (java.io.IOException | RuntimeException e) {
+                message = getString(R.string.saves_error, e.getMessage());
+            }
+            final String shown = message;
+            handler.post(() -> toast(shown));
+        }).start();
     }
 
     private void showGameMenu(boolean inGame) {

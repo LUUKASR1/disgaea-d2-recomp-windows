@@ -46,4 +46,26 @@
     <string name="home_footer">Você traz o seu próprio jogo. Nenhum arquivo do jogo é distribuído. v%1$s</string>
     <string name="home_core">Escolher núcleo</string>
     <string name="tab_filters">Filtros</string>
+    <string name="saves_title">Saves e slots</string>
+    <string name="saves_button">Saves e slots</string>
+    <string name="saves_help">Importe a pasta do save (ou um .zip) vindo do Windows/PC ou de outro aparelho: ele vira um slot novo. Toque no slot e escolha Carregar. Antes de carregar, o save atual é guardado em outro slot. Saves de PS3 precisam estar descriptografados; compatibilidade entre regiões não é garantida.</string>
+    <string name="saves_save_current">Salvar o save atual num slot</string>
+    <string name="saves_import_folder">Importar save (pasta)</string>
+    <string name="saves_import_zip">Importar save (.zip)</string>
+    <string name="saves_empty">Nenhum slot ainda.</string>
+    <string name="saves_slot_fmt">%1$s  ·  %2$d save(s)</string>
+    <string name="saves_load">Carregar este slot</string>
+    <string name="saves_export">Exportar (.zip)</string>
+    <string name="saves_delete">Apagar slot</string>
+    <string name="saves_delete_confirm">Toque de novo para apagar</string>
+    <string name="saves_back">Voltar</string>
+    <string name="saves_name_title">Nome do slot (opcional)</string>
+    <string name="saves_saved">Slot salvo.</string>
+    <string name="saves_nothing">Não há save atual para guardar.</string>
+    <string name="saves_loaded">Slot carregado. O save anterior foi guardado como \"antes-de-carregar\".</string>
+    <string name="saves_imported">Importado: %1$d save(s). Veja na lista.</string>
+    <string name="saves_import_none">Não encontrei nenhum save (pasta com PARAM.SFO) ali.</string>
+    <string name="saves_error">Falha: %1$s</string>
+    <string name="saves_exported">Exportado.</string>
+    <string name="saves_running">Feche o jogo antes de mexer nos saves.</string>
 </resources>
