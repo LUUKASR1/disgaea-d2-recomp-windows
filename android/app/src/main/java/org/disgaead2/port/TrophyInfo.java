@@ -144,4 +144,72 @@ final class TrophyInfo {
     }
 
     private static long u64(byte[] b, int o) { return (u32(b, o) << 32) | u32(b, o + 4); }
+
+    // ---- Pulling TROPHY.TRP out of the player's own game disc image (plain ISO 9660, as the PS3 disc dumps are) ----
+
+    /** Copies PS3_GAME/TROPDIR/&lt;any&gt;/TROPHY.TRP from the ISO into out. False when the ISO has no such file or is not readable. */
+    static boolean extractFromIso(android.content.ContentResolver resolver, android.net.Uri uri, File out) {
+        try (android.os.ParcelFileDescriptor pfd = resolver.openFileDescriptor(uri, "r");
+             java.io.FileInputStream in = new java.io.FileInputStream(pfd.getFileDescriptor())) {
+            java.nio.channels.FileChannel ch = in.getChannel();
+            byte[] pvd = readAt(ch, 16L * 2048, 2048);
+            if (pvd == null || pvd[0] != 1 || pvd[1] != 'C' || pvd[2] != 'D' || pvd[3] != '0' || pvd[4] != '0' || pvd[5] != '1') return false;
+            long[] dir = {le32(pvd, 156 + 2), le32(pvd, 156 + 10)};   // extent, size of the root directory
+            for (String part : new String[]{"PS3_GAME", "TROPDIR"}) {
+                dir = find(ch, dir, part, true);
+                if (dir == null) return false;
+            }
+            long[] sub = find(ch, dir, null, true);                    // the NPWRxxxxx_00 folder
+            if (sub == null) return false;
+            long[] file = find(ch, sub, "TROPHY.TRP", false);
+            if (file == null || file[1] <= 0x60 || file[1] > 64L * 1024 * 1024) return false;
+            ch.position(file[0] * 2048);
+            try (java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                byte[] buf = new byte[65536];
+                long left = file[1];
+                while (left > 0) {
+                    int n = in.read(buf, 0, (int) Math.min(buf.length, left));
+                    if (n <= 0) return false;
+                    os.write(buf, 0, n);
+                    left -= n;
+                }
+            }
+            return true;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Looks in a directory for an entry: by name (any when name == null, first match of the wanted kind). Returns {extent, size}. */
+    private static long[] find(java.nio.channels.FileChannel ch, long[] dir, String name, boolean wantDir) throws IOException {
+        byte[] data = readAt(ch, dir[0] * 2048, (int) Math.min(dir[1], 1L << 20));
+        if (data == null) return null;
+        int o = 0;
+        while (o < data.length) {
+            int len = data[o] & 0xFF;
+            if (len == 0) { o = (o / 2048 + 1) * 2048; continue; }   // records never straddle sectors
+            if (o + len > data.length) break;
+            int flags = data[o + 25] & 0xFF, nameLen = data[o + 32] & 0xFF;
+            boolean isDir = (flags & 2) != 0;
+            if (nameLen > 0 && isDir == wantDir && !(nameLen == 1 && (data[o + 33] == 0 || data[o + 33] == 1))) {
+                String n = new String(data, o + 33, nameLen, "US-ASCII");
+                int semi = n.indexOf(';');
+                if (semi >= 0) n = n.substring(0, semi);
+                if (name == null || n.equalsIgnoreCase(name)) return new long[]{le32(data, o + 2), le32(data, o + 10)};
+            }
+            o += len;
+        }
+        return null;
+    }
+
+    private static byte[] readAt(java.nio.channels.FileChannel ch, long pos, int len) throws IOException {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(len);
+        ch.position(pos);
+        while (b.hasRemaining()) if (ch.read(b) < 0) break;
+        return b.position() == 0 ? null : b.array();
+    }
+
+    private static long le32(byte[] b, int o) {
+        return (b[o] & 0xFFL) | ((b[o + 1] & 0xFFL) << 8) | ((b[o + 2] & 0xFFL) << 16) | ((b[o + 3] & 0xFFL) << 24);
+    }
 }

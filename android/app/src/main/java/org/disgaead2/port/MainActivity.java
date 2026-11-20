@@ -553,17 +553,22 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             return;
         }
         if (request == PICK_TRP && result == RESULT_OK && data != null && data.getData() != null) {
-            try (java.io.InputStream in = getContentResolver().openInputStream(data.getData());
-                 OutputStream out = new FileOutputStream(trpExtra())) {
-                byte[] buf = new byte[65536];
-                int n;
-                while (in != null && (n = in.read(buf)) > 0) out.write(buf, 0, n);
+            final Uri picked = data.getData();
+            new Thread(() -> {
+                boolean ok = TrophyInfo.extractFromIso(getContentResolver(), picked, trpExtra());   // a game disc image
+                if (!ok) {   // otherwise a TROPHY.TRP picked directly
+                    try (java.io.InputStream in = getContentResolver().openInputStream(picked);
+                         OutputStream out = new FileOutputStream(trpExtra())) {
+                        byte[] buf = new byte[65536];
+                        int n;
+                        while (in != null && (n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    } catch (java.io.IOException | RuntimeException e) { /* reported below */ }
+                }
                 trophyInfo.reset();
-                toast(getString(trophyInfo.load(new File("/nonexistent"), trpExtra()) ? R.string.trophy_icons_found : R.string.trophy_icons_bad,
-                        trophyInfo.count()));
-            } catch (java.io.IOException | RuntimeException e) {
-                toast(getString(R.string.trophy_icons_bad, 0));
-            }
+                final boolean good = trophyInfo.load(new File("/nonexistent"), trpExtra());
+                runOnUiThread(() -> toast(good ? getString(R.string.trophy_icons_found, trophyInfo.count()) + ", " + trophyInfo.namedCount() + " names"
+                        : getString(R.string.trophy_icons_bad, 0)));
+            }).start();
             return;
         }
         if (request == PICK_SAVE_TREE && result == RESULT_OK && data != null && data.getData() != null) {
@@ -587,6 +592,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_ISO, uri.toString()).apply();
         showIso(uri.toString());
+        if (!trpExtra().isFile()) new Thread(() -> {   // trophy names and icons come from the disc image when it is plain ISO
+            if (TrophyInfo.extractFromIso(getContentResolver(), uri, trpExtra())) trophyInfo.reset();
+        }).start();
     }
 
     private static int mask(int keyCode) {
