@@ -1128,8 +1128,10 @@ void drop_frame() {
 }
 // After the window was replaced (minimise / restore) every cached texture is rebuilt from guest memory on first use.
 void flush_textures(Renderer &r) {
+  const size_t n = tex_cache.size();
   for (auto &kv : tex_cache) if (kv.second.handle) r.destroyTexture(kv.second.handle);
   tex_cache.clear();
+  std::fprintf(stderr, "[vulkan] texture cache rebuilt after the window changed (%zu entries dropped, frame %llu)\n", n, (unsigned long long)frame_no);
 }
 
 void print_counters() {

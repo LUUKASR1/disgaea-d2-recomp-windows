@@ -40,6 +40,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private TextView info, iso, coreInfo, logView;
     private LinearLayout panelView;
     private boolean coreStarted;
+    // The game core lives as long as the process, but Android may destroy and recreate the Activity while the app is in the
+    // background; a new Activity must not offer "Play" again, it must pick the running game back up.
+    private static boolean coreRunning;
     private SecondScreen second;
     private DisplayManager displays;
     private int buttons;
@@ -180,6 +183,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         setContentView(root);
         showIso(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ISO, null));
         showCore();
+        if (coreRunning) {   // recreated while the game was already running: back to the game, not to the home screen
+            coreStarted = true;
+            panelView.setVisibility(View.GONE);
+        }
 
         displays = (DisplayManager) getSystemService(DISPLAY_SERVICE);
         displays.registerDisplayListener(this, handler);
@@ -301,7 +308,20 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             int head = Math.min(headLines, kept.size());
             for (int i = 0; i < head; i++) out.append(kept.get(i)).append('\n');
             int tailStart = Math.max(head, kept.size() - lines);
-            if (tailStart > head) out.append("... ").append(tailStart - head).append(" lines omitted ...\n");
+            if (tailStart > head) {
+                // The omitted middle is where the interesting events usually are (surface lost/recreated, texture cache,
+                // errors, profiler results): keep those lines, drop only the routine ones.
+                int shown = 0, skipped = 0;
+                for (int i = head; i < tailStart; i++) {
+                    String line = kept.get(i);
+                    boolean key = line.startsWith("[vulkan]") || line.startsWith("[profile]") || line.contains("rror")
+                            || line.contains("fail") || line.contains("exhausted") || line.contains("unsupported")
+                            || line.contains("texture") || line.contains("surface");
+                    if (key && shown < 260 && !line.startsWith("[vulkan][pace]")) { out.append(line).append('\n'); shown++; }
+                    else skipped++;
+                }
+                out.append("... ").append(skipped).append(" routine lines omitted ...\n");
+            }
             for (int i = tailStart; i < kept.size(); i++) out.append(kept.get(i)).append('\n');
             if (lastFrame != null) out.append(lastFrame).append('\n');
             return out.toString();
@@ -363,6 +383,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 root.getAbsolutePath(), logFile().getAbsolutePath());
         if (error != null) { logView.setText(error); return; }
         coreStarted = true;
+        coreRunning = true;
         panelView.setVisibility(android.view.View.GONE); // the game gets the whole screen; Back brings the panel back
     }
 
@@ -800,6 +821,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     @Override public void onDisplayAdded(int id) { updateSecondScreen(); }
     @Override public void onDisplayRemoved(int id) { updateSecondScreen(); }
     @Override public void onDisplayChanged(int id) {}
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (coreRunning) { coreStarted = true; panelView.setVisibility(View.GONE); }   // launcher icon while the game runs
+    }
 
     @Override
     protected void onDestroy() {
