@@ -25,6 +25,9 @@ extern "C" unsigned d2_screenshot_last(char* path, unsigned size); /* port/graph
 #include <vector>
 #include <algorithm>
 #include "sys_overlay.h" /* SDK system dialogs (save/load lists, confirmations) */
+#include "src/d2_cheats.h" /* cheats tab: same queued, validated calls the other front ends use */
+#include <cstring>
+extern "C" void d2_trophy_lock_set(int on);
 static std::wstring d2_settings_ini_path(void);
 
 namespace d2opt {
@@ -36,7 +39,10 @@ constexpr int kRows = 10;
 constexpr int kMaxHits = 48;
 constexpr int A_KEY0 = 200;
 enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_OUTLINE, A_HDR, A_PAUSE, A_TAB0 = 100 };
-constexpr int kTabs = 4; // 0 video, 1 filters, 2 controls, 3 system
+constexpr int kTabs = 6; // 0 video, 1 filters, 2 controls, 3 system, 4 cheats, 5 characters
+/* Cheats / characters tab actions (>= 300 so they never clash with the key-listening range 200..214). */
+constexpr int A_CH_TOG0 = 300, A_CH_EXP = 304, A_CH_OFF = 305, A_CH_PRESET = 306, A_CH_LOCK = 307, A_CH_UNIT = 308, A_CH_PAGE = 309,
+              A_CH_GEN0 = 320, A_CH_CHR0 = 340, kCells = 16, kCharPerPage = 14;
 
 constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
 constexpr int kResW[] = {960, 1280, 1600, 1920, 2560};
@@ -58,6 +64,7 @@ struct Config {
     int out_idx = -1, scale_pct = -1, fsr = -1; // -1: not chosen in the game (the launcher's values stay)
     unsigned menu_page = 0; // last tab open in F1
     unsigned pause_focus = 1; // pause the game while its window is not in front
+    unsigned trophy_lock = 0; // 1: no trophies are recorded once a cheat was used in the session
     unsigned hdr = 0; // 0 off, 1..3 on (highlight expansion); on/off needs a restart (swap chain format)
     unsigned outline = 0; // black outline around the world sprites: 0 off .. 3 thick
     unsigned sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0, aa = 0; // 0 off .. 3 strong (aa: 0/1)
@@ -92,7 +99,7 @@ static std::wstring W(const std::string& utf8)
 
 static bool is_known_key(const std::string& key)
 {
-    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "hdr" || key == "pause_focus" || key == "menu_page" || key == "sharpen" ||
+    if (key == "fullscreen" || key == "vsync" || key == "width" || key == "height" || key == "lang" || key == "showfps" || key == "texdump" || key == "outline" || key == "hdr" || key == "pause_focus" || key == "trophy_lock" || key == "menu_page" || key == "sharpen" ||
         key == "scanlines" || key == "crtmask" || key == "vignette" || key == "vivid" || key == "aa" || key == "d3_out" || key == "d3_scale" ||
         key == "d3_fsr")
         return true;
@@ -123,6 +130,7 @@ static void load_config()
             else if (key == "texdump") cfg.texdump = value != 0;
             else if (key == "menu_page" && value >= 0 && value < kTabs) cfg.menu_page = (unsigned)value;
             else if (key == "pause_focus") cfg.pause_focus = value != 0;
+            else if (key == "trophy_lock") cfg.trophy_lock = value != 0 ? 1u : 0u;
             else if (key == "hdr" && value >= 0 && value <= 3) cfg.hdr = (unsigned)value;
             else if (key == "outline" && value >= 0 && value <= 3) cfg.outline = (unsigned)value;
             else if (key == "d3_out" && value >= 0 && value < kOutCount) cfg.out_idx = (int)value;
@@ -169,6 +177,7 @@ static void save_config()
     text += "outline=" + std::to_string(cfg.outline) + "\n";
     text += "hdr=" + std::to_string(cfg.hdr) + "\n";
     text += "pause_focus=" + std::to_string(cfg.pause_focus) + "\n";
+    text += "trophy_lock=" + std::to_string(cfg.trophy_lock) + "\n";
     text += "menu_page=" + std::to_string(cfg.menu_page) + "\n";
     if (cfg.out_idx >= 0) text += "d3_out=" + std::to_string(cfg.out_idx) + "\n";
     if (cfg.scale_pct >= 0) text += "d3_scale=" + std::to_string(cfg.scale_pct) + "\n";
@@ -227,6 +236,7 @@ static void prepare()
         _putenv_s("D2_UPSCALER", fsr ? "fsr1" : "native");
         fprintf(stderr, "[d3d12][ui] start options: output %ux%u, internal %d%%, upscaler %s\n", ow, oh, pct, fsr ? "FSR1" : "native");
     }
+    d2_trophy_lock_set(cfg.trophy_lock ? 1 : 0);
     if (!getenv("D2_POST_FILTERS")) _putenv_s("D2_POST_FILTERS", "1");
     if (cfg.hdr && !getenv("D2_HDR")) _putenv_s("D2_HDR", "1");
 }
@@ -441,6 +451,138 @@ static void assign_key(int index, int vk)
 static void panel_redraw() { if (panel) InvalidateRect(panel, nullptr, FALSE); }
 static bool api_armed() { return GetTickCount64() < api_armed_until; }
 
+
+/* ---- cheats / characters tabs (the engine lives in this process: direct calls, no pipe) ------------------------- */
+
+static D2CheatsSnapshot csnap;
+static bool csnap_ok = false;
+static const D2CheatsField* gfields = nullptr;
+static const D2CheatsField* cfields = nullptr;
+static unsigned gcount = 0, ccount = 0;
+static int cunit = 0, chpage = 0;
+
+static void cheats_refresh()
+{
+    gcount = d2_cheats_fields(D2_CHEATS_GENERAL, &gfields);
+    ccount = d2_cheats_fields(D2_CHEATS_CHARACTER, &cfields);
+    std::memset(&csnap, 0, sizeof csnap);
+    csnap_ok = d2_cheats_snapshot(&csnap) != 0;
+    csnap.status[sizeof csnap.status - 1] = 0;
+}
+
+/* The engine labels are English; show Portuguese when the panel is in Portuguese (stat abbreviations stay as they are). */
+static std::string tr_label(const char* english)
+{
+    if (cfg.lang) return english;
+    static const struct { const char *en, *pt; } table[] = {
+        {"Bonus Gauge", "Barra de bônus"}, {"Bonus Gauge progress", "Progresso da barra"}, {"Cheat Shop CP", "Loja: CP"},
+        {"Cheat Shop EXP %", "Loja: EXP %"}, {"Cheat Shop Mana %", "Loja: Mana %"}, {"Cheat Shop HL %", "Loja: HL %"},
+        {"Cheat Shop Weapon mastery %", "Loja: maestria de arma %"}, {"Cheat Shop Skill EXP %", "Loja: EXP de habilidade %"},
+        {"Level", "Nível"}, {"Max HP", "HP máx."}, {"Max SP", "SP máx."}, {"Class ID", "ID da classe"},
+        {"Movement (base)", "Movimento (base)"}, {"Jump (base)", "Salto (base)"}, {"Counters (base)", "Contra-ataques (base)"},
+        {"Throw range (base)", "Alcance de arremesso"}, {"Critical % (base)", "Crítico % (base)"}};
+    for (const auto& e : table)
+        if (!strcmp(e.en, english)) return e.pt;
+    const std::string label = english;
+    const std::string apt = " aptitude %";
+    if (label.size() > apt.size() && label.compare(label.size() - apt.size(), apt.size(), apt) == 0)
+        return "Aptidão " + label.substr(0, label.size() - apt.size()) + " %";
+    if (label.rfind("Base ", 0) == 0) return label.substr(5) + " base";
+    return label;
+}
+
+static unsigned long long edit_value(unsigned long long cur, const D2CheatsField& f, int dir)
+{
+    const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0, ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    if (shift && ctrl) return dir > 0 ? f.maximum : f.minimum;
+    unsigned long long step = f.maximum <= 10000ull ? 1ull : f.maximum <= 1000000ull ? 100ull : f.maximum <= 1000000000ull ? 10000ull : 1000000ull;
+    if (shift) step *= 10ull;
+    else if (ctrl) step *= 100ull;
+    if (dir > 0) return (cur + step > f.maximum || cur + step < cur) ? f.maximum : cur + step;
+    return cur < f.minimum + step ? f.minimum : cur - step;
+}
+
+static unsigned char_pages() { return ccount ? (ccount + kCharPerPage - 1) / kCharPerPage : 1; }
+
+static void cheat_activate(int act, int dir)
+{
+    cheats_refresh();
+    if (act == A_CH_LOCK) {
+        cfg.trophy_lock = cfg.trophy_lock ? 0u : 1u;
+        d2_trophy_lock_set(cfg.trophy_lock ? 1 : 0);
+        save_config();
+        return;
+    }
+    if (act == A_CH_UNIT) {
+        if (csnap.party_count) cunit = (cunit + dir + (int)csnap.party_count) % (int)csnap.party_count;
+        d2_cheats_select_unit(cunit);
+        return;
+    }
+    if (act == A_CH_PAGE) {
+        chpage = (chpage + dir + (int)char_pages()) % (int)char_pages();
+        return;
+    }
+    if (!csnap_ok || !csnap.ready) return;   // edits need a loaded save
+    if (act >= A_CH_TOG0 && act < A_CH_TOG0 + 4) {
+        static const char* names[4] = {"hp_lock", "sp_lock", "one_hit", "free_shop"};
+        const int now[4] = {csnap.hp_lock, csnap.sp_lock, csnap.one_hit, csnap.free_shop};
+        d2_cheats_set_toggle(names[act - A_CH_TOG0], now[act - A_CH_TOG0] ? 0 : 1);
+    } else if (act == A_CH_EXP) {
+        unsigned cur = csnap.exp_multiplier ? csnap.exp_multiplier : 1u;
+        cur = dir > 0 ? (cur >= 1024u ? 1u : cur * 2u) : (cur <= 1u ? 1024u : cur / 2u);
+        d2_cheats_set_exp_multiplier(cur);
+    } else if (act == A_CH_OFF) {
+        d2_cheats_disable_all();
+    } else if (act == A_CH_PRESET) {
+        d2_cheats_preset(dir > 0 ? 0 : 1, 0);   // click: load the default preset; right click: save the current ones as default
+    } else if (act >= A_CH_GEN0 && act < A_CH_GEN0 + 9) {
+        const unsigned i = (unsigned)(act - A_CH_GEN0);
+        if (i < gcount) d2_cheats_set_general(gfields[i].key, edit_value(csnap.general[i], gfields[i], dir), D2_CHEATS_ANY_GENERATION);
+    } else if (act >= A_CH_CHR0 && act < A_CH_CHR0 + kCharPerPage) {
+        const unsigned i = (unsigned)chpage * kCharPerPage + (unsigned)(act - A_CH_CHR0);
+        if (i < ccount && csnap.unit == cunit)
+            d2_cheats_set_character((unsigned)cunit, cfields[i].key, edit_value(csnap.character[i], cfields[i], dir), csnap.generation);
+    }
+}
+
+struct Cell { int act; std::string label, value; bool enabled; };
+
+static int layout_cells(Cell* cells)
+{
+    int n = 0;
+    auto add = [&](int act, const std::string& label, const std::string& value, bool enabled) {
+        if (n < kCells) cells[n++] = Cell{act, label, value, enabled};
+    };
+    const bool ok = csnap_ok && csnap.ready;
+    auto onoff = [&](int v) { return std::string("« ") + (v ? L("Ligado", "On") : L("Desligado", "Off")) + " »"; };
+    if (page == 4) {
+        add(A_CH_TOG0 + 0, L("HP infinito", "Infinite HP"), ok ? onoff(csnap.hp_lock) : "-", ok);
+        add(A_CH_TOG0 + 1, L("SP infinito", "Infinite SP"), ok ? onoff(csnap.sp_lock) : "-", ok);
+        add(A_CH_TOG0 + 2, L("Dano máximo", "Max damage"), ok ? onoff(csnap.one_hit) : "-", ok);
+        add(A_CH_TOG0 + 3, L("Loja grátis", "Free shop"), ok ? onoff(csnap.free_shop) : "-", ok);
+        add(A_CH_EXP, L("Multiplicador de EXP", "EXP multiplier"), ok ? "« x" + std::to_string(csnap.exp_multiplier ? csnap.exp_multiplier : 1u) + " »" : "-", ok);
+        for (unsigned i = 0; i < gcount && i < 9; i++)
+            add(A_CH_GEN0 + (int)i, tr_label(gfields[i].label), ok ? std::to_string(csnap.general[i]) : "-", ok);
+        add(A_CH_OFF, L("Desligar todos", "Turn all off"), "", ok);
+        add(A_CH_PRESET, L("Preset: carregar / salvar (dir.)", "Preset: load / save (right)"), "", ok);
+    } else {
+        std::string who = "-";
+        if (csnap_ok && csnap.party_count) {
+            if (cunit >= (int)csnap.party_count) cunit = 0;
+            who = std::string("« ") + csnap.party[cunit].name + "  Lv " + std::to_string(csnap.party[cunit].level) + " »";
+        }
+        add(A_CH_UNIT, L("Personagem", "Character"), who, csnap_ok && csnap.party_count > 0);
+        add(A_CH_PAGE, L("Campos", "Fields"), "« " + std::to_string(chpage + 1) + "/" + std::to_string(char_pages()) + " »", true);
+        const bool have = ok && csnap.unit == cunit;
+        for (int k = 0; k < kCharPerPage; k++) {
+            const unsigned i = (unsigned)chpage * kCharPerPage + (unsigned)k;
+            if (i >= ccount) break;
+            add(A_CH_CHR0 + k, tr_label(cfields[i].label), have ? std::to_string(csnap.character[i]) : "-", have);
+        }
+    }
+    return n;
+}
+
 static void activate(int act, int dir)
 {
     if (act >= A_KEY0 && act < A_KEY0 + kKeys) {
@@ -452,7 +594,15 @@ static void activate(int act, int dir)
     listening = -1;
     if (act != A_API) api_armed_until = 0;
     if (act != A_RESTART) restart_armed_until = 0;
-    if (act >= A_TAB0 && act < A_TAB0 + kTabs) { page = act - A_TAB0; cfg.menu_page = (unsigned)page; save_config(); panel_redraw(); return; }
+    if (act >= A_TAB0 && act < A_TAB0 + kTabs) {
+        page = act - A_TAB0;
+        cfg.menu_page = (unsigned)page;
+        if (page == 5) { cheats_refresh(); d2_cheats_select_unit(cunit); }
+        save_config();
+        panel_redraw();
+        return;
+    }
+    if (act >= A_CH_TOG0) { cheat_activate(act, dir); panel_redraw(); return; }
     switch (act) {
     case A_MODE: set_fullscreen(!cfg.fullscreen); break;
     case A_WINSIZE: {
@@ -665,6 +815,14 @@ static void layout_rows(Row* rows, std::string& hint)
         else if (cfg.hdr != 0 && d2_graphics_hdr_enabled() && !d2_graphics_hdr_display())
             hint = L("HDR ligado, mas o Windows está sem HDR neste monitor: a imagem fica igual ao SDR.",
                      "HDR is on, but Windows HDR is off for this monitor: the image stays SDR.");
+    } else if (page >= 4) {
+        cheats_refresh();
+        if (page == 4) rows[8] = Row{A_CH_LOCK, L("Bloquear troféus ao usar cheats", "Block trophies when cheating"), on_off[cfg.trophy_lock ? 1 : 0], true, false};
+        rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};
+        const std::string status = !csnap_ok ? std::string(L("Aguardando o jogo...", "Waiting for the game...")) :
+                                   !csnap.ready ? std::string(L("Abra um save para editar. ", "Open a save to edit. ")) + csnap.status : std::string(csnap.status);
+        hint = status + "\n" + L("Clique: + · botão direito: − · Shift ×10 · Ctrl ×100 · Shift+Ctrl: máx./mín. · roda do mouse também funciona.",
+                                 "Click: + · right click: − · Shift ×10 · Ctrl ×100 · Shift+Ctrl: max/min · the mouse wheel works too.");
     } else if (page == 2) {
         rows[8] = Row{A_KEYS_RESET, L("Restaurar teclas", "Restore keys"), "", true, true};
         rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};
@@ -690,7 +848,7 @@ static void paint(HDC dc, int W_, int H_)
     const double s = ui_scale;
     const COLORREF pink = rgb(255, 89, 166), gold = rgb(255, 214, 77), white = rgb(255, 255, 255), ink = rgb(8, 3, 24), soft = rgb(232, 219, 255);
     const int head_h = (int)(70 * s), tab_h = (int)(42 * s), rowh = (int)(44 * s), foot_h = H_ - head_h - tab_h - rowh * kRows;
-    HFONT fnt = make_font((int)(25 * s)), fsmall = make_font((int)(19 * s)), fbig = make_font((int)(40 * s)), ftab = make_font((int)(23 * s));
+    HFONT fnt = make_font((int)(25 * s)), fsmall = make_font((int)(19 * s)), fbig = make_font((int)(40 * s)), ftab = make_font((int)(20 * s));
     nhits = 0;
     auto add_hit = [&](int act, int x, int y, int w, int h) {
         if (nhits < kMaxHits) hits[nhits++] = Hit{act, RECT{x, y, x + w, y + h}};
@@ -712,7 +870,7 @@ static void paint(HDC dc, int W_, int H_)
     text_outline(dc, (W_ - text_width(dc, title)) / 2, (int)((head_h - 40 * s * 1.3) / 2), title, white, ink, (int)(2 * s) + 1);
 
     // tabs
-    const char* tab_names[kTabs] = {L("VÍDEO", "VIDEO"), L("FILTROS", "FILTERS"), L("CONTROLES", "CONTROLS"), L("SISTEMA", "SYSTEM")};
+    const char* tab_names[kTabs] = {L("VÍDEO", "VIDEO"), L("FILTROS", "FILTERS"), L("TECLAS", "KEYS"), L("SISTEMA", "SYSTEM"), "CHEATS", L("PERSON.", "CHARS")};
     const int gap = (int)(10 * s), tab_w = (W_ - (int)(48 * s) - (kTabs - 1) * gap) / kTabs;
     SelectObject(dc, ftab);
     for (int t = 0; t < kTabs; t++) {
@@ -750,8 +908,26 @@ static void paint(HDC dc, int W_, int H_)
             text_outline(dc, cx + col_w - (int)(16 * s) - text_width(dc, key), ty, key, gold, ink, (int)(1 * s) + 1);
         }
     }
+    if (page >= 4) {
+        Cell cells[kCells];
+        const int count = layout_cells(cells);
+        const int col_w = (W_ - (int)(60 * s)) / 2;
+        for (int i = 0; i < count; i++) {
+            const int col = i / 8, row = i % 8;
+            const int cx = (int)(22 * s) + col * (col_w + (int)(16 * s)), cy = rows_y + rowh * row;
+            add_hit(cells[i].act, cx, cy, col_w, rowh);
+            const bool hot = hover == cells[i].act && cells[i].enabled;
+            gradient(dc, cx, cy + (int)(3 * s), col_w, rowh - (int)(6 * s), hot ? rgb(255, 89, 166) : rgb(46, 23, 77), hot ? rgb(158, 31, 128) : rgb(26, 13, 51));
+            if (hot) fill(dc, cx, cy + (int)(3 * s), (int)(5 * s), rowh - (int)(6 * s), gold);
+            const int ty = cy + (int)(6 * s);
+            const COLORREF label_color = cells[i].enabled ? white : rgb(179, 168, 209);
+            text_outline(dc, cx + (int)(12 * s), ty, cells[i].label, label_color, ink, (int)(1 * s) + 1);
+            if (!cells[i].value.empty())
+                text_outline(dc, cx + col_w - (int)(12 * s) - text_width(dc, cells[i].value), ty, cells[i].value, cells[i].enabled ? gold : rgb(179, 168, 209), ink, (int)(1 * s) + 1);
+        }
+    }
     for (int i = 0; i < kRows; i++) {
-        if (page == 2 && i < 8) continue;
+        if ((page == 2 || page >= 4) && i < 8) continue;
         const Row& row = rows[i];
         const int ry = rows_y + rowh * i;
         if (row.act != A_NONE) add_hit(row.act, 0, ry, W_, rowh);
@@ -841,7 +1017,7 @@ static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         POINT p = {(short)LOWORD(l), (short)HIWORD(l)};
         ScreenToClient(h, &p);
         const int hit = hit_test(p.x, p.y);
-        if (hit != A_NONE && hit != A_CLOSE && hit != A_API && hit != A_RESTART && hit < A_KEY0 && !(hit >= A_TAB0 && hit < A_TAB0 + kTabs))
+        if (hit != A_NONE && hit != A_CLOSE && hit != A_API && hit != A_RESTART && (hit < A_KEY0 || hit >= A_CH_TOG0) && !(hit >= A_TAB0 && hit < A_TAB0 + kTabs))
             activate(hit, (short)HIWORD(w) > 0 ? -1 : 1);
         return 0;
     }
@@ -854,6 +1030,9 @@ static LRESULT CALLBACK panel_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             return 0;
         }
         if (w == VK_F1 || w == VK_ESCAPE) { close_panel(); return 0; }
+        return 0;
+    case WM_TIMER:
+        if (is_open && page >= 4) panel_redraw();   // keep the cheat values live (the engine publishes ~4 times a second)
         return 0;
     case WM_SETCURSOR:
         SetCursor(LoadCursor(nullptr, IDC_ARROW));
@@ -896,6 +1075,8 @@ static void open_panel()
     ShowWindow(panel, SW_SHOW);
     SetForegroundWindow(panel);
     SetFocus(panel);
+    SetTimer(panel, 7, 250, nullptr);
+    if (page == 5) { cheats_refresh(); d2_cheats_select_unit(cunit); }
     panel_redraw();
 }
 
@@ -905,7 +1086,7 @@ static void close_panel()
     is_open = false;
     listening = -1;
     api_armed_until = 0;
-    if (panel) ShowWindow(panel, SW_HIDE);
+    if (panel) { KillTimer(panel, 7); ShowWindow(panel, SW_HIDE); }
     if (game) SetForegroundWindow(game);
 }
 
