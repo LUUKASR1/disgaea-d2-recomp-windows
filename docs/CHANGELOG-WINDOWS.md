@@ -1,3 +1,7 @@
+# 1.0.43 — Prévia europeia + núcleo Android (prévia)
+
+- Android: o perfilador identifica os endereços fora do jogo (função da libc ou mapeamento) e quem os chama.
+
 # 1.0.42 — Prévia europeia + núcleo Android (prévia)
 
 - Android: o caminho rápido de acesso à memória do jogo (anunciado na 1.0.41, que não o continha por engano) agora é aplicado pela geração do núcleo, numa cópia do SDK.

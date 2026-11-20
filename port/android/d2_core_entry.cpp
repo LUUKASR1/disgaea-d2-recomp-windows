@@ -101,6 +101,7 @@ static constexpr int kProfSlots = 2, kProfRing = 16384;
 static std::atomic<int> g_prof_tid[kProfSlots];
 static std::atomic<unsigned> g_prof_n[kProfSlots];
 static std::atomic<unsigned long long> g_prof_pc[kProfSlots][kProfRing];
+static std::atomic<unsigned long long> g_prof_lr[kProfSlots][kProfRing];   // x30 at the sample: the caller of a leaf function
 
 static void prof_handler(int, siginfo_t*, void* ctx) {
     const int tid = (int)syscall(SYS_gettid);
@@ -108,12 +109,13 @@ static void prof_handler(int, siginfo_t*, void* ctx) {
         if (g_prof_tid[k].load(std::memory_order_relaxed) != tid) continue;
         const ucontext_t* uc = (const ucontext_t*)ctx;
 #if defined(__aarch64__)
-        const unsigned long long pc = uc->uc_mcontext.pc;
+        const unsigned long long pc = uc->uc_mcontext.pc, lr = uc->uc_mcontext.regs[30];
 #else
-        const unsigned long long pc = 0; (void)uc;
+        const unsigned long long pc = 0, lr = 0; (void)uc;
 #endif
         const unsigned i = g_prof_n[k].fetch_add(1, std::memory_order_relaxed);
         g_prof_pc[k][i % kProfRing].store(pc, std::memory_order_relaxed);
+        g_prof_lr[k][i % kProfRing].store(lr, std::memory_order_relaxed);
         return;
     }
 }
@@ -183,14 +185,53 @@ static void profiler_thread() {
             std::sort(top.rbegin(), top.rend());
             std::fprintf(stderr, "[profile] thread %d: %u samples (last %u kept), hottest 64-byte buckets (d2core offsets):\n",
                          tids[k], g_prof_n[k].load(), total);
+            // What a non-d2core address is: nearest exported symbol, or the mapping it lies in (/proc/self/maps).
+            auto describe = [&](unsigned long long pc, char* out, size_t n) {
+                Dl_info di{};
+                if (dladdr((void*)(uintptr_t)pc, &di) && di.dli_fname) {
+                    const unsigned long long fb = (unsigned long long)(uintptr_t)di.dli_fbase;
+                    if (di.dli_sname) { std::snprintf(out, n, "%s %s+0x%llx", std::strrchr(di.dli_fname, '/') ? std::strrchr(di.dli_fname, '/') + 1 : di.dli_fname, di.dli_sname, pc - (unsigned long long)(uintptr_t)di.dli_saddr); return; }
+                    std::snprintf(out, n, "%s+0x%llx", std::strrchr(di.dli_fname, '/') ? std::strrchr(di.dli_fname, '/') + 1 : di.dli_fname, pc - fb);
+                    return;
+                }
+                std::snprintf(out, n, "?");
+                if (FILE* m = std::fopen("/proc/self/maps", "r")) {
+                    char line[512];
+                    while (std::fgets(line, sizeof line, m)) {
+                        unsigned long long lo = 0, hi = 0; char perms[8] = {}; unsigned long long off = 0; char rest[400] = {};
+                        if (std::sscanf(line, "%llx-%llx %7s %llx %*s %*s %399[^\n]", &lo, &hi, perms, &off, rest) >= 4 && pc >= lo && pc < hi) {
+                            const char* name = rest; while (*name == ' ') name++;
+                            std::snprintf(out, n, "map[%llx-%llx %s %s]+0x%llx", lo, hi, perms, *name ? name : "anon", pc - lo);
+                            break;
+                        }
+                    }
+                    std::fclose(m);
+                }
+            };
+            int detailed = 0;
             for (size_t i = 0; i < top.size() && i < 60; i++) {
                 Dl_info di{};
                 dladdr((void*)(uintptr_t)top[i].second, &di);
-                if (di.dli_fbase == self.dli_fbase)
+                if (di.dli_fbase == self.dli_fbase) {
                     std::fprintf(stderr, "[profile]   %5.1f%%  d2core+0x%llx\n", 100.0 * top[i].first / total, top[i].second - base);
-                else
-                    std::fprintf(stderr, "[profile]   %5.1f%%  %s+0x%llx\n", 100.0 * top[i].first / total,
-                                 di.dli_fname ? di.dli_fname : "?", di.dli_fbase ? top[i].second - (unsigned long long)(uintptr_t)di.dli_fbase : top[i].second);
+                    continue;
+                }
+                char what[600];
+                describe(top[i].second, what, sizeof what);
+                std::fprintf(stderr, "[profile]   %5.1f%%  %s  (pc 0x%llx)\n", 100.0 * top[i].first / total, what, top[i].second);
+                if (detailed++ < 6) {   // who called it: the most common return addresses among this bucket's samples
+                    std::map<unsigned long long, unsigned> callers;
+                    for (unsigned j = 0; j < total; j++)
+                        if ((g_prof_pc[k][j].load() & ~63ull) == top[i].second) callers[g_prof_lr[k][j].load() & ~63ull]++;
+                    std::vector<std::pair<unsigned, unsigned long long>> c;
+                    for (auto& e : callers) c.push_back({e.second, e.first});
+                    std::sort(c.rbegin(), c.rend());
+                    for (size_t q = 0; q < c.size() && q < 4; q++) {
+                        Dl_info ci{}; dladdr((void*)(uintptr_t)c[q].second, &ci);
+                        if (ci.dli_fbase == self.dli_fbase) std::fprintf(stderr, "[profile]        called from d2core+0x%llx (%u samples)\n", c[q].second - base, c[q].first);
+                        else { char w2[300]; describe(c[q].second, w2, sizeof w2); std::fprintf(stderr, "[profile]        called from %s (%u samples)\n", w2, c[q].first); }
+                    }
+                }
             }
             g_prof_tid[k] = 0;
         }
