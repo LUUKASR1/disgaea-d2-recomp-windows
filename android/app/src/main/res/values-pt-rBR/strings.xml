@@ -125,4 +125,9 @@
     <string name="trophy_silver">Troféu de prata obtido!</string>
     <string name="trophy_gold">Troféu de ouro obtido!</string>
     <string name="trophy_platinum">Troféu de platina obtido!</string>
+    <string name="trophy_sample">Exemplo de troféu</string>
+    <string name="trophy_pick_button">Escolher TROPHY.TRP (ícones do jogo)</string>
+    <string name="trophy_icons_found">Ícones do jogo encontrados (%1$d troféus)</string>
+    <string name="trophy_icons_missing">TROPHY.TRP não encontrado na pasta do jogo. Use "Escolher TROPHY.TRP".</string>
+    <string name="trophy_icons_bad">Esse arquivo não é um TROPHY.TRP válido</string>
 </resources>

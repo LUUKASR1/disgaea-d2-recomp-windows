@@ -24,11 +24,18 @@ final class TrophyInfo {
     private boolean loaded;
 
     /** Looks for TROPHY.TRP under the game folder; false when there is none. */
-    boolean load(File gameRoot) {
+    /** Forget what was read (after the player picked a TROPHY.TRP by hand). */
+    void reset() { loaded = false; files.clear(); entries.clear(); trp = null; }
+
+    int count() { return entries.size(); }
+
+    /** gameRoot is searched at any depth; extra (a TROPHY.TRP the player imported) is the fallback. */
+    boolean load(File gameRoot, File extra) {
         if (loaded) return !files.isEmpty();
         loaded = true;
         try {
-            trp = find(new File(gameRoot, "PS3_GAME"), 0);
+            trp = find(gameRoot, 0);
+            if (trp == null && extra != null && extra.isFile()) trp = extra;
             if (trp == null) return false;
             try (RandomAccessFile f = new RandomAccessFile(trp, "r")) {
                 byte[] head = new byte[0x60];
@@ -92,7 +99,7 @@ final class TrophyInfo {
 
     private static File find(File dir, int depth) {
         File[] list = dir.listFiles();
-        if (list == null || depth > 4) return null;
+        if (list == null || depth > 6) return null;
         for (File c : list) if (c.isFile() && c.getName().equalsIgnoreCase("TROPHY.TRP")) return c;
         for (File c : list) if (c.isDirectory()) { File r = find(c, depth + 1); if (r != null) return r; }
         return null;

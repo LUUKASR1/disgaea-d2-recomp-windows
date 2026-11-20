@@ -33,7 +33,7 @@ import android.widget.TextView;
 
 /** Milestone 0: Vulkan surface + gamepad + ISO document picker + secondary display (Thor). */
 public final class MainActivity extends Activity implements DisplayManager.DisplayListener {
-    private static final int PICK_ISO = 1, PICK_CORE = 2, PICK_SAVE_TREE = 3, PICK_SAVE_ZIP = 4, EXPORT_SAVE = 5;
+    private static final int PICK_ISO = 1, PICK_CORE = 2, PICK_SAVE_TREE = 3, PICK_SAVE_ZIP = 4, EXPORT_SAVE = 5, PICK_TRP = 6;
     private static final String PREFS = "d2", KEY_ISO = "iso_uri";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -250,25 +250,33 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (trophyToast == null) return;
         TrophyInfo.Entry e = null;
         try {
-            if (trophyInfo.load(gameRoot())) e = trophyInfo.get(Integer.parseInt(id));
+            if (trophyInfo.load(gameRoot(), trpExtra())) e = trophyInfo.get(Integer.parseInt(id));
         } catch (NumberFormatException ignored) { }
         String sub = getString(blocked ? R.string.trophy_blocked_sub : R.string.trophy_unlocked_sub, id);
         String title = getString(blocked ? R.string.trophy_blocked_title : R.string.trophy_unlocked_title);
-        int color = 0;
+        String grade = "";
         android.graphics.Bitmap icon = null;
         if (e != null) {
             if (!e.name.isEmpty()) sub = e.name;
             icon = e.icon;
-            switch (e.grade) {
-                case "B": color = 0xFFCD7F32; if (!blocked) title = getString(R.string.trophy_bronze); break;
-                case "S": color = 0xFFC9D1D9; if (!blocked) title = getString(R.string.trophy_silver); break;
-                case "G": color = 0xFFFFC857; if (!blocked) title = getString(R.string.trophy_gold); break;
-                case "P": color = 0xFFBFE6FF; if (!blocked) title = getString(R.string.trophy_platinum); break;
-                default: break;
-            }
+            grade = e.grade;
+            if (!blocked) title = gradeTitle(grade, title);
         }
-        trophyToast.show(title, sub, blocked, icon, color);
+        trophyToast.show(title, sub, blocked, icon, grade);
     }
+
+    private String gradeTitle(String grade, String fallback) {
+        switch (grade) {
+            case "B": return getString(R.string.trophy_bronze);
+            case "S": return getString(R.string.trophy_silver);
+            case "G": return getString(R.string.trophy_gold);
+            case "P": return getString(R.string.trophy_platinum);
+            default: return fallback;
+        }
+    }
+
+    /** A TROPHY.TRP the player picked by hand (used when the game folder does not contain one). */
+    private File trpExtra() { return new File(getExternalFilesDir(null), "TROPHY.TRP"); }
 
     private int trophyCount() {
         File[] files = new File(getExternalFilesDir(null), "gamedata/trophies").listFiles((d, n) -> n.endsWith(".json"));
@@ -542,6 +550,20 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         super.onActivityResult(request, result, data);
         if (request == PICK_CORE && result == RESULT_OK && data != null && data.getData() != null) {
             importCore(data.getData());
+            return;
+        }
+        if (request == PICK_TRP && result == RESULT_OK && data != null && data.getData() != null) {
+            try (java.io.InputStream in = getContentResolver().openInputStream(data.getData());
+                 OutputStream out = new FileOutputStream(trpExtra())) {
+                byte[] buf = new byte[65536];
+                int n;
+                while (in != null && (n = in.read(buf)) > 0) out.write(buf, 0, n);
+                trophyInfo.reset();
+                toast(getString(trophyInfo.load(new File("/nonexistent"), trpExtra()) ? R.string.trophy_icons_found : R.string.trophy_icons_bad,
+                        trophyInfo.count()));
+            } catch (java.io.IOException | RuntimeException e) {
+                toast(getString(R.string.trophy_icons_bad, 0));
+            }
             return;
         }
         if (request == PICK_SAVE_TREE && result == RESULT_OK && data != null && data.getData() != null) {
@@ -1099,13 +1121,26 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final Button trophyTest = glassButton(getString(R.string.trophy_test_button), false, accent);
         trophyTest.setOnClickListener(v -> {
             if (menuDialog != null) menuDialog.dismiss();   // the menu would cover the banner
-            handler.postDelayed(() -> showTrophyBanner(false, "1"), 300);
-            handler.postDelayed(() -> showTrophyBanner(true, "2"), 900);
+            handler.postDelayed(() -> {
+                boolean have = trophyInfo.load(gameRoot(), trpExtra());
+                toast(have ? getString(R.string.trophy_icons_found, trophyInfo.count()) : getString(R.string.trophy_icons_missing));
+                trophyToast.show(getString(R.string.trophy_gold), getString(R.string.trophy_sample), false,
+                        have && trophyInfo.get(1) != null ? trophyInfo.get(1).icon : null, "G");
+                trophyToast.show(getString(R.string.trophy_platinum), getString(R.string.trophy_sample), false,
+                        have && trophyInfo.get(0) != null ? trophyInfo.get(0).icon : null, "P");
+                trophyToast.show(getString(R.string.trophy_blocked_title), getString(R.string.trophy_sample), true, null, "B");
+            }, 300);
         });
         addRow(content, trophyTest);
         final Button trophyReset = glassButton(getString(R.string.trophy_reset_button, trophyCount()), false, accent);
         trophyReset.setOnClickListener(v -> confirmTrophyReset(trophyReset));
         addRow(content, trophyReset);
+        final Button trophyIcons = glassButton(getString(R.string.trophy_pick_button), false, accent);
+        trophyIcons.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+            startActivityForResult(intent, PICK_TRP);
+        });
+        addRow(content, trophyIcons);
         TextView trophyNote = new TextView(this);
         trophyNote.setText(R.string.trophy_lock_note);
         trophyNote.setTextColor(0xFF4A4060);
