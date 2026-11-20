@@ -26,12 +26,19 @@ HOME = Path(os.environ.get('LOCALAPPDATA', Path.home())) / (
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 # European disc/update executable (BLES01939). Same code layout as the US 1.00 build; preview support.
 EU_ELF_SHA = '0257bc3ab36a63f55b0a8722fa54f7d5278a568941bdff7817934a891fcb0cbb'
+# Japanese disc/update executable (BLJS10206 1.30); experimental preview, contributed by DesertDoggy.
+JP_ELF_SHA = 'e30b3c7f83486a491f175be88642b778c0bcc3b2615272e7b44c072120026850'
 PROFILE_FILES = {'us140': ('port/build-windows-140/DisgaeaD2Recomp.exe', 'work/v140/EBOOT.elf'),
-                 'eu100': ('port/build-windows-eu/DisgaeaD2Recomp.exe', 'work/eu/EBOOT.elf')}
+                 'eu100': ('port/build-windows-eu/DisgaeaD2Recomp.exe', 'work/eu/EBOOT.elf'),
+                 'jp130': ('port/build-windows-130/DisgaeaD2Recomp.exe', 'work/v130/EBOOT.elf')}
+# Generated-code layout and executable version used to build the Android core for each profile.
+PROFILE_LAYOUT = {'us140': ('port-140-windows-generated', 'recomp-140', 'out-140', 'spu-140', '140'),
+                  'eu100': ('port-eu-windows-generated', 'recomp-eu', 'out-eu', 'spu-eu', '100'),
+                  'jp130': ('port-130-windows-generated', 'recomp-130', 'out-130', 'spu-130', '130')}
 
 
 def profile_name(config):
-    return 'eu100' if config.get('profile') == 'eu100' else 'us140'
+    return config.get('profile') if config.get('profile') in PROFILE_FILES else 'us140'
 
 
 def profile_files(config, repo):
@@ -563,6 +570,46 @@ class Backend:
                        standalone=self.standalone, profile='eu100'))
         self.notify('Prévia europeia pronta.')
 
+    def prepare_jp(self, folder, packages):
+        """Experimental: build the Japanese (BLJS10206 1.30) game from the user's disc folder and the three disc updates."""
+        game = self.check_game_files(Path(folder).resolve())
+        sfo = (game / 'PS3_GAME/PARAM.SFO').read_bytes()
+        if b'BLJS10206' not in sfo:
+            raise ValueError('A pasta selecionada não é Disgaea D2 japonês (BLJS10206).')
+        packages = [Path(package).resolve() for package in packages]
+        if len(packages) != 3 or any(p.suffix.lower() != '.pkg' or not p.is_file() or not p.stat().st_size for p in packages):
+            raise ValueError('Selecione as três atualizações japonesas (1.10, 1.20 e 1.30), todas obrigatórias.')
+        hdd = self.home / 'hdd0'
+        hdd.mkdir(parents=True, exist_ok=True)
+        command = [sys.executable, ROOT / 'payload/tools/import_owned_pkg.py', '--hdd', hdd]
+        for package in packages:
+            command += ['--pkg', package]
+        self.run(command, label='Importar as atualizações japonesas')
+        update = hdd / 'game/BLJS10206/USRDIR'
+        if not (update / 'EBOOT.BIN').is_file() or not (hdd / 'game/NPJB00300').is_dir():
+            raise RuntimeError('As atualizações japonesas não foram instaladas por completo. Confira se são 1.10, 1.20 e 1.30.')
+        inputs = self.home / 'entrada-local-jp'
+        inputs.mkdir(exist_ok=True)
+        binary = inputs / 'EBOOT.BIN'
+        shutil.copy2(update / 'EBOOT.BIN', binary)
+        elf = binary.with_suffix('.elf')
+        elf.unlink(missing_ok=True)
+        self.run([sys.executable, ROOT / 'payload/tools/prepare_owned_self.py', '--self', binary, '--elf', elf],
+                 timeout=180, label='Preparar o executável japonês 1.30')
+        if not elf.is_file() or digest(elf) != JP_ELF_SHA:
+            raise RuntimeError('Executável diferente da versão japonesa 1.30 suportada. Nenhuma build foi criada.')
+        env = self.compiler_environment()
+        repo = self.home / ('builds/jp-' + uuid.uuid4().hex)
+        self.notify('Prévia japonesa: preparando fontes e compilando. Pode demorar bastante.')
+        shutil.copytree(ROOT / 'payload', repo)
+        self.run([sys.executable, repo / 'tools/bootstrap_windows.py'], env, label='Preparar SDK Windows')
+        self.run([sys.executable, repo / 'tools/build_windows.py', '--profile', 'jp130', '--elf', elf,
+                  '--json-include', ROOT / 'vendor/include', '--jobs', '4'], env,
+                 label='Gerar e compilar jogo japonês (prévia)')
+        self.save(dict(workspace=str(repo), game_root=str(game), hdd0_root=str(hdd), iso_path=None, native_iso=False,
+                       standalone=self.standalone, profile='jp130'))
+        self.notify('Prévia japonesa pronta.')
+
     def prepare_android_core(self):
         """Preview: compile the recompiled game (already generated on this PC) for Android ARM64 with the NDK."""
         try:
@@ -570,9 +617,9 @@ class Backend:
         except (OSError, ValueError):
             raise RuntimeError('Prepare o jogo no Windows primeiro; o núcleo Android reaproveita essa preparação.')
         repo = Path(config['workspace'])
-        eu = profile_name(config) == 'eu100'
-        generated = repo / ('port-eu-windows-generated' if eu else 'port-140-windows-generated')
-        recomp, out, spu = generated / ('src/recomp-eu' if eu else 'src/recomp-140'), generated / ('out-eu' if eu else 'out-140'), generated / ('spu-eu' if eu else 'spu-140')
+        gen_dir, recomp_dir, out_dir, spu_dir, game_version = PROFILE_LAYOUT[profile_name(config)]
+        generated = repo / gen_dir
+        recomp, out, spu = generated / 'src' / recomp_dir, generated / out_dir, generated / spu_dir
         if not (recomp / 'ppu_recomp.h').is_file():
             raise RuntimeError('O código gerado do jogo não foi encontrado. Prepare o jogo novamente.')
         # The build workspace is a copy made when the game was prepared (it may predate the Android tools), so the
@@ -586,7 +633,7 @@ class Backend:
         self.notify('Núcleo Android: baixando o NDK (uma vez, ~750 MB) e compilando para ARM64. Pode demorar bastante.')
         self.run([sys.executable, ROOT / 'payload/tools/build_android_core.py', '--sdk', repo / 'ps3recomp',
                   '--work', self.home / 'android-work' / profile_name(config), '--recomp-dir', recomp,
-                  '--out-dir', out, '--spu-dir', spu, '--game-version', '100' if eu else '140',
+                  '--out-dir', out, '--spu-dir', spu, '--game-version', game_version,
                   '--json-include', ROOT / 'vendor/include', '--output', output], env,
                  label='Compilar núcleo Android (ARM64)')
         self.notify('Núcleo Android pronto: ' + str(output / 'libd2core.so'))
@@ -682,7 +729,7 @@ class Backend:
             raise ValueError('Perfil desconhecido.')
         source = self.home / ('build-atual-' + name + '.json')
         if not source.is_file():
-            raise RuntimeError('Nenhuma preparação salva para este perfil.' if name == 'eu100' else
+            raise RuntimeError('Nenhuma preparação salva para este perfil.' if name in ('eu100', 'jp130') else
                                'Nenhuma preparação americana salva. Selecione a ISO e a atualização USA 1.40.')
         config = json.loads(source.read_text(encoding='utf-8'))
         repo = Path(config['workspace'])

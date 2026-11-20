@@ -376,8 +376,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
 
     def play():
         auto_backup_saves()
-        if ready and config.get('profile') == 'eu100' and not packages and not firmware.get():
-            # European preview is already built from the game folder/ISO: just launch it.
+        if ready and config.get('profile') in ('eu100', 'jp130') and not packages and not firmware.get():
+            # European/Japanese previews are already built from the game folder: just launch them.
             try: save_settings(home, get_settings())
             except (OSError, ValueError) as error:
                 messagebox.showerror('Configurações', str(error)); return
@@ -430,6 +430,21 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         auto_backup_saves()
         def work():
             backend.prepare_eu(source, elf)
+            events.put(('eu_ready', ''))
+        task(work)
+
+    def prepare_japan():
+        messagebox.showinfo('Versão japonesa',
+            'Você vai escolher: 1) a pasta do disco japonês (BLJS10206, com PS3_GAME) e 2) as TRÊS atualizações do disco '
+            '(1.10, 1.20 e 1.30), todas obrigatórias. O launcher instala as atualizações e compila o jogo no seu PC.')
+        source = filedialog.askdirectory(title='Pasta do jogo japonês (BLJS10206) ou PS3_GAME')
+        if not source: return
+        pkgs = filedialog.askopenfilenames(title='As três atualizações japonesas (1.10, 1.20 e 1.30)',
+            filetypes=[('Pacote PKG', '*.pkg *.PKG'), ('Todos os arquivos', '*.*')])
+        if not pkgs: return
+        auto_backup_saves()
+        def work():
+            backend.prepare_jp(source, list(pkgs))
             events.put(('eu_ready', ''))
         task(work)
 
@@ -752,6 +767,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(europe, 'Preparar versão europeia', prepare_europe)
     button(europe, 'Usar perfil europeu', lambda: use_profile('eu100'))
     button(europe, 'Usar perfil americano', lambda: use_profile('us140'))
+    japan = card(page)
+    label(japan, 'VERSÃO JAPONESA (BLJS10206 1.30) — EXPERIMENTAL', 12, GOLD, True)
+    label(japan, 'Use a pasta do disco japonês e as três atualizações (1.10, 1.20 e 1.30), tudo dos seus próprios arquivos. A primeira preparação compila o jogo e pode demorar bastante. Os perfis ficam salvos separadamente. Suporte contribuído por DesertDoggy; a campanha completa ainda não foi validada.', 10, MUTED)
+    button(japan, 'Preparar versão japonesa', prepare_japan)
+    button(japan, 'Usar perfil japonês', lambda: use_profile('jp130'))
     button(page, 'Abrir pasta de saves', open_saves)
     button(page, 'Como usar meu save', save_help)
     button(page, 'Backups de saves', manage_saves)
@@ -833,9 +853,12 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             elif kind == 'eu_ready':
                 config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
                 ready = True
-                eu = config.get('profile') == 'eu100'
-                build_status.set('PRÉVIA EUROPEIA (BLES01939)' if eu else 'BUILD LOCAL DISPONÍVEL')
-                status.set('Perfil europeu ativo. Clique em Jogar.' if eu else 'Perfil americano ativo. Clique em Jogar.')
+                active = config.get('profile')
+                build_status.set('PRÉVIA EUROPEIA (BLES01939)' if active == 'eu100' else
+                                 'PRÉVIA JAPONESA (BLJS10206 1.30)' if active == 'jp130' else 'BUILD LOCAL DISPONÍVEL')
+                status.set('Perfil europeu ativo. Clique em Jogar.' if active == 'eu100' else
+                           'Perfil japonês ativo. Clique em Jogar.' if active == 'jp130' else
+                           'Perfil americano ativo. Clique em Jogar.')
             elif kind == 'prepared':
                 config = json.loads((home / 'build-atual.json').read_text(encoding='utf-8'))
                 folder.set(config.get('game_root', ''))
