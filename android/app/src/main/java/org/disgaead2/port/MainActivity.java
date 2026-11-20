@@ -53,8 +53,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     // ---- Language: automatic (device) or one chosen inside the app ----
     private static final String KEY_LANG = "lang";
-    private static final String[] LANGS = {"auto", "pt", "en", "ja", "es"};
-    private static final String[] LANG_NAMES = {null, "Português", "English", "日本語", "Español"};
+    private static final String[] LANGS = {"en", "pt", "ja", "es"};
+    private static final String[] LANG_NAMES = {"English", "Português", "日本語", "Español"};
 
     private static java.util.Locale localeFor(String lang) {
         switch (lang) {
@@ -67,7 +67,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     }
 
     @Override protected void attachBaseContext(android.content.Context base) {
-        java.util.Locale loc = localeFor(base.getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "auto"));
+        java.util.Locale loc = localeFor(base.getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "en"));
         if (loc != null) {
             android.content.res.Configuration cfg = new android.content.res.Configuration(base.getResources().getConfiguration());
             cfg.setLocale(loc);
@@ -80,13 +80,13 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private String appLang() { return getResources().getConfiguration().getLocales().get(0).getLanguage(); }
 
     private String langLabel() {
-        String cur = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "auto");
-        for (int i = 0; i < LANGS.length; i++) if (LANGS[i].equals(cur)) return getString(R.string.lang_label, LANG_NAMES[i] != null ? LANG_NAMES[i] : getString(R.string.lang_auto));
-        return getString(R.string.lang_label, getString(R.string.lang_auto));
+        String cur = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "en");
+        for (int i = 0; i < LANGS.length; i++) if (LANGS[i].equals(cur)) return getString(R.string.lang_label, LANG_NAMES[i]);
+        return getString(R.string.lang_label, LANG_NAMES[0]);
     }
 
     private void cycleLanguage() {
-        String cur = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "auto");
+        String cur = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LANG, "en");
         int i = 0;
         for (int k = 0; k < LANGS.length; k++) if (LANGS[k].equals(cur)) i = k;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LANG, LANGS[(i + 1) % LANGS.length]).apply();
@@ -206,6 +206,11 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout.LayoutParams row2Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         row2Lp.topMargin = dp(8);
         left.addView(row2, row2Lp);
+        Button langBtn = chunkyButton(langLabel(), 0xFFA27BFF, 0xFF6A3FD6, 15);   // language is chosen here, before entering the game
+        langBtn.setOnClickListener(v -> cycleLanguage());
+        LinearLayout.LayoutParams langLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+        langLp.topMargin = dp(8);
+        left.addView(langBtn, langLp);
         Button saves = chunkyButton(getString(R.string.saves_button), 0xFF5B9BFF, 0xFF2554C7, 15);
         saves.setOnClickListener(v -> showSaves());
         LinearLayout.LayoutParams savesLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
