@@ -284,6 +284,10 @@ void rsx_vulkan_backend_present(void) {
         D2LOG("[vulkan] surface recreated after %.1f s\n",
               std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
         window_force_resize = true;
+        // The frame that was being built, and every cached texture, are rebuilt from guest memory: a map that loaded while
+        // the app was in the background must not be drawn with textures cached before it.
+        tr::drop_frame();
+        tr::flush_textures(*g.renderer);
       }
     }
     uint32_t w = (uint32_t)ANativeWindow_getWidth(g.window), h = (uint32_t)ANativeWindow_getHeight(g.window);

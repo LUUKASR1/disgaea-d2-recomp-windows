@@ -1119,7 +1119,18 @@ void init(Renderer &r) {
   ready = true;
 }
 
-void drop_frame() { recs.clear(); verts.clear(); indices.clear(); fetch_jobs.clear(); frame_verts = 0; const_epoch++; }
+// A frame that is thrown away (the surface was lost, e.g. the app was minimised) must still advance the frame counter:
+// texture_for() trusts "already checked this frame" without re-reading guest memory, so after a dropped frame the game
+// could load a new map into the same addresses and keep getting the old textures. The vertex stream state restarts too.
+void drop_frame() {
+  recs.clear(); verts.clear(); indices.clear(); fetch_jobs.clear(); frame_verts = 0; const_epoch++;
+  frame_no++; stream.valid = false; stream.carry.clear();
+}
+// After the window was replaced (minimise / restore) every cached texture is rebuilt from guest memory on first use.
+void flush_textures(Renderer &r) {
+  for (auto &kv : tex_cache) if (kv.second.handle) r.destroyTexture(kv.second.handle);
+  tex_cache.clear();
+}
 
 void print_counters() {
   if (frames_timed)

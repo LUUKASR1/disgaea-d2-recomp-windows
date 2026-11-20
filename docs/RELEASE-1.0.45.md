@@ -2,6 +2,7 @@
 
 ## Novidades da 1.0.45
 
+- **Android: correção provável das texturas trocadas depois de minimizar o app.** Ao perder a superfície de vídeo, o quadro descartado não avançava o contador de quadros, e o cache de texturas confiava em texturas já "verificadas", então um mapa carregado em segundo plano podia ser desenhado com texturas antigas. Agora o quadro descartado avança o contador e, ao voltar para o app, o cache de texturas é refeito a partir da memória do jogo (um pequeno engasgo único ao voltar). Precisa do núcleo desta versão.
 - **Android: tela inicial refeita no estilo do launcher do Windows**: título, indicador de status (ISO), botão grande **JOGAR**, botões azuis **Escolher ISO** e **Configurações** (resolução, FPS, liberação antecipada e filtros), botões roxos para escolher o núcleo e compartilhar o log, e, à direita, um quadro de gameplay desfocado ao fundo com a logo "Disgaea D2 Android Port" por cima. Funciona com toque e com direcional/controle.
 - **Android: menu do jogo refeito, tematizado em "vidro"** (painel translúcido com desfoque no Android 12+), organizado em abas como no Windows: **Vídeo** (resolução, contador de FPS, liberação antecipada), **Filtros** (nitidez, scanlines, máscara CRT, vinheta, cores vivas, FXAA, desligar todos) e **Sistema** (diagnóstico, sair do jogo). A lista rola e o botão "Continuar" fica sempre visível, então nenhuma opção fica escondida em telas baixas. Navegável por direcional/controle com destaque de foco.
 
