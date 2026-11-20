@@ -35,7 +35,7 @@
 
 - 🖥️ **Windows** (DirectX 12): launcher em vidro, perfis EUA/Europa/Japão, FSR 1, janela/tela cheia sem bordas, VSync, saves em slots, cheats e controles configuráveis.
 - 📱 **Android** (Vulkan): testado no AYN Odin 2 Portal, 30–60 fps, controles na tela, menu **L3 + R3**, saves em slots, cheats e editor de personagens.
-- 🏆 **Troféus no estilo PlayStation** com nome e ícone originais (Android e Windows), com trava opcional para quem usa cheats.
+- 🏆 **Troféus no estilo PlayStation** com nome e ícone originais (Android; Windows na 1.0.53), com trava opcional para quem usa cheats.
 - 🌍 Launcher em **Português/English**; app Android em **English, Português, 日本語 e Español**.
 
 ### 🎮 Compatibilidade / Compatibility
@@ -70,7 +70,7 @@
 </td></tr>
 </table>
 
-Saves e configurações do Windows ficam em `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` (não apague para atualizar). Detalhes: [guia do launcher](docs/LAUNCHER-WINDOWS.md) · [controles](docs/CONTROLS.md) · [gráficos](docs/GRAPHICS.md) · [versão japonesa](docs/JAPANESE.md).
+Saves e configurações do Windows ficam em `%LOCALAPPDATA%\DisgaeaD2Recomp-Graphics-Preview` (não apague para atualizar). Detalhes: [guia do launcher](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/blob/eu-preview/docs/LAUNCHER-WINDOWS.md) · [controles](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/blob/eu-preview/docs/CONTROLS.md) · [gráficos](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/blob/eu-preview/docs/GRAPHICS.md) · [versão japonesa](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/blob/eu-preview/docs/JAPANESE.md).
 
 ### 🖼️ Galeria / Gallery
 
@@ -104,8 +104,8 @@ Saves e configurações do Windows ficam em `%LOCALAPPDATA%\DisgaeaD2Recomp-Grap
 | Gráficos | DirectX 12, FSR 1, resolução interna/saída | Vulkan, resolução interna, filtros (CRT, FXAA…) |
 | Controles | Teclado, controle, guia de comandos | Controles na tela + controle físico |
 | Saves | Slots, backup automático | Slots, importar saves do PC, backup automático |
-| Cheats | Janela **F1** com troféu e personagens | Menu **L3 + R3**, editor de personagens |
-| Troféus | Aviso PlayStation, trava opcional | Aviso PlayStation, resetar e trava |
+| Cheats | Janela **F1** com personagens e troféus (1.0.53) | Menu **L3 + R3**, editor de personagens |
+| Troféus | Aviso PlayStation e trava opcional (1.0.53) | Aviso PlayStation, resetar e trava |
 | Idiomas | Português · English | English · Português · 日本語 · Español |
 
 ### 🤝 Como ajudar
@@ -114,7 +114,7 @@ Abra uma [issue](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/issues) c
 
 ### ℹ️ Sobre
 
-Nasceu da paixão por Disgaea, em especial **Disgaea D2**, e é uma aventura de recompilação feita com ajuda de IA (direção e testes humanos). Parte do projeto original de [Sean13128](https://github.com/Sean13128/disgaea-d2-recomp) e do [ps3recomp](https://github.com/sp00nznet/ps3recomp); o suporte japonês foi contribuído por DesertDoggy. Créditos completos em [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md) · [LICENSE](LICENSE) · [histórico de testes](docs/STATUS-WINDOWS.md).
+Nasceu da paixão por Disgaea, em especial **Disgaea D2**, e é uma aventura de recompilação feita com ajuda de IA (direção e testes humanos). Parte do projeto original de [Sean13128](https://github.com/Sean13128/disgaea-d2-recomp) e do [ps3recomp](https://github.com/sp00nznet/ps3recomp); o suporte japonês foi contribuído por DesertDoggy. Créditos completos em [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md) · [LICENSE](LICENSE) · [histórico de testes](https://github.com/LUUKASR1/disgaea-d2-recomp-windows/blob/eu-preview/docs/STATUS-WINDOWS.md).
 
 ---
 
