@@ -1,6 +1,6 @@
 # 1.0.45 — Prévia europeia + núcleo Android (prévia)
 
-- Android: menu do jogo refeito em estilo "vidro" (translúcido, com desfoque no Android 12+), com abas **Vídeo / Filtros / Sistema**, rolagem e botão Continuar sempre visível.
+- Android: menu do jogo refeito em estilo "vidro" (translúcido, com desfoque no Android 12+), com abas **Vídeo / Filtros / Sistema**, rolagem e botão Continuar sempre visível. Tela inicial refeita no estilo do launcher do Windows (JOGAR, Escolher ISO, Configurações).
 
 # 1.0.44 — Prévia europeia + núcleo Android (prévia)
 

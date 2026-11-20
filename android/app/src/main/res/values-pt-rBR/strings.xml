@@ -40,4 +40,8 @@
     <string name="level_high">Forte</string>
     <string name="tab_video">Vídeo</string>
     <string name="tab_system">Sistema</string>
+    <string name="home_subtitle">Versão Android (prévia)</string>
+    <string name="home_play">JOGAR DISGAEA D2</string>
+    <string name="home_settings">Configurações</string>
+    <string name="home_footer">Você traz o seu próprio jogo. Nenhum arquivo do jogo é distribuído. v%1$s</string>
 </resources>

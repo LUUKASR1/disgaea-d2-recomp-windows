@@ -40,4 +40,8 @@
     <string name="level_high">Strong</string>
     <string name="tab_video">Video</string>
     <string name="tab_system">System</string>
+    <string name="home_subtitle">Android version (preview)</string>
+    <string name="home_play">PLAY DISGAEA D2</string>
+    <string name="home_settings">Settings</string>
+    <string name="home_footer">Bring your own game. No game files are distributed. v%1$s</string>
 </resources>

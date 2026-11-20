@@ -68,82 +68,114 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             if (w > 0 && h > 0) { viewW = w; viewH = h; applyBufferSize(); }
         });
 
+        // Home screen, laid out like the Windows launcher: title, status pill, a big red PLAY button, blue secondary
+        // buttons and purple utility buttons, with original artwork on the right (no game art or logos).
+        final int ink = 0xFF2A2140;
         LinearLayout panel = new LinearLayout(this);
         panelView = panel;
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(24, 16, 24, 16);
+        panel.setOrientation(LinearLayout.HORIZONTAL);
+        panel.setBackground(new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{0xFFFFFBF0, 0xFFF3ECFF}));
         info = new TextView(this);
-        info.setTextColor(Color.WHITE);
+        info.setTextColor(0xFF6B6285);
+        info.setTextSize(12);
         iso = new TextView(this);
-        iso.setTextColor(Color.WHITE);
-        Button choose = new Button(this);
-        choose.setText(R.string.choose_iso);
+        iso.setTextColor(0xFFB45F00);
+        iso.setTextSize(16);
+        iso.setTypeface(null, android.graphics.Typeface.BOLD);
+        iso.setSingleLine(false);
+        iso.setPadding(dp(18), dp(10), dp(18), dp(10));
+        iso.setBackground(glass(0xFFFFFFFF, 0xFF2A2140, 22));
+        coreInfo = new TextView(this);
+        coreInfo.setTextColor(0xFF4A4263);
+        coreInfo.setTextSize(13);
+        logView = new TextView(this);
+        logView.setTextColor(0xFF6B6285);
+        logView.setTextSize(10);
+        logView.setTypeface(android.graphics.Typeface.MONOSPACE);
+
+        TextView title = new TextView(this);
+        title.setText("DISGAEA D2");
+        title.setTextColor(ink);
+        title.setTextSize(40);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        TextView subtitle = new TextView(this);
+        subtitle.setText(R.string.home_subtitle);
+        subtitle.setTextColor(0xFFD2342F);
+        subtitle.setTextSize(18);
+        subtitle.setTypeface(null, android.graphics.Typeface.BOLD);
+
+        Button play = chunkyButton(getString(R.string.home_play), 0xFFFF5E73, 0xFFD12A3F, 26);
+        play.setOnClickListener(v -> startCore());
+        Button choose = chunkyButton(getString(R.string.choose_iso), 0xFF5B9BFF, 0xFF2554C7, 18);
         choose.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             startActivityForResult(intent, PICK_ISO);
         });
-        coreInfo = new TextView(this);
-        coreInfo.setTextColor(Color.WHITE);
-        logView = new TextView(this);
-        logView.setTextColor(Color.LTGRAY);
-        logView.setTextSize(10);
-        logView.setTypeface(android.graphics.Typeface.MONOSPACE);
-        Button chooseCore = new Button(this);
-        chooseCore.setText(R.string.choose_core);
+        Button settings = chunkyButton(getString(R.string.home_settings), 0xFF5B9BFF, 0xFF2554C7, 18);
+        settings.setOnClickListener(v -> showGameMenu(false));
+        Button chooseCore = chunkyButton(getString(R.string.choose_core), 0xFFA27BFF, 0xFF6A3FD6, 16);
         chooseCore.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
             startActivityForResult(intent, PICK_CORE);
         });
-        Button start = new Button(this);
-        start.setText(R.string.start_core);
-        start.setOnClickListener(v -> startCore());
-        Button share = new Button(this);
-        share.setText(R.string.share_log);
+        Button share = chunkyButton(getString(R.string.share_log), 0xFFA27BFF, 0xFF6A3FD6, 16);
         share.setOnClickListener(v -> {
             Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, logTail(120, 200));
             startActivity(Intent.createChooser(send, getString(R.string.share_log)));
         });
-        Button resolution = new Button(this);
-        Button fps = new Button(this);
-        resolution.setText(resolutionLabel());
-        resolution.setOnClickListener(v -> {
-            int next = 0;
-            for (int i = 0; i < SCALES.length; i++) if (SCALES[i] == scalePct()) next = (i + 1) % SCALES.length;
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_SCALE, SCALES[next]).apply();
-            resolution.setText(resolutionLabel());
-            applyBufferSize();
-        });
-        fps.setText(fpsLabel());
-        fps.setOnClickListener(v -> {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FPS, !showFps()).apply();
-            fps.setText(fpsLabel());
-        });
-        Button early = new Button(this);
-        early.setText(earlyLabel());
-        early.setOnClickListener(v -> {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_EARLY, !earlyFlip()).apply();
-            early.setText(earlyLabel());
-        });
-        LinearLayout options = new LinearLayout(this);
-        options.setOrientation(LinearLayout.HORIZONTAL);
-        options.addView(resolution);
-        options.addView(fps);
-        options.addView(early);
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        buttons.addView(chooseCore);
-        buttons.addView(start);
-        buttons.addView(share);
-        panel.addView(info);
-        panel.addView(iso);
-        panel.addView(coreInfo);
-        panel.addView(buttons);
-        panel.addView(options);
-        panel.addView(logView);
-        panel.addView(choose);
-        root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START));
+
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.setPadding(dp(36), dp(28), dp(24), dp(20));
+        left.addView(title);
+        left.addView(subtitle);
+        LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        pillLp.topMargin = dp(18);
+        left.addView(iso, pillLp);
+        LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(84));
+        playLp.topMargin = dp(14);
+        left.addView(play, playLp);
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(64), 1f);
+        half.rightMargin = dp(10);
+        row1.addView(choose, half);
+        row1.addView(settings, new LinearLayout.LayoutParams(0, dp(64), 1f));
+        LinearLayout.LayoutParams row1Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        row1Lp.topMargin = dp(10);
+        left.addView(row1, row1Lp);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams half2 = new LinearLayout.LayoutParams(0, dp(52), 1f);
+        half2.rightMargin = dp(10);
+        row2.addView(chooseCore, half2);
+        row2.addView(share, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        LinearLayout.LayoutParams row2Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        row2Lp.topMargin = dp(8);
+        left.addView(row2, row2Lp);
+        LinearLayout.LayoutParams coreLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        coreLp.topMargin = dp(16);
+        left.addView(coreInfo, coreLp);
+        left.addView(logView);
+        TextView footer = new TextView(this);
+        String version = "";
+        try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
+        footer.setText(getString(R.string.home_footer, version));
+        footer.setTextColor(0xFF6B6285);
+        footer.setTextSize(12);
+        LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        footerLp.topMargin = dp(12);
+        left.addView(info);
+        left.addView(footer, footerLp);
+        android.widget.ScrollView leftScroll = new android.widget.ScrollView(this);
+        leftScroll.setFillViewport(true);
+        leftScroll.addView(left);
+        panel.addView(leftScroll, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 5f));
+        panel.addView(new ArtView(this), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 6f));
+        root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
         showIso(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_ISO, null));
         showCore();
@@ -406,6 +438,84 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     }
 
     // ---- Game menu: dark "glass" panel with tabs (Video / Filters / System), like the Windows panel ----
+    // Chunky "game" button: dark outline, glossy top, and a darker slab underneath that the button sinks into when pressed.
+    private Button chunkyButton(String text, int top, int bottom, float textSp) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextColor(Color.WHITE);
+        b.setTextSize(textSp);
+        b.setTypeface(null, android.graphics.Typeface.BOLD);
+        b.setShadowLayer(dp(2), 0, dp(1.5f), 0xFF1A1030);
+        b.setPadding(dp(12), dp(4), dp(12), dp(10));
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setStateListAnimator(null);
+        b.setBackground(new android.graphics.drawable.StateListDrawable() {{
+            addState(new int[]{android.R.attr.state_pressed}, chunkyLayers(top, bottom, true, false));
+            addState(new int[]{android.R.attr.state_focused}, chunkyLayers(top, bottom, false, true));
+            addState(new int[]{}, chunkyLayers(top, bottom, false, false));
+        }});
+        return b;
+    }
+
+    private android.graphics.drawable.Drawable chunkyLayers(int top, int bottom, boolean pressed, boolean focused) {
+        android.graphics.drawable.GradientDrawable slab = new android.graphics.drawable.GradientDrawable();
+        slab.setColor(0xFF1A1030);
+        slab.setCornerRadius(dp(18));
+        android.graphics.drawable.GradientDrawable face = new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, new int[]{top, bottom});
+        face.setCornerRadius(dp(18));
+        face.setStroke(dp(focused ? 4 : 3), focused ? 0xFFFFFFFF : 0xFF2A2140);
+        android.graphics.drawable.GradientDrawable gloss = new android.graphics.drawable.GradientDrawable();
+        gloss.setColor(0x33FFFFFF);
+        gloss.setCornerRadius(dp(10));
+        android.graphics.drawable.LayerDrawable layers = new android.graphics.drawable.LayerDrawable(
+                new android.graphics.drawable.Drawable[]{slab, face, gloss});
+        int lift = pressed ? dp(1) : dp(5);
+        layers.setLayerInset(0, 0, dp(5), 0, 0);
+        layers.setLayerInset(1, 0, pressed ? dp(4) : 0, 0, lift);
+        layers.setLayerInset(2, dp(12), (pressed ? dp(4) : 0) + dp(6), dp(12), lift + dp(34));
+        return layers;
+    }
+
+    // Original artwork for the home screen: a purple-to-crimson field with a curved left edge, soft bokeh and sparkles.
+    private static final class ArtView extends View {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Path edge = new android.graphics.Path();
+        ArtView(android.content.Context c) { super(c); setFocusable(false); }
+        @Override protected void onDraw(android.graphics.Canvas canvas) {
+            int w = getWidth(), h = getHeight();
+            edge.reset();
+            edge.moveTo(w * 0.16f, 0);
+            edge.lineTo(w, 0);
+            edge.lineTo(w, h);
+            edge.lineTo(w * 0.04f, h);
+            edge.cubicTo(w * 0.30f, h * 0.72f, -w * 0.06f, h * 0.30f, w * 0.16f, 0);
+            canvas.save();
+            canvas.clipPath(edge);
+            paint.setShader(new android.graphics.LinearGradient(0, 0, w, h, 0xFF2A1250, 0xFF9B2350, android.graphics.Shader.TileMode.CLAMP));
+            canvas.drawRect(0, 0, w, h, paint);
+            paint.setShader(null);
+            int[] fills = {0x33FFC9E6, 0x2AB8A0FF, 0x26FFD98A, 0x30FF7AA8};
+            float[][] orbs = {{0.30f, 0.22f, 0.30f}, {0.78f, 0.30f, 0.38f}, {0.55f, 0.78f, 0.44f}, {0.92f, 0.86f, 0.26f}, {0.42f, 0.50f, 0.16f}};
+            for (int i = 0; i < orbs.length; i++) {
+                paint.setColor(fills[i % fills.length]);
+                canvas.drawCircle(w * orbs[i][0], h * orbs[i][1], Math.min(w, h) * orbs[i][2], paint);
+            }
+            paint.setColor(0xCCFFFFFF);
+            float[][] stars = {{0.34f, 0.12f, 14}, {0.70f, 0.10f, 20}, {0.88f, 0.55f, 16}, {0.52f, 0.34f, 10}, {0.30f, 0.88f, 16}, {0.74f, 0.70f, 12}};
+            for (float[] st : stars) {
+                float cx = w * st[0], cy = h * st[1], r = st[2] * getResources().getDisplayMetrics().density;
+                android.graphics.Path star = new android.graphics.Path();
+                star.moveTo(cx, cy - r); star.quadTo(cx, cy, cx + r, cy); star.quadTo(cx, cy, cx, cy + r);
+                star.quadTo(cx, cy, cx - r, cy); star.quadTo(cx, cy, cx, cy - r);
+                canvas.drawPath(star, paint);
+            }
+            canvas.restore();
+        }
+    }
+
     private int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
     private android.graphics.drawable.Drawable glass(int fill, int stroke, float radiusDp) {
@@ -440,7 +550,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         column.addView(b, lp);
     }
 
-    private void showGameMenu() {
+    private void showGameMenu(boolean inGame) {
         if (gameMenu != null && gameMenu.isShowing()) return;
         releaseGameInput();   // key releases now go to the dialog, so nothing may stay held in the game
         final int accent = 0xFF7A1B3D;
@@ -449,7 +559,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         root.setPadding(dp(20), dp(16), dp(20), dp(16));
         root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
         TextView title = new TextView(this);
-        title.setText(R.string.menu_title);
+        title.setText(inGame ? R.string.menu_title : R.string.home_settings);
         title.setTextColor(Color.WHITE);
         title.setTextSize(22);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -471,14 +581,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
         gameMenu = dialog;
         final int[] tabNames = {R.string.tab_video, R.string.menu_filters, R.string.tab_system};
-        final Button[] tabButtons = new Button[3];
+        final int tabCount = inGame ? 3 : 2;
+        final Button[] tabButtons = new Button[tabCount];
         final int[] current = {0};
         final Runnable[] fill = new Runnable[1];
 
         fill[0] = () -> {
             content.removeAllViews();
-            for (int i = 0; i < 3; i++) tabButtons[i].setBackground(null);
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < tabCount; i++) tabButtons[i].setBackground(null);
+            for (int i = 0; i < tabCount; i++) {
                 Button t = tabButtons[i];
                 android.graphics.drawable.StateListDrawable st = new android.graphics.drawable.StateListDrawable();
                 st.addState(new int[]{android.R.attr.state_focused}, glass(0x55FFFFFF, 0xFFFFFFFF, 12));
@@ -548,14 +659,14 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 addRow(content, diagnostics); addRow(content, quit);
             }
         };
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < tabCount; i++) {
             final int index = i;
             Button t = glassButton(getString(tabNames[i]), false, accent);
             t.setOnClickListener(v -> { current[0] = index; fill[0].run(); });
             tabButtons[i] = t;
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
             lp.topMargin = dp(10);
-            lp.rightMargin = i < 2 ? dp(8) : 0;
+            lp.rightMargin = i < tabCount - 1 ? dp(8) : 0;
             tabs.addView(t, lp);
         }
         fill[0].run();
@@ -607,7 +718,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     public void onBackPressed() {
         if (coreStarted) {
             if (panelView.getVisibility() == View.VISIBLE) { panelView.setVisibility(View.GONE); return; }
-            showGameMenu();
+            showGameMenu(true);
             return;
         }
         super.onBackPressed();
@@ -620,7 +731,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (event.getAction() == KeyEvent.ACTION_DOWN) buttons |= bit;
         else if (event.getAction() == KeyEvent.ACTION_UP) buttons &= ~bit;
         if (coreStarted && (buttons & (16384 | 32768)) == (16384 | 32768)) {   // L3 + R3: open the game menu
-            showGameMenu();
+            showGameMenu(true);
             return true;
         }
         NativeBridge.setInput(buttons | hat, lx, ly, rx, ry);
