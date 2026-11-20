@@ -121,4 +121,8 @@
     <string name="trophy_reset_do">Reset</string>
     <string name="trophy_reset_done">Trophies reset.</string>
     <string name="trophy_reset_done_running">Trophies reset. Closing the game; open it again.</string>
+    <string name="trophy_bronze">Bronze trophy earned!</string>
+    <string name="trophy_silver">Silver trophy earned!</string>
+    <string name="trophy_gold">Gold trophy earned!</string>
+    <string name="trophy_platinum">Platinum trophy earned!</string>
 </resources>

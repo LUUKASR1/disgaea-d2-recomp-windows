@@ -15,14 +15,17 @@ final class TrophyToast extends View {
     private static final long IN_MS = 350, HOLD_MS = 3800, OUT_MS = 350;
 
     private static final class Item {
-        final String title, subtitle; final boolean blocked;
-        Item(String title, String subtitle, boolean blocked) { this.title = title; this.subtitle = subtitle; this.blocked = blocked; }
+        final String title, subtitle; final boolean blocked; final android.graphics.Bitmap bitmap; final int color;
+        Item(String title, String subtitle, boolean blocked, android.graphics.Bitmap bitmap, int color) {
+            this.title = title; this.subtitle = subtitle; this.blocked = blocked; this.bitmap = bitmap; this.color = color;
+        }
     }
 
     private final ArrayDeque<Item> queue = new ArrayDeque<>();
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), stroke = new Paint(Paint.ANTI_ALIAS_FLAG),
             text = new Paint(Paint.ANTI_ALIAS_FLAG), icon = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF box = new RectF();
+    private final RectF box = new RectF(), box2 = new RectF();
+    private final Paint icon2 = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Path path = new Path();
     private Item current;
     private float slide;   // 0 = hidden above the screen, 1 = fully shown
@@ -43,8 +46,11 @@ final class TrophyToast extends View {
     private float dp(float v) { return v * getResources().getDisplayMetrics().density; }
 
     /** Queues a banner; several trophies in a row are shown one after the other. */
-    void show(String title, String subtitle, boolean blocked) {
-        if (queue.size() < 6) queue.add(new Item(title, subtitle, blocked));
+    void show(String title, String subtitle, boolean blocked) { show(title, subtitle, blocked, null, 0); }
+
+    /** bitmap = the game's own trophy icon (null = drawn cup); color = grade colour (0 = default). */
+    void show(String title, String subtitle, boolean blocked, android.graphics.Bitmap bitmap, int color) {
+        if (queue.size() < 6) queue.add(new Item(title, subtitle, blocked, bitmap, color));
         if (current == null) next();
     }
 
@@ -85,17 +91,29 @@ final class TrophyToast extends View {
         final float left = (getWidth() - w) / 2f;
         final float top = dp(14) - (1f - slide) * (h + dp(30));
         box.set(left, top, left + w, top + h);
-        final int accent = item.blocked ? 0xFFE5604F : 0xFFFFC857;
+        final int accent = item.blocked ? 0xFFE5604F : (item.color != 0 ? item.color : 0xFFFFC857);
         fill.setColor(0xE60E0A1C);
         canvas.drawRoundRect(box, dp(14), dp(14), fill);
         stroke.setColor((accent & 0x00FFFFFF) | 0x99000000);
         canvas.drawRoundRect(box, dp(14), dp(14), stroke);
 
         // cup icon in a round badge
-        final float cx = left + dp(14) + dp(21), cy = top + h / 2f, r = dp(21);
+        final float cx = left + dp(12) + dp(24), cy = top + h / 2f, r = dp(24);
         fill.setColor((accent & 0x00FFFFFF) | 0x33000000);
         canvas.drawCircle(cx, cy, r, fill);
-        drawCup(canvas, cx, cy, r * 0.62f, accent, item.blocked);
+        if (item.bitmap != null) {
+            final float half = dp(24);
+            box2.set(cx - half, cy - half, cx + half, cy + half);
+            canvas.drawBitmap(item.bitmap, null, box2, icon2);
+            if (item.blocked) {
+                icon.setColor(0xFFE5604F);
+                icon.setStyle(Paint.Style.STROKE);
+                icon.setStrokeWidth(dp(3));
+                canvas.drawLine(cx - half, cy + half, cx + half, cy - half, icon);
+            }
+        } else {
+            drawCup(canvas, cx, cy, r * 0.62f, accent, item.blocked);
+        }
 
         final float tx = cx + r + dp(12);
         text.setColor(0xFFFFFFFF);

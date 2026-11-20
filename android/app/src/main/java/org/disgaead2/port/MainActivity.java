@@ -244,10 +244,30 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         }
     }
 
+    private final TrophyInfo trophyInfo = new TrophyInfo();
+
     private void showTrophyBanner(boolean blocked, String id) {
         if (trophyToast == null) return;
-        trophyToast.show(getString(blocked ? R.string.trophy_blocked_title : R.string.trophy_unlocked_title),
-                getString(blocked ? R.string.trophy_blocked_sub : R.string.trophy_unlocked_sub, id), blocked);
+        TrophyInfo.Entry e = null;
+        try {
+            if (trophyInfo.load(gameRoot())) e = trophyInfo.get(Integer.parseInt(id));
+        } catch (NumberFormatException ignored) { }
+        String sub = getString(blocked ? R.string.trophy_blocked_sub : R.string.trophy_unlocked_sub, id);
+        String title = getString(blocked ? R.string.trophy_blocked_title : R.string.trophy_unlocked_title);
+        int color = 0;
+        android.graphics.Bitmap icon = null;
+        if (e != null) {
+            if (!e.name.isEmpty()) sub = e.name;
+            icon = e.icon;
+            switch (e.grade) {
+                case "B": color = 0xFFCD7F32; if (!blocked) title = getString(R.string.trophy_bronze); break;
+                case "S": color = 0xFFC9D1D9; if (!blocked) title = getString(R.string.trophy_silver); break;
+                case "G": color = 0xFFFFC857; if (!blocked) title = getString(R.string.trophy_gold); break;
+                case "P": color = 0xFFBFE6FF; if (!blocked) title = getString(R.string.trophy_platinum); break;
+                default: break;
+            }
+        }
+        trophyToast.show(title, sub, blocked, icon, color);
     }
 
     private int trophyCount() {
@@ -265,12 +285,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     // Reset: with the game running the SDK keeps the trophies in memory and writes them back, so the game is closed through
     // the same quit gate (no save being written) right after the trophy files are deleted; the next start has none.
     private void confirmTrophyReset(final Button label) {
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(R.string.trophy_reset_title)
-                .setMessage(coreStarted ? R.string.trophy_reset_msg_running : R.string.trophy_reset_msg)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.trophy_reset_do, (d, w) -> doTrophyReset(label))
-                .show();
+        glassPrompt(getString(R.string.trophy_reset_title),
+                getString(coreStarted ? R.string.trophy_reset_msg_running : R.string.trophy_reset_msg), null,
+                getString(R.string.trophy_reset_do), () -> doTrophyReset(label));
     }
 
     private void doTrophyReset(final Button label) {
@@ -795,6 +812,52 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return true;
     }
 
+    /** Pop-up in the same glass style as the menu (translucent panel, rounded buttons, controller focus). */
+    private void glassPrompt(String title, String message, android.view.View input, String okLabel, Runnable onOk) {
+        final int accent = 0xFF7A1B3D;
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(22), dp(18), dp(22), dp(18));
+        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(20);
+        t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        root.addView(t);
+        if (message != null) {
+            TextView m = new TextView(this);
+            m.setText(message);
+            m.setTextColor(0xFFCFC6E6);
+            m.setTextSize(14);
+            m.setPadding(0, dp(10), 0, 0);
+            root.addView(m);
+        }
+        if (input != null) {
+            if (input instanceof android.widget.EditText) {
+                android.widget.EditText e = (android.widget.EditText) input;
+                e.setBackground(glass(0x33FFFFFF, 0x55FFFFFF, 12));
+                e.setPadding(dp(12), dp(10), dp(12), dp(10));
+                e.setHintTextColor(0xFF9C93B8);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = dp(10);
+            root.addView(input, lp);
+        }
+        final android.app.Dialog dialog = glassDialog(root);
+        final Button cancel = glassButton(getString(android.R.string.cancel), false, accent);
+        final Button ok = glassButton(okLabel, true, accent);
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        ok.setOnClickListener(v -> { dialog.dismiss(); onOk.run(); });
+        addRow(root, ok);
+        addRow(root, cancel);
+        dialog.show();
+        android.view.Window w = dialog.getWindow();
+        if (w != null) w.setLayout(Math.min(dp(440), getResources().getDisplayMetrics().widthPixels - dp(40)),
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT);
+        if (input != null) input.requestFocus(); else ok.requestFocus();
+    }
+
     private void toast(String text) { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show(); }
 
     private android.app.Dialog glassDialog(LinearLayout root) {
@@ -892,19 +955,16 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         final android.widget.EditText input = new android.widget.EditText(this);
         input.setSingleLine(true);
         input.setTextColor(Color.WHITE);
-        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle(R.string.saves_name_title).setView(input)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    try {
-                        final java.io.File[] made = {null};
-                        withSaveGate(() -> made[0] = SaveSlots.create(files, input.getText().toString()));
-                        toast(getString(made[0] == null ? R.string.saves_nothing : R.string.saves_saved));
-                    } catch (java.io.IOException | RuntimeException e) {
-                        toast(getString(R.string.saves_error, e.getMessage()));
-                    }
-                    refresh.run();
-                })
-                .setNegativeButton(android.R.string.cancel, null).show();
+        glassPrompt(getString(R.string.saves_name_title), null, input, getString(android.R.string.ok), () -> {
+            try {
+                final java.io.File[] made = {null};
+                withSaveGate(() -> made[0] = SaveSlots.create(files, input.getText().toString()));
+                toast(getString(made[0] == null ? R.string.saves_nothing : R.string.saves_saved));
+            } catch (java.io.IOException | RuntimeException e) {
+                toast(getString(R.string.saves_error, e.getMessage()));
+            }
+            refresh.run();
+        });
     }
 
     private void showSlotActions(File files, SaveSlots.Slot slot, Runnable refresh) {
@@ -1133,13 +1193,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         input.setSingleLine(true);
         input.setTextColor(Color.WHITE);
         input.setHint(field[2] + " - " + field[3]);
-        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle(field[1]).setView(input)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    try { cheatsResult(NativeBridge.cheatsSetGeneral(field[0], Long.parseLong(input.getText().toString().trim()))); }
-                    catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
-                })
-                .setNegativeButton(android.R.string.cancel, null).show();
+        glassPrompt(field[1], null, input, getString(android.R.string.ok), () -> {
+            try { cheatsResult(NativeBridge.cheatsSetGeneral(field[0], Long.parseLong(input.getText().toString().trim()))); }
+            catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
+        });
     }
 
     // ---- Character editor (party list -> one unit's values; edits go through the engine's generation check) ----
@@ -1261,13 +1318,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         input.setSingleLine(true);
         input.setTextColor(Color.WHITE);
         input.setHint(field[2] + " - " + field[3]);
-        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                .setTitle(field[1]).setView(input)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    try { cheatsResult(NativeBridge.cheatsSetCharacter(unit, field[0], Long.parseLong(input.getText().toString().trim()), generation)); }
-                    catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
-                })
-                .setNegativeButton(android.R.string.cancel, null).show();
+        glassPrompt(field[1], null, input, getString(android.R.string.ok), () -> {
+            try { cheatsResult(NativeBridge.cheatsSetCharacter(unit, field[0], Long.parseLong(input.getText().toString().trim()), generation)); }
+            catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
+        });
     }
 
     private String tcModeLabel() {
