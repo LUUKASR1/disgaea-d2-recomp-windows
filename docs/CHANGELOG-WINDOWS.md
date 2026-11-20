@@ -1,3 +1,7 @@
+# 1.0.53 — Menu do jogo (F1) e aviso de troféu no Windows
+
+- Janela de cheats/personagens/troféus com F1 e aviso de troféu no estilo PlayStation, desenhados pelo launcher sobre o jogo; trava de troféus opcional.
+
 # 1.0.52 — Lançamento oficial Windows + Android
 
 - Primeira release oficial com **Windows e Android juntos** (APK 0.10.1 anexado). Rótulos de "prévia" removidos da versão europeia e do núcleo Android no launcher (a japonesa continua marcada como experimental).
