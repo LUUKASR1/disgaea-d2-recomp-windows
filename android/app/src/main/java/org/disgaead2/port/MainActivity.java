@@ -304,8 +304,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             String[] all = new String(data, StandardCharsets.UTF_8).split("\n");
             java.util.ArrayList<String> kept = new java.util.ArrayList<>();
             String lastFrame = null;
+            int profileRows = 0;
             for (String line : all) {
                 if (line.startsWith("[rsx] presented guest frame")) { lastFrame = line; continue; }
+                // The profiler prints ~100 lines per thread every 30 s; they crowd out everything else. Keep each
+                // thread's header and its hottest few rows.
+                if (line.startsWith("[profile]")) {
+                    if (line.contains(" thread ")) profileRows = 0;
+                    if (++profileRows > 7) continue;
+                }
                 kept.add(line);
             }
             StringBuilder out = new StringBuilder();
