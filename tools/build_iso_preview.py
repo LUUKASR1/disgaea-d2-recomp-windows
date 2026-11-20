@@ -44,7 +44,7 @@ def build(source, workspace, preview, include, run, env, profile_name='us140'):
     lock = json.loads((source / 'patches/SDK-WINDOWS.lock').read_text())
     existing_lock = json.loads((workspace / 'patches/SDK-WINDOWS.lock').read_text())
     if existing_lock != lock:
-        raise RuntimeError('O SDK existente difere do SDK suportado pelo teste ISO.')
+        raise RuntimeError('O SDK existente difere do SDK suportado pelo teste ISO. Essa preparacao foi feita por uma versao antiga do launcher: refaca a preparacao desta versao do jogo (americana: Preparar com o PKG 1.40; europeia: Preparar versao europeia).')
     if not (include / 'nlohmann/json.hpp').is_file():
         raise RuntimeError('Cabecalho C++ incorporado ausente.')
     identity = dict(source=source_hash(source), workspace=str(workspace), elf=profile['sha'],
