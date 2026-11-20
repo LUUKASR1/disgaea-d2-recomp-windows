@@ -483,7 +483,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private static final class ArtView extends View {
         private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Path edge = new android.graphics.Path();
-        ArtView(android.content.Context c) { super(c); setFocusable(false); }
+        private android.graphics.Bitmap picture;
+        ArtView(android.content.Context c) {
+            super(c);
+            setFocusable(false);
+            try { picture = android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.home_art); } catch (Throwable ignored) { }
+        }
         @Override protected void onDraw(android.graphics.Canvas canvas) {
             int w = getWidth(), h = getHeight();
             edge.reset();
@@ -497,6 +502,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             paint.setShader(new android.graphics.LinearGradient(0, 0, w, h, 0xFF2A1250, 0xFF9B2350, android.graphics.Shader.TileMode.CLAMP));
             canvas.drawRect(0, 0, w, h, paint);
             paint.setShader(null);
+            if (picture != null) {   // the game's title screen, cropped to fill the panel (centred, no stretching)
+                float scale = Math.max((float) w / picture.getWidth(), (float) h / picture.getHeight());
+                float sw = w / scale, sh = h / scale;
+                android.graphics.Rect src = new android.graphics.Rect((int) ((picture.getWidth() - sw) / 2), (int) ((picture.getHeight() - sh) / 2),
+                        (int) ((picture.getWidth() + sw) / 2), (int) ((picture.getHeight() + sh) / 2));
+                canvas.drawBitmap(picture, src, new android.graphics.Rect(0, 0, w, h), paint);
+                canvas.restore();
+                return;
+            }
             int[] fills = {0x33FFC9E6, 0x2AB8A0FF, 0x26FFD98A, 0x30FF7AA8};
             float[][] orbs = {{0.30f, 0.22f, 0.30f}, {0.78f, 0.30f, 0.38f}, {0.55f, 0.78f, 0.44f}, {0.92f, 0.86f, 0.26f}, {0.42f, 0.50f, 0.16f}};
             for (int i = 0; i < orbs.length; i++) {
