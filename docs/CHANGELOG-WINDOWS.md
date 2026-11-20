@@ -1,3 +1,7 @@
+# 1.0.47 — Prévia europeia + núcleo Android (prévia)
+
+- Android: **saves e slots** (salvar o save atual num slot, importar saves do Windows/PC por pasta ou .zip, carregar, exportar e apagar slots), também **dentro do jogo** (aba Saves do menu); backup automático antes de cada JOGAR. O relógio do jogo agora para quando o app vai para segundo plano. Precisa do núcleo desta versão.
+
 # 1.0.46 — Prévia europeia + núcleo Android (prévia)
 
 - Android: o áudio é pausado quando o app vai para segundo plano (antes o último trecho ficava tocando em loop); voltar ao app pelo ícone retorna direto ao jogo (sem cair no launcher); "Compartilhar log" mantém as linhas importantes do meio do log. Precisa do núcleo desta versão.
