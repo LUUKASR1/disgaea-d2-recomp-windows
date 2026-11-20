@@ -1,3 +1,8 @@
+# 1.0.50 — Prévia europeia + núcleo Android (prévia)
+
+- **Android: aviso de troféu na tela, no estilo PlayStation.** Cada troféu registrado faz um banner descer do topo da tela por alguns segundos ("Troféu desbloqueado!"); com a trava ligada, um troféu bloqueado mostra um banner vermelho ("Troféu não registrado"). No menu do jogo → **Cheats** há o botão **Testar o aviso de troféu**. Precisa do núcleo desta versão.
+- **Android: resetar troféus.** Novo botão em **Cheats → Resetar troféus** (mostra quantos estão registrados): apaga os troféus deste aparelho, sem mexer nos saves; com o jogo aberto, ele é fechado com segurança (sem gravação em andamento) e na próxima vez começa sem troféus.
+
 # 1.0.49 — Prévia europeia + núcleo Android (prévia)
 
 - **Versão japonesa (BLJS10206 1.30), experimental.** Suporte contribuído por DesertDoggy (PR #4): o executável japonês é mapeado para o código da 1.40 por correspondência de assinaturas, com perfil de cheats próprio. Na página **Arquivos e suporte → Versão japonesa**, escolha a pasta do disco japonês e as **três atualizações do disco (1.10, 1.20 e 1.30, todas obrigatórias)**; o launcher instala as atualizações, prepara o executável e compila o jogo no seu PC (nada do jogo é distribuído). Testado pelo autor até o primeiro mapa; o restante da campanha ainda não foi validado. Os perfis americano e europeu não mudam. No Android, o núcleo japonês compila pelo launcher, mas ainda não foi testado no aparelho.
