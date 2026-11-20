@@ -606,7 +606,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
         gameMenu = dialog;
-        final int[] tabNames = {R.string.tab_video, R.string.menu_filters, R.string.tab_system};
+        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_system};
         final int tabCount = inGame ? 3 : 2;
         final Button[] tabButtons = new Button[tabCount];
         final int[] current = {0};
@@ -688,9 +688,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         for (int i = 0; i < tabCount; i++) {
             final int index = i;
             Button t = glassButton(getString(tabNames[i]), false, accent);
+            t.setSingleLine(true);
             t.setOnClickListener(v -> { current[0] = index; fill[0].run(); });
             tabButtons[i] = t;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);   // same height for every tab
             lp.topMargin = dp(10);
             lp.rightMargin = i < tabCount - 1 ? dp(8) : 0;
             tabs.addView(t, lp);

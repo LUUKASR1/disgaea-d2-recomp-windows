@@ -45,4 +45,5 @@
     <string name="home_settings">Configurações</string>
     <string name="home_footer">Você traz o seu próprio jogo. Nenhum arquivo do jogo é distribuído. v%1$s</string>
     <string name="home_core">Escolher núcleo</string>
+    <string name="tab_filters">Filtros</string>
 </resources>
