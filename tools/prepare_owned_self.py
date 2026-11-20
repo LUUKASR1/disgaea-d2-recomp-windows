@@ -16,7 +16,6 @@ SELF_SHA = 'c2902f309e7220884d03665ebb779e68bb31545019b039ec2976ae41384805b6'
 ELF_SHA = '0ec183e580a270b0bb1b3a554794a9e4ec2d57a2be251ebdcf81fe21b78d225c'
 SELF_SHA_JP = 'ee6139d5dfe4b56680e37ec01aa0ed01d2221547daa2e2504458992c41277e18'
 ELF_SHA_JP = 'e30b3c7f83486a491f175be88642b778c0bcc3b2615272e7b44c072120026850'
-SUPPORTED = {SELF_SHA: ELF_SHA, SELF_SHA_JP: ELF_SHA_JP}   # SELF -> resulting ELF
 # Public revision 0x1c NPDRM constants, not user/device keys.
 ROOT_KEY = bytes.fromhex('8103ea9db790578219c4cedf0592b43064a7d98b601b6c7bc45108c4047aa80f')
 ROOT_IV = bytes.fromhex('246f4b8328be6a2d394ede20479247c5')
@@ -35,7 +34,8 @@ def ctr(key, iv, data):
 
 
 def decode(data):
-    expected = SUPPORTED.get(hashlib.sha256(data).hexdigest())
+    supported = {SELF_SHA: ELF_SHA, SELF_SHA_JP: ELF_SHA_JP}   # SELF -> resulting ELF (read at call time)
+    expected = supported.get(hashlib.sha256(data).hexdigest())
     if not expected:
         raise ValueError('EBOOT.BIN diferente das atualizações suportadas (USA 1.40 / Japão 1.30).')
     magic, version, revision, kind, meta, head_size, elf_size = struct.unpack('>IIHHIQQ', area(data, 0, 32))
