@@ -516,6 +516,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     float lw = w * 0.74f, lh = lw * logo.getHeight() / logo.getWidth();
                     if (lh > h * 0.86f) { lh = h * 0.86f; lw = lh * logo.getWidth() / logo.getHeight(); }
                     float cx = w * 0.58f, cy = h * 0.5f;
+                    paint.setFilterBitmap(true);   // smooth, not blocky, when the logo is scaled
+                    paint.setColor(Color.WHITE);
                     canvas.drawBitmap(logo, null, new android.graphics.RectF(cx - lw / 2, cy - lh / 2, cx + lw / 2, cy + lh / 2), paint);
                 }
                 canvas.restore();
