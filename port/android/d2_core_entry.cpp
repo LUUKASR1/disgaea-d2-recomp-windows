@@ -22,10 +22,16 @@
 
 int d2_game_main(int argc, char** argv);   /* port/main.cpp's main() */
 extern "C" int cellSaveDataHostRequestStop(void);
+extern "C" int d2_save_host_lock(void);       /* added to the SDK copy by tools/android_sdk_tweaks.py */
+extern "C" void d2_save_host_unlock(void);
 
 /* "Quit game" from the app: closes admission of new save/load operations and says whether none is running right now
  * (1 = quiet, safe to end the process; 0 = a save is being written, ask again). Same gate the Windows host uses. */
 extern "C" __attribute__((visibility("default"))) int d2_core_request_stop(void) { return cellSaveDataHostRequestStop(); }
+
+/* Save slots while the game runs: hold the savedata gate (1 = held, 0 = a save is being written) around a copy/swap. */
+extern "C" __attribute__((visibility("default"))) int d2_core_save_lock(void) { return d2_save_host_lock(); }
+extern "C" __attribute__((visibility("default"))) void d2_core_save_unlock(void) { d2_save_host_unlock(); }
 
 
 /* Preview diagnostic: every 5 s, the busiest threads of the process (CPU % of one core, which core they last ran on)

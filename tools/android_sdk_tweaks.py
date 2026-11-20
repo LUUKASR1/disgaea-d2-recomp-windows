@@ -119,15 +119,26 @@ CLOCK_FILES = {
 }
 
 
-def apply_clock_tweaks(destination):
+# In-game save slots: lets the app hold the savedata admission gate (the same single "operation running" flag the game's
+# own save/load calls use) while it copies or swaps folders. The game gets CELL_SAVEDATA_ERROR_BUSY for those moments.
+SAVE_FILES = {
+    'libs/system/cellSaveData.c': [(
+        'static s32 savedata_enter(void)\n{',
+        'int d2_save_host_lock(void) { return savedata_try_begin(); }\n'
+        'void d2_save_host_unlock(void) { atomic_fetch_and(&s_savedata_busy, ~1u); }\n\n'
+        'static s32 savedata_enter(void)\n{')],
+}
+
+
+def apply_clock_tweaks(destination, files=None, marker='d2_guest_ns'):
     done = []
-    for rel, edits in CLOCK_FILES.items():
+    for rel, edits in (files or CLOCK_FILES).items():
         path = Path(destination) / rel
         if not path.is_file():
             done.append(rel + ': ausente')
             continue
         text = path.read_text(encoding='utf-8', errors='surrogateescape')
-        if 'd2_guest_ns' in text:
+        if marker in text:
             done.append(rel + ': ja aplicado')
             continue
         if any(text.count(old) != 1 for old, _ in edits):
@@ -146,3 +157,4 @@ def apply(destination):
     status = apply_loader_tweaks(loader) if loader.is_file() else 'ignorado (ppu_loader.cpp ausente)'
     print('Ajustes Android do SDK (acesso rapido a memoria do jogo): ' + status, flush=True)
     print('Ajustes Android do SDK (relogio do jogo para em segundo plano): ' + apply_clock_tweaks(destination), flush=True)
+    print('Ajustes Android do SDK (trava de saves para os slots): ' + apply_clock_tweaks(destination, SAVE_FILES, 'd2_save_host_lock'), flush=True)

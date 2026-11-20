@@ -22,6 +22,10 @@ final class NativeBridge {
     /** Quit gate: 1 when no save is being written (safe to end the process), 0 while one is, -1 without a (new enough) core. */
     static native int requestStop();
 
+    /** Save slots while the game runs: 1 = the save gate is held (call saveUnlock after), 0 = a save is being written, -1 = old core. */
+    static native int saveLock();
+    static native void saveUnlock();
+
     /** -1000 while running, otherwise the value returned by the game main. */
     static native int coreResult();
 }

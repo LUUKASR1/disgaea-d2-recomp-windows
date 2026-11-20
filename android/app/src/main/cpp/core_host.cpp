@@ -16,6 +16,8 @@ typedef int (*core_run_fn)(const char*, const char*, const char*);
 std::atomic<void (*)(void*)> g_set_window{nullptr};
 std::atomic<void (*)(int, float, float, float, float)> g_set_pad{nullptr};
 std::atomic<int (*)()> g_request_stop{nullptr};
+std::atomic<int (*)()> g_save_lock{nullptr};
+std::atomic<void (*)()> g_save_unlock{nullptr};
 
 std::string str(JNIEnv* env, jstring s) {
     const char* c = env->GetStringUTFChars(s, nullptr);
@@ -52,6 +54,8 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
     }
     g_set_pad = reinterpret_cast<void (*)(int, float, float, float, float)>(dlsym(lib, "d2_android_pad_set"));
     g_request_stop = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_request_stop"));
+    g_save_lock = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_save_lock"));
+    g_save_unlock = reinterpret_cast<void (*)()>(dlsym(lib, "d2_core_save_unlock"));
     g_result = -1000;
     // The core draws with its own Vulkan swapchain: stop the milestone-0 renderer, then give it the window.
     d2_demo_stop();
@@ -72,6 +76,19 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_disgaead2_port_NativeBridge_coreResult(JNIEnv*, jclass) { return g_result.load(); }
+
+// Save slots while the game runs: 1 = gate held, 0 = a save is being written right now, -1 = old core without the gate.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_saveLock(JNIEnv*, jclass) {
+    auto fn = g_save_lock.load();
+    return fn ? fn() : -1;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_disgaead2_port_NativeBridge_saveUnlock(JNIEnv*, jclass) {
+    auto fn = g_save_unlock.load();
+    if (fn) fn();
+}
 
 // 1 = no save operation is running (the game can be ended), 0 = a save is being written, -1 = no core / old core.
 extern "C" JNIEXPORT jint JNICALL

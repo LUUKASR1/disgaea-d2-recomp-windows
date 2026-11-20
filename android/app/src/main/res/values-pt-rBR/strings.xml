@@ -68,4 +68,9 @@
     <string name="saves_error">Falha: %1$s</string>
     <string name="saves_exported">Exportado.</string>
     <string name="saves_running">Feche o jogo antes de mexer nos saves.</string>
+    <string name="tab_saves">Saves</string>
+    <string name="saves_busy">O jogo está gravando agora; tente de novo em instantes.</string>
+    <string name="saves_need_new_core">Para mexer nos saves com o jogo aberto é preciso o núcleo da 1.0.46 ou mais novo (gere de novo no launcher).</string>
+    <string name="saves_loaded_ingame">Slot carregado. Use Carregar no menu do jogo para ler o save. O save anterior foi guardado como antes-de-carregar.</string>
+    <string name="saves_ingame_note">Salve, importe e carregue slots sem sair do jogo. Depois de carregar um slot, abra o Carregar do próprio jogo para ler o save novo. Se você salvar no jogo antes disso, o save do slot é sobrescrito (o anterior fica em antes-de-carregar).</string>
 </resources>

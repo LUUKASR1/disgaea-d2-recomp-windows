@@ -68,4 +68,9 @@
     <string name="saves_error">Failed: %1$s</string>
     <string name="saves_exported">Exported.</string>
     <string name="saves_running">Close the game before touching saves.</string>
+    <string name="tab_saves">Saves</string>
+    <string name="saves_busy">The game is writing right now; try again in a moment.</string>
+    <string name="saves_need_new_core">Touching saves while the game runs needs the 1.0.46 core or newer (prepare it again in the launcher).</string>
+    <string name="saves_loaded_ingame">Slot loaded. Use Load in the game menu to read the new save. The previous save was kept as antes-de-carregar.</string>
+    <string name="saves_ingame_note">Save, import and load slots without leaving the game. After loading a slot, open the games own Load screen to read the new save. If you save in the game first, the slot save is overwritten (the previous one stays in antes-de-carregar).</string>
 </resources>

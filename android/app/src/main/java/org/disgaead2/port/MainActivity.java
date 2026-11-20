@@ -630,6 +630,22 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private SaveSlots.Slot exportSlot;
     private android.app.Dialog savesDialog;
 
+    /** Runs a save-folder change. With the game running it holds the game's own save gate for the moment; -1 = old core. */
+    private interface SaveJob { void run() throws java.io.IOException; }
+
+    private boolean withSaveGate(SaveJob job) throws java.io.IOException {
+        if (!coreRunning) { job.run(); return true; }
+        int state = NativeBridge.saveLock();
+        for (int i = 0; state == 0 && i < 40; i++) {   // a save is being written: wait up to ~4 s
+            try { Thread.sleep(100); } catch (InterruptedException ignored) { }
+            state = NativeBridge.saveLock();
+        }
+        if (state < 0) throw new java.io.IOException(getString(R.string.saves_need_new_core));
+        if (state == 0) throw new java.io.IOException(getString(R.string.saves_busy));
+        try { job.run(); } finally { NativeBridge.saveUnlock(); }
+        return true;
+    }
+
     private void toast(String text) { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show(); }
 
     private android.app.Dialog glassDialog(LinearLayout root) {
@@ -655,7 +671,6 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     }
 
     private void showSaves() {
-        if (coreRunning) { toast(getString(R.string.saves_running)); return; }
         if (savesDialog != null && savesDialog.isShowing()) savesDialog.dismiss();
         final int accent = 0xFF7A1B3D;
         final File files = getExternalFilesDir(null);
@@ -732,8 +747,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 .setTitle(R.string.saves_name_title).setView(input)
                 .setPositiveButton(android.R.string.ok, (d, w) -> {
                     try {
-                        java.io.File made = SaveSlots.create(files, input.getText().toString());
-                        toast(getString(made == null ? R.string.saves_nothing : R.string.saves_saved));
+                        final java.io.File[] made = {null};
+                        withSaveGate(() -> made[0] = SaveSlots.create(files, input.getText().toString()));
+                        toast(getString(made[0] == null ? R.string.saves_nothing : R.string.saves_saved));
                     } catch (java.io.IOException | RuntimeException e) {
                         toast(getString(R.string.saves_error, e.getMessage()));
                     }
@@ -761,8 +777,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         Button back = glassButton(getString(R.string.saves_back), false, accent);
         addRow(root, load); addRow(root, export); addRow(root, delete); addRow(root, back);
         load.setOnClickListener(v -> {
-            if (coreRunning) { toast(getString(R.string.saves_running)); return; }
-            try { SaveSlots.load(files, slot); toast(getString(R.string.saves_loaded)); }
+            try { withSaveGate(() -> SaveSlots.load(files, slot)); toast(getString(coreRunning ? R.string.saves_loaded_ingame : R.string.saves_loaded)); }
             catch (java.io.IOException | RuntimeException e) { toast(getString(R.string.saves_error, e.getMessage())); }
             dialog.dismiss();
             refresh.run();
@@ -861,8 +876,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
         gameMenu = dialog;
-        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_system};
-        final int tabCount = inGame ? 3 : 2;
+        final int[] tabNames = {R.string.tab_video, R.string.tab_filters, R.string.tab_saves, R.string.tab_system};
+        final int tabCount = inGame ? 4 : 2;
         final Button[] tabButtons = new Button[tabCount];
         final int[] current = {0};
         final Runnable[] fill = new Runnable[1];
@@ -923,6 +938,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     writeSettings();
                 });
                 addRow(content, reset);
+            } else if (current[0] == 2) {
+                TextView note = new TextView(this);
+                note.setText(R.string.saves_ingame_note);
+                note.setTextColor(0xFFCFC6E6);
+                note.setTextSize(13);
+                content.addView(note);
+                Button open = glassButton(getString(R.string.saves_button), true, accent);
+                open.setOnClickListener(v -> showSaves());
+                addRow(content, open);
             } else {
                 Button diagnostics = glassButton(getString(R.string.menu_diagnostics), false, accent);
                 Button quit = glassButton(getString(R.string.menu_quit), false, 0xFFB3261E);
