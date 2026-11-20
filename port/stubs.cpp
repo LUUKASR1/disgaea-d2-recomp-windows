@@ -32,6 +32,9 @@ extern "C" void d2_register_audio(void);
 extern "C" void d2_register_debug_warp(void);
 extern "C" void d2_register_cheats(void);
 extern "C" void d2_register_trophy_lock(void);
+#ifdef _WIN32
+extern "C" void d2_companion_start(void);
+#endif
 
 extern "C" void ps3_load_prx_modules(void)
 {
@@ -56,6 +59,9 @@ extern "C" void ps3_load_prx_modules(void)
     d2_register_debug_warp();
     d2_register_cheats();
     d2_register_trophy_lock();
+#ifdef _WIN32
+    d2_companion_start();   // pipe for the launcher's cheats window and trophy pop-up
+#endif
 }
 
 /* ---------------------------------------------------------------------------

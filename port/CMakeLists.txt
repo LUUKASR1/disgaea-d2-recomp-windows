@@ -291,6 +291,9 @@ set(D2_GAME_SOURCES
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
+if(WIN32)
+    list(APPEND D2_GAME_SOURCES src/d2_companion_win.cpp)
+endif()
 if(ANDROID)
     # Android loads the game core as a shared library (libd2core.so) from the app; main() becomes
     # d2_game_main() and android/d2_core_entry.cpp is the exported entry point.

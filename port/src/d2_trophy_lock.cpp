@@ -24,6 +24,7 @@ extern "C" void vm_write32(uint64_t addr, uint32_t value);
 
 namespace {
 std::atomic<unsigned> blocked_count{0};
+std::atomic<int> lock_override{-1};   /* -1 = use the env/config setting; 0/1 = set live by the Windows companion */
 
 /* Small lock-free event ring read by the host app (Android pop-up): kind 0 = trophy recorded, 1 = blocked by the lock. */
 constexpr unsigned EVENT_CAP = 16;
@@ -40,6 +41,8 @@ void push_event(int kind, int trophy)
 
 bool setting_on()
 {
+    const int forced = lock_override.load();
+    if (forced >= 0) return forced != 0;
     static std::atomic<int64_t> next_check_ms{0};
     static std::atomic<bool> cached{false};
     static std::atomic<bool> env_on{false}, env_read{false};
@@ -92,6 +95,9 @@ extern "C" int d2_trophy_event_pop(int* kind, int* trophy)
     if (trophy) *trophy = int(v & 0xFFFFu);
     return 1;
 }
+
+/* Live switch for the Windows companion (cheats window). */
+extern "C" void d2_trophy_lock_set(int on) { lock_override = on ? 1 : 0; }
 
 extern "C" unsigned d2_trophy_lock_blocked(void) { return blocked_count.load(); }
 

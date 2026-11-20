@@ -903,6 +903,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             language_choice.set(LANGUAGES[translate.language])
             messagebox.showerror('Configurações', str(error)); return
         translate.language = language
+        if companion:
+            companion[0].set_language(language)
         language_choice.set(LANGUAGES[language])
         apply_language()
     language_combo.bind('<<ComboboxSelected>>', lambda event: change_language(
@@ -913,6 +915,14 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     apply_language()
     show('Início')
     poll()
+    companion = []
+    if not preview:
+        try:   # cheats window (F1) and trophy pop-up over the running game; the launcher works the same without it
+            from companion_gui import CompanionUI
+            companion.append(CompanionUI(app, home, translate.language, config))
+            companion[0].start()
+        except Exception:
+            companion.clear()
     if official and not preview and auto_updates.get():
         app.after(1200, check_updates)
     if preview:
