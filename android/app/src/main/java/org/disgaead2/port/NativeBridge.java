@@ -24,8 +24,10 @@ final class NativeBridge {
 
     /** Cheat engine (inside the core). cheatsState: "key=value" lines, "ok=0" without a published snapshot. */
     static native String cheatsState();
-    /** "key|label|min|max" per general field. */
-    static native String cheatsFields();
+    /** "key|label|min|max" per field of a scope (0 = general, 1 = character). */
+    static native String cheatsFields(int scope);
+    static native void cheatsSelectUnit(int unit);
+    static native int cheatsSetCharacter(int unit, String key, long value, long generation);
     /** 0 = queued, -1 = refused, -2 = no cheat engine in this core. */
     static native int cheatsSetToggle(String name, boolean on);
     static native int cheatsSetGeneral(String key, long value);

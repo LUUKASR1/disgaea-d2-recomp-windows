@@ -90,4 +90,6 @@
     <string name="cheats_wait">Aguardando o save carregar (não edite durante carregar/salvar)</string>
     <string name="cheats_nocore">Este núcleo não tem o motor de cheats (ou o jogo ainda não começou).</string>
     <string name="cheats_refused">Valor recusado (fora do limite ou jogo ocupado).</string>
+    <string name="cheat_characters">Personagens…</string>
+    <string name="cheat_char_hint">Toque num valor para editar. Mudanças valem na hora; salve o jogo para mantê-las.</string>
 </resources>

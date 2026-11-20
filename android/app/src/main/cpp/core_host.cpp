@@ -31,6 +31,8 @@ struct CheatApi {
     int (*set_exp)(unsigned) = nullptr;
     int (*disable_all)() = nullptr;
     int (*preset)(int, unsigned) = nullptr;
+    void (*select_unit)(int) = nullptr;
+    int (*set_character)(unsigned, const char*, uint64_t, uint64_t) = nullptr;
 };
 CheatApi g_cheats;
 std::atomic<void (*)()> g_save_unlock{nullptr};
@@ -77,6 +79,8 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
     g_cheats.set_exp = reinterpret_cast<int (*)(unsigned)>(dlsym(lib, "d2_cheats_set_exp_multiplier"));
     g_cheats.disable_all = reinterpret_cast<int (*)()>(dlsym(lib, "d2_cheats_disable_all"));
     g_cheats.preset = reinterpret_cast<int (*)(int, unsigned)>(dlsym(lib, "d2_cheats_preset"));
+    g_cheats.select_unit = reinterpret_cast<void (*)(int)>(dlsym(lib, "d2_cheats_select_unit"));
+    g_cheats.set_character = reinterpret_cast<int (*)(unsigned, const char*, uint64_t, uint64_t)>(dlsym(lib, "d2_cheats_set_character"));
     g_save_lock = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_save_lock"));
     g_save_unlock = reinterpret_cast<void (*)()>(dlsym(lib, "d2_core_save_unlock"));
     g_result = -1000;
@@ -120,6 +124,8 @@ Java_org_disgaead2_port_NativeBridge_cheatsState(JNIEnv* env, jclass) {
     snprintf(line, sizeof line, "hp_lock=%d\nsp_lock=%d\none_hit=%d\nfree_shop=%d\nexp=%u\n", snap->hp_lock, snap->sp_lock,
              snap->one_hit, snap->free_shop, snap->exp_multiplier);
     out += line;
+    snprintf(line, sizeof line, "gen=%llu\nunit=%d\nparty=%u\n", (unsigned long long)snap->generation, snap->unit, snap->party_count);
+    out += line;
     if (g_cheats.fields) {
         const D2CheatsField* f = nullptr;
         unsigned n = g_cheats.fields(D2_CHEATS_GENERAL, &f);
@@ -127,17 +133,30 @@ Java_org_disgaead2_port_NativeBridge_cheatsState(JNIEnv* env, jclass) {
             snprintf(line, sizeof line, "g.%s=%llu\n", f[i].key, (unsigned long long)snap->general[i]);
             out += line;
         }
+        // Character fields of the selected unit (the values are only meaningful once a unit is selected).
+        if (snap->unit >= 0) {
+            n = g_cheats.fields(D2_CHEATS_CHARACTER, &f);
+            for (unsigned i = 0; f && i < n && i < D2_CHEATS_MAX_FIELDS; i++) {
+                snprintf(line, sizeof line, "c.%s=%llu\n", f[i].key, (unsigned long long)snap->character[i]);
+                out += line;
+            }
+        }
+    }
+    for (unsigned i = 0; i < snap->party_count && i < D2_CHEATS_MAX_PARTY; i++) {
+        snap->party[i].name[sizeof snap->party[i].name - 1] = 0;
+        snprintf(line, sizeof line, "p.%u=%s|%u|%u\n", i, snap->party[i].name, snap->party[i].level, snap->party[i].class_id);
+        out += line;
     }
     return env->NewStringUTF(out.c_str());
 }
 
 // "key|label|min|max" per general field, so the screen shows what the engine allows. Empty without the engine.
 extern "C" JNIEXPORT jstring JNICALL
-Java_org_disgaead2_port_NativeBridge_cheatsFields(JNIEnv* env, jclass) {
+Java_org_disgaead2_port_NativeBridge_cheatsFields(JNIEnv* env, jclass, jint scope) {
     std::string out;
-    if (g_cheats.fields) {
+    if (g_cheats.fields && scope >= D2_CHEATS_GENERAL && scope <= D2_CHEATS_CHARACTER) {
         const D2CheatsField* f = nullptr;
-        unsigned n = g_cheats.fields(D2_CHEATS_GENERAL, &f);
+        unsigned n = g_cheats.fields(scope, &f);
         char line[256];
         for (unsigned i = 0; f && i < n; i++) {
             snprintf(line, sizeof line, "%s|%s|%llu|%llu\n", f[i].key, f[i].label, (unsigned long long)f[i].minimum,
@@ -164,6 +183,23 @@ Java_org_disgaead2_port_NativeBridge_cheatsSetGeneral(JNIEnv* env, jclass, jstri
     if (value < 0) return -1;
     const char* c = env->GetStringUTFChars(key, nullptr);
     int rc = g_cheats.set_general(c, (uint64_t)value, D2_CHEATS_ANY_GENERATION);
+    env->ReleaseStringUTFChars(key, c);
+    return rc;
+}
+
+// Make the engine publish this party member's details (character values appear in cheatsState as c.<key>).
+extern "C" JNIEXPORT void JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsSelectUnit(JNIEnv*, jclass, jint unit) {
+    if (g_cheats.select_unit) g_cheats.select_unit((int)unit);
+}
+
+// Edit one field of a party member. generation = the "gen" value of the state the edit was based on (stale edits are refused).
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_cheatsSetCharacter(JNIEnv* env, jclass, jint unit, jstring key, jlong value, jlong generation) {
+    if (!g_cheats.set_character) return -2;
+    if (value < 0 || unit < 0) return -1;
+    const char* c = env->GetStringUTFChars(key, nullptr);
+    int rc = g_cheats.set_character((unsigned)unit, c, (uint64_t)value, (uint64_t)generation);
     env->ReleaseStringUTFChars(key, c);
     return rc;
 }

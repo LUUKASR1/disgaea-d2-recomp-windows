@@ -900,11 +900,14 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             cheatsResult(NativeBridge.cheatsSetExp(cur >= 1024 ? 1 : cur * 2));
         });
         addRow(content, exp);
+        Button characters = glassButton(getString(R.string.cheat_characters), true, accent);
+        characters.setOnClickListener(v -> showCharacters());
+        addRow(content, characters);
 
         // General values (HL, Bonus Gauge, Cheat Shop ...) straight from the engine's field list.
         final java.util.List<String[]> fields = new java.util.ArrayList<>();
         final java.util.List<Button> fieldButtons = new java.util.ArrayList<>();
-        for (String line : NativeBridge.cheatsFields().split("\n")) {
+        for (String line : NativeBridge.cheatsFields(0).split("\n")) {
             String[] part = line.split("\\|");
             if (part.length < 4) continue;
             fields.add(part);
@@ -969,6 +972,134 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 .setTitle(field[1]).setView(input)
                 .setPositiveButton(android.R.string.ok, (d, w) -> {
                     try { cheatsResult(NativeBridge.cheatsSetGeneral(field[0], Long.parseLong(input.getText().toString().trim()))); }
+                    catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    // ---- Character editor (party list -> one unit's values; edits go through the engine's generation check) ----
+    private android.app.Dialog charsDialog;
+    private Runnable charsTick = () -> { };
+
+    private android.app.Dialog darkDialog(LinearLayout root, int heightPercent) {
+        final android.app.Dialog dialog = glassDialog(root);
+        dialog.show();
+        sizeDialog(dialog, heightPercent);
+        return dialog;
+    }
+
+    private LinearLayout dialogColumn(String title) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(16), dp(20), dp(16));
+        root.setBackground(glass(0xCC160B28, 0x55FFFFFF, 24));
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(20);
+        t.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(t);
+        return root;
+    }
+
+    private void showCharacters() {
+        final int accent = 0xFF7A1B3D;
+        java.util.Map<String, String> st = parseState(NativeBridge.cheatsState());
+        if (!"1".equals(st.get("ok")) || !"1".equals(st.get("ready"))) { toast(getString(R.string.cheats_wait)); return; }
+        LinearLayout root = dialogColumn(getString(R.string.cheat_characters));
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        lp.topMargin = dp(8);
+        root.addView(scroll, lp);
+        Button back = glassButton(getString(R.string.saves_back), true, accent);
+        addRow(root, back);
+        int count = parseInt(st.get("party"));
+        for (int i = 0; i < count; i++) {
+            String[] p = (st.get("p." + i) == null ? "?|0|0" : st.get("p." + i)).split("\\|");
+            final int unit = i;
+            Button b = glassButton(p[0] + "   Lv " + (p.length > 1 ? p[1] : "?"), false, accent);
+            b.setOnClickListener(v -> showCharacter(unit, p[0]));
+            addRow(list, b);
+        }
+        final android.app.Dialog dialog = darkDialog(root, 85);
+        charsDialog = dialog;
+        back.setOnClickListener(v -> dialog.dismiss());
+        back.requestFocus();
+    }
+
+    private void showCharacter(int unit, String name) {
+        final int accent = 0xFF7A1B3D;
+        LinearLayout root = dialogColumn(name);
+        final TextView note = new TextView(this);
+        note.setTextColor(0xFFCFC6E6);
+        note.setTextSize(12);
+        root.addView(note);
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        lp.topMargin = dp(8);
+        root.addView(scroll, lp);
+        Button back = glassButton(getString(R.string.saves_back), true, accent);
+        addRow(root, back);
+
+        final java.util.List<String[]> fields = new java.util.ArrayList<>();
+        final java.util.List<Button> buttons = new java.util.ArrayList<>();
+        for (String line : NativeBridge.cheatsFields(1).split("\n")) {
+            String[] part = line.split("\\|");
+            if (part.length < 4) continue;
+            fields.add(part);
+            final String[] f = part;
+            Button b = glassButton(f[1], false, accent);
+            b.setTextSize(14);
+            b.setOnClickListener(v -> {
+                java.util.Map<String, String> now = parseState(NativeBridge.cheatsState());
+                long gen = 0;
+                try { gen = Long.parseUnsignedLong(now.get("gen")); } catch (RuntimeException ignored) { }
+                askCharValue(unit, f, gen);
+            });
+            buttons.add(b);
+            addRow(list, b);
+        }
+        NativeBridge.cheatsSelectUnit(unit);
+        final android.app.Dialog dialog = darkDialog(root, 90);
+        back.setOnClickListener(v -> dialog.dismiss());
+        final java.text.NumberFormat number = java.text.NumberFormat.getInstance();
+        handler.removeCallbacks(charsTick);
+        charsTick = new Runnable() {
+            @Override public void run() {
+                if (!dialog.isShowing()) return;
+                java.util.Map<String, String> st = parseState(NativeBridge.cheatsState());
+                boolean ready = "1".equals(st.get("ready")) && String.valueOf(unit).equals(st.get("unit"));
+                note.setText(ready ? getString(R.string.cheat_char_hint) : getString(R.string.cheats_wait));
+                for (int i = 0; i < fields.size(); i++) {
+                    String raw = st.get("c." + fields.get(i)[0]);
+                    String shown = raw == null ? "-" : raw;
+                    try { if (raw != null) shown = number.format(Long.parseUnsignedLong(raw)); } catch (NumberFormatException ignored) { }
+                    buttons.get(i).setText(fields.get(i)[1] + ":  " + shown);
+                    buttons.get(i).setEnabled(ready);
+                }
+                handler.postDelayed(this, 700);
+            }
+        };
+        handler.post(charsTick);
+        back.requestFocus();
+    }
+
+    private void askCharValue(int unit, String[] field, long generation) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setSingleLine(true);
+        input.setTextColor(Color.WHITE);
+        input.setHint(field[2] + " - " + field[3]);
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(field[1]).setView(input)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    try { cheatsResult(NativeBridge.cheatsSetCharacter(unit, field[0], Long.parseLong(input.getText().toString().trim()), generation)); }
                     catch (NumberFormatException e) { toast(getString(R.string.cheats_refused)); }
                 })
                 .setNegativeButton(android.R.string.cancel, null).show();
