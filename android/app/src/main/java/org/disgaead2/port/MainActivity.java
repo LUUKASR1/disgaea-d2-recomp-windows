@@ -250,7 +250,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (trophyToast == null) return;
         TrophyInfo.Entry e = null;
         try {
-            if (trophyInfo.load(gameRoot(), trpExtra())) e = trophyInfo.get(Integer.parseInt(id));
+            trophyInfo.load(gameRoot(), trpExtra());
+            e = trophyInfo.get(Integer.parseInt(id));
         } catch (NumberFormatException ignored) { }
         String sub = getString(blocked ? R.string.trophy_blocked_sub : R.string.trophy_unlocked_sub, id);
         String title = getString(blocked ? R.string.trophy_blocked_title : R.string.trophy_unlocked_title);

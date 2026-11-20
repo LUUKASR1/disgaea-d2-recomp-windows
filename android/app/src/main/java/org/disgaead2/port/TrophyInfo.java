@@ -70,10 +70,14 @@ final class TrophyInfo {
         return !files.isEmpty();
     }
 
+    /** The trophy's details: from the game's TROPHY.TRP when available (name, grade, icon), otherwise the built-in list. */
     Entry get(int id) {
         Entry e = entries.get(String.format("%03d", id));
-        if (e == null || trp == null) return e;
-        if (e.icon == null) {
+        if (e == null) e = new Entry();
+        if (e.name.isEmpty()) e.name = TrophyNames.name(id);
+        if (e.grade.isEmpty()) e.grade = TrophyNames.grade(id);
+        if (!entries.containsKey(String.format("%03d", id)) && TrophyNames.has(id)) entries.put(String.format("%03d", id), e);
+        if (e.icon == null && trp != null) {
             try (RandomAccessFile f = new RandomAccessFile(trp, "r")) {
                 byte[] png = read(f, String.format("TROP%03d.PNG", id));
                 if (png != null) e.icon = BitmapFactory.decodeByteArray(png, 0, png.length);
@@ -83,7 +87,7 @@ final class TrophyInfo {
     }
 
     private void parse(String xml) {
-        Matcher m = Pattern.compile("<trophy\\s+([^>]*)>(.*?)</trophy>", Pattern.DOTALL).matcher(xml);
+        Matcher m = Pattern.compile("<trophy\\s+([^>/]*(?:\"[^\"]*\"[^>/]*)*)>(.*?)</trophy>", Pattern.DOTALL).matcher(xml);
         while (m.find()) {
             String attrs = m.group(1), body = m.group(2);
             Matcher id = Pattern.compile("\\bid=\"(\\d+)\"").matcher(attrs);
