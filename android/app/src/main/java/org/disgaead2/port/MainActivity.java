@@ -202,6 +202,60 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         surfaceView.getHolder().setFixedSize(w, h);
     }
 
+    // Image filters (same set as the Windows panel): level 0..3 each, FXAA 0/1. Saved under "f_<key>".
+    private static final String[] FILTER_KEYS = {"sharpen", "scanlines", "crtmask", "vignette", "vivid", "aa"};
+
+    private int filterLevel(String key) { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt("f_" + key, 0); }
+
+    private String filterLabel(String key) {
+        int level = filterLevel(key);
+        int name = key.equals("sharpen") ? R.string.filter_sharpen : key.equals("scanlines") ? R.string.filter_scanlines
+                : key.equals("crtmask") ? R.string.filter_crt : key.equals("vignette") ? R.string.filter_vignette
+                : key.equals("vivid") ? R.string.filter_vivid : R.string.filter_fxaa;
+        String value = key.equals("aa") ? getString(level != 0 ? R.string.level_on : R.string.level_off)
+                : getString(level == 0 ? R.string.level_off : level == 1 ? R.string.level_low : level == 2 ? R.string.level_mid : R.string.level_high);
+        return getString(name) + ": " + value;
+    }
+
+    private void showFiltersMenu() {
+        releaseGameInput();
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(32, 24, 32, 24);
+        TextView title = new TextView(this);
+        title.setText(R.string.menu_filters);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setPadding(0, 0, 0, 16);
+        column.addView(title);
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        final Button[] rows = new Button[FILTER_KEYS.length];
+        for (int i = 0; i < FILTER_KEYS.length; i++) {
+            final String key = FILTER_KEYS[i];
+            final int index = i;
+            rows[i] = menuButton(column, filterLabel(key));
+            rows[i].setOnClickListener(v -> {
+                int max = key.equals("aa") ? 1 : 3;
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("f_" + key, (filterLevel(key) + 1) % (max + 1)).apply();
+                rows[index].setText(filterLabel(key));
+                writeSettings();
+            });
+        }
+        Button reset = menuButton(column, getString(R.string.filters_reset));
+        reset.setOnClickListener(v -> {
+            SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
+            for (String key : FILTER_KEYS) e.putInt("f_" + key, 0);
+            e.apply();
+            for (int i = 0; i < FILTER_KEYS.length; i++) rows[i].setText(filterLabel(FILTER_KEYS[i]));
+            writeSettings();
+        });
+        Button back = menuButton(column, getString(R.string.menu_resume));
+        back.setOnClickListener(v -> dialog.dismiss());
+        dialog.setContentView(column);
+        dialog.show();
+        rows[0].requestFocus();
+    }
+
     private int scalePct() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SCALE, 100); }
 
     private boolean showFps() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_FPS, false); }
@@ -217,7 +271,9 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     // The core reads this file from its working directory (next to the log) when the first frame is presented.
     private void writeSettings() {
         try (OutputStream out = new FileOutputStream(new File(getExternalFilesDir(null), "d2_android.cfg"))) {
-            out.write(("scale=100\nbufscale=" + scalePct() + "\nearlyflip=" + (earlyFlip() ? 1 : 0) + "\nshowfps=" + (showFps() ? 1 : 0) + "\n").getBytes("UTF-8"));
+            StringBuilder text = new StringBuilder("scale=100\nbufscale=" + scalePct() + "\nearlyflip=" + (earlyFlip() ? 1 : 0) + "\nshowfps=" + (showFps() ? 1 : 0) + "\n");
+            for (String key : FILTER_KEYS) text.append(key).append('=').append(filterLevel(key)).append('\n');
+            out.write(text.toString().getBytes("UTF-8"));
         } catch (java.io.IOException ignored) { }
     }
 
@@ -404,6 +460,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         Button resolution = menuButton(column, resolutionLabel());
         Button fps = menuButton(column, fpsLabel());
         Button early = menuButton(column, earlyLabel());
+        Button filters = menuButton(column, getString(R.string.menu_filters));
         Button diagnostics = menuButton(column, getString(R.string.menu_diagnostics));
         Button quit = menuButton(column, getString(R.string.menu_quit));
         android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
@@ -427,6 +484,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             early.setText(earlyLabel());
             writeSettings();
         });
+        filters.setOnClickListener(v -> { dialog.dismiss(); showFiltersMenu(); });
         diagnostics.setOnClickListener(v -> { dialog.dismiss(); panelView.setVisibility(View.VISIBLE); });
         final boolean[] armed = {false};
         quit.setOnClickListener(v -> {

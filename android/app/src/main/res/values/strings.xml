@@ -25,4 +25,17 @@
     <string name="menu_quit">Quit game</string>
     <string name="menu_quit_confirm">Press again to quit the game</string>
     <string name="menu_quitting">Saving and closing…</string>
+    <string name="menu_filters">Image filters</string>
+    <string name="filters_reset">Turn all filters off</string>
+    <string name="filter_sharpen">Sharpness</string>
+    <string name="filter_scanlines">Scanlines</string>
+    <string name="filter_crt">CRT mask</string>
+    <string name="filter_vignette">Vignette</string>
+    <string name="filter_vivid">Vivid colors</string>
+    <string name="filter_fxaa">Anti-aliasing (FXAA)</string>
+    <string name="level_off">Off</string>
+    <string name="level_on">On</string>
+    <string name="level_low">Low</string>
+    <string name="level_mid">Medium</string>
+    <string name="level_high">Strong</string>
 </resources>

@@ -16,6 +16,7 @@
 ### Novidades da 1.0.44
 
 - **Android: menu dentro do jogo.** Durante o jogo, o botão **Voltar** (ou apertar **L3 + R3**, os dois analógicos, no portátil) abre o menu: **Voltar ao jogo**, **Resolução interna**, **Contador de FPS**, **Liberação antecipada**, **Painel de diagnóstico** e **Sair do jogo**. O contador de FPS e a liberação antecipada passam a valer na hora (o núcleo relê o arquivo de opções a cada ~1,5 s; núcleo desta versão). **Sair do jogo** pede confirmação, bloqueia novos salvamentos, espera o salvamento em andamento terminar e encerra o app, como na versão de Windows. Com um núcleo mais antigo o app também fecha, só sem a espera pelo salvamento.
+- **Android: filtros de imagem** (submenu "Filtros de imagem" no menu do jogo): **Nitidez, Linhas de varredura, Máscara CRT, Vinheta, Cores vivas** (Desligado/Leve/Médio/Forte) e **Suavização FXAA**, o mesmo passe de pós-processamento do painel do Windows. Começam desligados. **Experimental:** se a tela ficar cinza ao ligar um filtro (como aconteceu com a resolução interna em versões antigas), use "Desligar todos os filtros" e me avise. Precisa do núcleo desta versão.
 - **Ícone próprio do app Android** (desenho original, ícone adaptativo e monocromático para Android 13+).
 - Gere o núcleo Android de novo pelo launcher e instale o APK desta versão.
 

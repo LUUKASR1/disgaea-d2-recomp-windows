@@ -205,7 +205,9 @@ static bool window_force_resize = false;
 //                     it up). Only logged here.
 //   earlyflip=<0|1>   release the game right after the vertex copy (default 1)
 //   showfps=<0|1>     FPS counter in the top-left corner
-struct AndroidSettings { unsigned scale_pct = 100, buffer_pct = 100; bool show_fps = false, early_flip = true; };
+//   sharpen/scanlines/crtmask/vignette/vivid=<0..3>, aa=<0|1>   image filters (the same post pass as the Windows panel)
+struct AndroidSettings { unsigned scale_pct = 100, buffer_pct = 100; bool show_fps = false, early_flip = true;
+                         unsigned sharpen = 0, scanlines = 0, crt_mask = 0, vignette = 0, vivid = 0, aa = 0; };
 static AndroidSettings load_android_settings() {
   AndroidSettings st;
   if (FILE *f = std::fopen("d2_android.cfg", "r")) {
@@ -216,12 +218,18 @@ static AndroidSettings load_android_settings() {
       else if (std::sscanf(line, "bufscale=%u", &v) == 1 && v >= 25 && v <= 200) st.buffer_pct = v;
       else if (std::sscanf(line, "earlyflip=%u", &v) == 1) st.early_flip = v != 0;
       else if (std::sscanf(line, "showfps=%u", &v) == 1) st.show_fps = v != 0;
+      else if (std::sscanf(line, "sharpen=%u", &v) == 1 && v <= 3) st.sharpen = v;
+      else if (std::sscanf(line, "scanlines=%u", &v) == 1 && v <= 3) st.scanlines = v;
+      else if (std::sscanf(line, "crtmask=%u", &v) == 1 && v <= 3) st.crt_mask = v;
+      else if (std::sscanf(line, "vignette=%u", &v) == 1 && v <= 3) st.vignette = v;
+      else if (std::sscanf(line, "vivid=%u", &v) == 1 && v <= 3) st.vivid = v;
+      else if (std::sscanf(line, "aa=%u", &v) == 1) st.aa = v != 0;
     }
     std::fclose(f);
   }
   if (std::getenv("D2_EARLY_FLIP_OFF")) st.early_flip = false;
   tr::d2_early_flip = st.early_flip;
-  D2LOG("[vulkan] android settings: internal resolution %u%% (surface buffer), scene scale %u%%, FPS counter %s, early flip %s\n", st.buffer_pct, st.scale_pct, st.show_fps ? "on" : "off", st.early_flip ? "on" : "off");
+  D2LOG("[vulkan] android settings: internal resolution %u%% (surface buffer), scene scale %u%%, FPS counter %s, early flip %s, filters sharpen %u scanlines %u crt %u vignette %u vivid %u fxaa %u\n", st.buffer_pct, st.scale_pct, st.show_fps ? "on" : "off", st.early_flip ? "on" : "off", st.sharpen, st.scanlines, st.crt_mask, st.vignette, st.vivid, st.aa);
   return st;
 }
 
@@ -291,6 +299,20 @@ void rsx_vulkan_backend_present(void) {
       if (++poll >= 90) {
         poll = 0;
         if (::stat("d2_android.cfg", &cfg) == 0 && cfg.st_mtime != cfg_time) { cfg_time = cfg.st_mtime; settings = load_android_settings(); }
+      }
+    }
+    {   // image filters: same strengths as the Windows panel (apply_filters in rsx_vulkan_backend.cpp)
+      static const float sharpen[4] = {0.f, 0.3f, 0.6f, 1.0f}, scan[4] = {0.f, 0.2f, 0.4f, 0.6f}, mask[4] = {0.f, 0.25f, 0.5f, 0.75f},
+                         vig[4] = {0.f, 0.3f, 0.55f, 0.8f}, sat[4] = {1.f, 1.15f, 1.3f, 1.5f}, con[4] = {1.f, 1.05f, 1.1f, 1.15f};
+      const std::array<float, 8> params{sharpen[settings.sharpen], scan[settings.scanlines], mask[settings.crt_mask], vig[settings.vignette],
+                                        sat[settings.vivid], con[settings.vivid], settings.aa ? 1.f : 0.f, 0.f};
+      const bool active = settings.sharpen || settings.scanlines || settings.crt_mask || settings.vignette || settings.vivid || settings.aa;
+      static std::array<float, 8> last_params{-1.f};
+      static bool last_active = false, first = true;
+      if (first || params != last_params || active != last_active) {
+        first = false; last_params = params; last_active = active;
+        g.renderer->setPostParams(params, active);
+        D2LOG("[vulkan] image filters %s\n", active ? "on" : "off");
       }
     }
     static uint32_t last_w = 0, last_h = 0;

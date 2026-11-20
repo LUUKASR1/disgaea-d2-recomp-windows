@@ -25,4 +25,17 @@
     <string name="menu_quit">Sair do jogo</string>
     <string name="menu_quit_confirm">Toque de novo para sair do jogo</string>
     <string name="menu_quitting">Salvando e fechando…</string>
+    <string name="menu_filters">Filtros de imagem</string>
+    <string name="filters_reset">Desligar todos os filtros</string>
+    <string name="filter_sharpen">Nitidez</string>
+    <string name="filter_scanlines">Linhas de varredura</string>
+    <string name="filter_crt">Máscara CRT</string>
+    <string name="filter_vignette">Vinheta</string>
+    <string name="filter_vivid">Cores vivas</string>
+    <string name="filter_fxaa">Suavização (FXAA)</string>
+    <string name="level_off">Desligado</string>
+    <string name="level_on">Ligado</string>
+    <string name="level_low">Leve</string>
+    <string name="level_mid">Médio</string>
+    <string name="level_high">Forte</string>
 </resources>
