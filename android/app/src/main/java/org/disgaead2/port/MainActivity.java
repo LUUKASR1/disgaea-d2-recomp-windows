@@ -484,11 +484,12 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     private static final class ArtView extends View {
         private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Path edge = new android.graphics.Path();
-        private android.graphics.Bitmap picture;
+        private android.graphics.Bitmap picture, logo;
         ArtView(android.content.Context c) {
             super(c);
             setFocusable(false);
             try { picture = android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.home_art); } catch (Throwable ignored) { }
+            try { logo = android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.home_logo); } catch (Throwable ignored) { }
         }
         @Override protected void onDraw(android.graphics.Canvas canvas) {
             int w = getWidth(), h = getHeight();
@@ -508,7 +509,15 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                 float sw = w / scale, sh = h / scale;
                 android.graphics.Rect src = new android.graphics.Rect((int) ((picture.getWidth() - sw) / 2), (int) ((picture.getHeight() - sh) / 2),
                         (int) ((picture.getWidth() + sw) / 2), (int) ((picture.getHeight() + sh) / 2));
-                canvas.drawBitmap(picture, src, new android.graphics.Rect(0, 0, w, h), paint);
+                canvas.drawBitmap(picture, src, new android.graphics.Rect(0, 0, w, h), paint);   // a blurred gameplay frame
+                paint.setColor(0x33140A28);
+                canvas.drawRect(0, 0, w, h, paint);   // slight veil so the logo stands out
+                if (logo != null) {   // the logo, centred on the visible part of the panel (the left edge is curved)
+                    float lw = w * 0.74f, lh = lw * logo.getHeight() / logo.getWidth();
+                    if (lh > h * 0.86f) { lh = h * 0.86f; lw = lh * logo.getWidth() / logo.getHeight(); }
+                    float cx = w * 0.58f, cy = h * 0.5f;
+                    canvas.drawBitmap(logo, null, new android.graphics.RectF(cx - lw / 2, cy - lh / 2, cx + lw / 2, cy + lh / 2), paint);
+                }
                 canvas.restore();
                 return;
             }

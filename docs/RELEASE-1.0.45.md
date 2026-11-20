@@ -2,7 +2,7 @@
 
 ## Novidades da 1.0.45
 
-- **Android: tela inicial refeita no estilo do launcher do Windows**: título, indicador de status (ISO), botão grande **JOGAR**, botões azuis **Escolher ISO** e **Configurações** (resolução, FPS, liberação antecipada e filtros), botões roxos para escolher o núcleo e compartilhar o log, e, à direita, a imagem da tela de título do jogo com a logo. Funciona com toque e com direcional/controle.
+- **Android: tela inicial refeita no estilo do launcher do Windows**: título, indicador de status (ISO), botão grande **JOGAR**, botões azuis **Escolher ISO** e **Configurações** (resolução, FPS, liberação antecipada e filtros), botões roxos para escolher o núcleo e compartilhar o log, e, à direita, um quadro de gameplay desfocado ao fundo com a logo "Disgaea D2 Android Port" por cima. Funciona com toque e com direcional/controle.
 - **Android: menu do jogo refeito, tematizado em "vidro"** (painel translúcido com desfoque no Android 12+), organizado em abas como no Windows: **Vídeo** (resolução, contador de FPS, liberação antecipada), **Filtros** (nitidez, scanlines, máscara CRT, vinheta, cores vivas, FXAA, desligar todos) e **Sistema** (diagnóstico, sair do jogo). A lista rola e o botão "Continuar" fica sempre visível, então nenhuma opção fica escondida em telas baixas. Navegável por direcional/controle com destaque de foco.
 
 
