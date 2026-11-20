@@ -1,3 +1,7 @@
+# 1.0.41 — Prévia europeia + núcleo Android (prévia)
+
+- Runtime (Android e Linux): caminho rápido para leituras/escritas de memória do jogo (vm_read32/64, vm_write32/64) quando nenhum diagnóstico está ativo.
+
 # 1.0.40 — Prévia europeia + núcleo Android (prévia)
 
 - Android: perfilador de amostragem das duas threads mais ocupadas (log `[profile]` a cada 30 s) para achar o que consome a thread do jogo.
