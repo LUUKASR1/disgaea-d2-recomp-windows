@@ -350,7 +350,8 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     boolean key = line.startsWith("[vulkan]") || line.startsWith("[profile]") || line.contains("rror")
                             || line.contains("fail") || line.contains("exhausted") || line.contains("unsupported")
                             || line.contains("texture") || line.contains("surface") || line.startsWith("[cellAudio] AAudio paused")
-                            || line.startsWith("[cellAudio] AAudio resumed");
+                            || line.startsWith("[cellAudio] AAudio resumed") || line.startsWith("[d2] trophy")
+                            || line.contains("TROPHY UNLOCKED") || line.startsWith("[sceNpTrophy]") || line.startsWith("[D2 cheats]");
                     if (line.startsWith("[vulkan][slow]")) {   // only the real stalls: hundreds of 35 ms lines would fill the cap
                         int p = line.indexOf("period=");
                         key = p >= 0 && parseMs(line, p + 7) >= 150;
