@@ -333,9 +333,10 @@ struct TexEntry {
 };
 std::map<std::array<uint32_t, 6>, TexEntry> tex_cache;
 
+bool tex_strict_check = false; // set after the window was replaced: hash every word, not a 1024-word sample
 uint32_t tex_csum(const uint8_t *base, uint32_t nbytes) {
   uint32_t h = 2166136261u;
-  const uint32_t step = nbytes > 4096u ? nbytes / 1024u : 4u;
+  const uint32_t step = (nbytes > 4096u && !tex_strict_check) ? nbytes / 1024u : 4u;
   for (uint32_t i = 0; i + 3 < nbytes; i += step) {
     uint32_t w;
     std::memcpy(&w, base + i, 4);
@@ -1131,7 +1132,8 @@ void flush_textures(Renderer &r) {
   const size_t n = tex_cache.size();
   for (auto &kv : tex_cache) if (kv.second.handle) r.destroyTexture(kv.second.handle);
   tex_cache.clear();
-  std::fprintf(stderr, "[vulkan] texture cache rebuilt after the window changed (%zu entries dropped, frame %llu)\n", n, (unsigned long long)frame_no);
+  tex_strict_check = true;
+  std::fprintf(stderr, "[vulkan] texture cache rebuilt after the window changed (%zu entries dropped, frame %llu); full texture checks on\n", n, (unsigned long long)frame_no);
 }
 
 void print_counters() {
