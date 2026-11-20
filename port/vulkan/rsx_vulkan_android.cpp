@@ -46,6 +46,7 @@
 #include "../graphics/graphics.h"
 
 extern "C" uint8_t *vm_base;
+extern "C" void d2_android_audio_pause(int paused);
 extern "C" u32 cellGcmResolveLocated(int local, u32 offset);
 extern "C" int cellGcmOffsetIsDisplay(u32 offset);
 extern "C" int d2_fp_extract_consts(const u8 *, u32, float *, int) __asm__("rsx_fp_extract_consts");
@@ -259,6 +260,7 @@ void rsx_vulkan_backend_present(void) {
       if (g.surface_lost || g_window == nullptr || g_window_gen != g.window_gen) {
         if (!g_window || g.surface_lost) D2LOG("[vulkan] surface %s; pausing until the window returns\n", g_window ? "lost" : "destroyed");
         const auto t0 = std::chrono::steady_clock::now();
+        d2_android_audio_pause(1);
         while (!g.closed) {
           const bool fresh = g_window != nullptr && g_window_gen != g.window_gen;
           if (fresh) break;
@@ -266,6 +268,7 @@ void rsx_vulkan_backend_present(void) {
           if (g.surface_lost && g_window != nullptr && std::chrono::steady_clock::now() - t0 > std::chrono::seconds(3)) break;
           g_window_cv.wait_for(lock, std::chrono::milliseconds(100));
         }
+        d2_android_audio_pause(0);
         if (g.closed || !g_window) return;
         ANativeWindow *next = g_window;
         const uint64_t gen = g_window_gen;

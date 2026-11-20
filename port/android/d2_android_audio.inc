@@ -108,6 +108,23 @@ static int audio_backend_init(void)
     return 0;
 }
 
+/* The app went to the background (paused=1) or came back (paused=0). Called from the render thread, which is also the
+ * guest's frame pacing, so the game is already stopped; this keeps the device from looping the last audio meanwhile. */
+void d2_android_audio_pause(int paused)
+{
+    if (!s_aa_stream) return;
+    if (paused) {
+        AAudioStream_requestPause(s_aa_stream);
+        printf("[cellAudio] AAudio paused (app in the background)\n");
+    } else {
+        /* Drop what was queued before the pause so it is not heard again. */
+        atomic_store(&s_aa_rd, atomic_load(&s_aa_wr));
+        const aaudio_result_t st = AAudioStream_requestStart(s_aa_stream);
+        printf("[cellAudio] AAudio resumed: %s\n", AAudio_convertResultToText(st));
+    }
+    fflush(stdout);
+}
+
 static void audio_backend_shutdown(void)
 {
     if (s_aa_watch_run) { s_aa_watch_run = 0; pthread_join(s_aa_watch, NULL); }
