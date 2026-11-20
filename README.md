@@ -1,4 +1,4 @@
-<img width="1920" height="1080" alt="Sem-Título-1" src="https://github.com/user-attachments/assets/60258dd9-584b-4cd2-aa43-afb01ee681fc" />
+<p align="center"><img alt="Disgaea D2 Win + Android Recomp" src="https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/6e124d3ac0a64a9a0bb720d54ff1793993027659/docs/images/banner-win-android.png" width="720"></p>
 
 <h1 align="center">Disgaea D2: A Brighter Darkness — Recomp</h1>
 <p align="center"><b>Windows e Android</b> · jogue o seu próprio disco de PS3, recompilado para rodar nativamente.<br>
