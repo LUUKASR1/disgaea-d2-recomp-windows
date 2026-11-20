@@ -19,4 +19,10 @@
     <string name="fps_off">Contador de FPS: desligado</string>
     <string name="early_on">Liberação antecipada: ligada</string>
     <string name="early_off">Liberação antecipada: desligada</string>
+    <string name="menu_title">Menu do jogo</string>
+    <string name="menu_resume">Voltar ao jogo</string>
+    <string name="menu_diagnostics">Painel de diagnóstico</string>
+    <string name="menu_quit">Sair do jogo</string>
+    <string name="menu_quit_confirm">Toque de novo para sair do jogo</string>
+    <string name="menu_quitting">Salvando e fechando…</string>
 </resources>

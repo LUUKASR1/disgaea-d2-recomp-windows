@@ -1,3 +1,7 @@
+# 1.0.44 — Prévia europeia + núcleo Android (prévia)
+
+- Android: menu dentro do jogo (Voltar ou L3+R3) com resolução interna, contador de FPS, liberação antecipada e **Sair do jogo** (salva e fecha); ícone próprio do app.
+
 # 1.0.43 — Prévia europeia + núcleo Android (prévia)
 
 - Android: o perfilador identifica os endereços fora do jogo (função da libc ou mapeamento) e quem os chama.

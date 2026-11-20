@@ -6,6 +6,7 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #include <android/native_window.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <array>
@@ -279,7 +280,19 @@ void rsx_vulkan_backend_present(void) {
     }
     uint32_t w = (uint32_t)ANativeWindow_getWidth(g.window), h = (uint32_t)ANativeWindow_getHeight(g.window);
     if (w < 2 || h < 2) return;
-    static const AndroidSettings settings = load_android_settings();
+    // The in-game menu rewrites d2_android.cfg: look at its time stamp every ~1.5 s and pick up the FPS counter and
+    // early-flip choices without a restart.
+    static AndroidSettings settings = load_android_settings();
+    {
+      static unsigned poll = 0;
+      static time_t cfg_time = 0;
+      struct stat cfg{};
+      if (poll == 0 && ::stat("d2_android.cfg", &cfg) == 0) cfg_time = cfg.st_mtime;
+      if (++poll >= 90) {
+        poll = 0;
+        if (::stat("d2_android.cfg", &cfg) == 0 && cfg.st_mtime != cfg_time) { cfg_time = cfg.st_mtime; settings = load_android_settings(); }
+      }
+    }
     static uint32_t last_w = 0, last_h = 0;
     if (window_force_resize) { last_w = last_h = 0; window_force_resize = false; }
     if (g.renderer->needsResize() || w != last_w || h != last_h) {

@@ -15,6 +15,7 @@ std::atomic<int> g_result{-1000};   // -1000 = running / not finished
 typedef int (*core_run_fn)(const char*, const char*, const char*);
 std::atomic<void (*)(void*)> g_set_window{nullptr};
 std::atomic<void (*)(int, float, float, float, float)> g_set_pad{nullptr};
+std::atomic<int (*)()> g_request_stop{nullptr};
 
 std::string str(JNIEnv* env, jstring s) {
     const char* c = env->GetStringUTFChars(s, nullptr);
@@ -50,6 +51,7 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
         return env->NewStringUTF("d2_core_run not found in the library");
     }
     g_set_pad = reinterpret_cast<void (*)(int, float, float, float, float)>(dlsym(lib, "d2_android_pad_set"));
+    g_request_stop = reinterpret_cast<int (*)()>(dlsym(lib, "d2_core_request_stop"));
     g_result = -1000;
     // The core draws with its own Vulkan swapchain: stop the milestone-0 renderer, then give it the window.
     d2_demo_stop();
@@ -70,3 +72,10 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_disgaead2_port_NativeBridge_coreResult(JNIEnv*, jclass) { return g_result.load(); }
+
+// 1 = no save operation is running (the game can be ended), 0 = a save is being written, -1 = no core / old core.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_disgaead2_port_NativeBridge_requestStop(JNIEnv*, jclass) {
+    auto fn = g_request_stop.load();
+    return fn ? fn() : -1;
+}

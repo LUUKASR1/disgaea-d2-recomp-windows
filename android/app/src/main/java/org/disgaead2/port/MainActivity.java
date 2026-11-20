@@ -372,10 +372,106 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         }
     }
 
+    // ---- In-game menu (Back button, or both stick clicks L3+R3 on a handheld) -------------------------------------------------
+    private android.app.Dialog gameMenu;
+
+    private void releaseGameInput() {
+        buttons = 0; hat = 0; lx = ly = rx = ry = 0;
+        NativeBridge.setInput(0, 0, 0, 0, 0);
+    }
+
+    private Button menuButton(LinearLayout column, String text) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        column.addView(b, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return b;
+    }
+
+    private void showGameMenu() {
+        if (gameMenu != null && gameMenu.isShowing()) return;
+        releaseGameInput();   // key releases now go to the dialog, so nothing may stay held in the game
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(32, 24, 32, 24);
+        TextView title = new TextView(this);
+        title.setText(R.string.menu_title);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setPadding(0, 0, 0, 16);
+        column.addView(title);
+        Button resume = menuButton(column, getString(R.string.menu_resume));
+        Button resolution = menuButton(column, resolutionLabel());
+        Button fps = menuButton(column, fpsLabel());
+        Button early = menuButton(column, earlyLabel());
+        Button diagnostics = menuButton(column, getString(R.string.menu_diagnostics));
+        Button quit = menuButton(column, getString(R.string.menu_quit));
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        gameMenu = dialog;
+        resume.setOnClickListener(v -> dialog.dismiss());
+        resolution.setOnClickListener(v -> {
+            int next = 0;
+            for (int i = 0; i < SCALES.length; i++) if (SCALES[i] == scalePct()) next = (i + 1) % SCALES.length;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_SCALE, SCALES[next]).apply();
+            resolution.setText(resolutionLabel());
+            applyBufferSize();
+            writeSettings();
+        });
+        fps.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_FPS, !showFps()).apply();
+            fps.setText(fpsLabel());
+            writeSettings();   // the core notices the new file within a couple of seconds
+        });
+        early.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_EARLY, !earlyFlip()).apply();
+            early.setText(earlyLabel());
+            writeSettings();
+        });
+        diagnostics.setOnClickListener(v -> { dialog.dismiss(); panelView.setVisibility(View.VISIBLE); });
+        final boolean[] armed = {false};
+        quit.setOnClickListener(v -> {
+            if (!armed[0]) {
+                armed[0] = true;
+                quit.setText(R.string.menu_quit_confirm);
+                return;
+            }
+            quitGame(dialog, column);
+        });
+        dialog.setContentView(column);
+        dialog.setOnDismissListener(d -> { if (gameMenu == dialog) gameMenu = null; });
+        dialog.show();
+        resume.requestFocus();
+    }
+
+    // Same order as the Windows build: stop new save/load operations, wait until none is being written, then end the process
+    // (the game's own threads cannot be joined, so the process itself is what closes).
+    private void quitGame(android.app.Dialog dialog, LinearLayout column) {
+        column.removeAllViews();
+        TextView saving = new TextView(this);
+        saving.setText(R.string.menu_quitting);
+        saving.setTextColor(Color.WHITE);
+        saving.setTextSize(18);
+        column.addView(saving);
+        dialog.setCancelable(false);
+        final int[] tries = {0};
+        handler.post(new Runnable() {
+            @Override public void run() {
+                int state = NativeBridge.requestStop();
+                if (state != 0 || ++tries[0] > 120) {   // quiet, an older core without the gate, or ~30 s of waiting
+                    finishAndRemoveTask();
+                    android.os.Process.killProcess(android.os.Process.myPid());
+                    return;
+                }
+                handler.postDelayed(this, 250);
+            }
+        });
+    }
+
     @Override
     public void onBackPressed() {
         if (coreStarted) {
-            panelView.setVisibility(panelView.getVisibility() == android.view.View.GONE ? android.view.View.VISIBLE : android.view.View.GONE);
+            if (panelView.getVisibility() == View.VISIBLE) { panelView.setVisibility(View.GONE); return; }
+            showGameMenu();
             return;
         }
         super.onBackPressed();
@@ -387,6 +483,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         if (bit == 0) return super.dispatchKeyEvent(event);
         if (event.getAction() == KeyEvent.ACTION_DOWN) buttons |= bit;
         else if (event.getAction() == KeyEvent.ACTION_UP) buttons &= ~bit;
+        if (coreStarted && (buttons & (16384 | 32768)) == (16384 | 32768)) {   // L3 + R3: open the game menu
+            showGameMenu();
+            return true;
+        }
         NativeBridge.setInput(buttons | hat, lx, ly, rx, ry);
         return true;
     }

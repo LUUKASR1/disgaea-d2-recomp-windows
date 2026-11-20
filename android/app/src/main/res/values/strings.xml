@@ -19,4 +19,10 @@
     <string name="fps_off">FPS counter: off</string>
     <string name="early_on">Early frame release: on</string>
     <string name="early_off">Early frame release: off</string>
+    <string name="menu_title">Game menu</string>
+    <string name="menu_resume">Back to the game</string>
+    <string name="menu_diagnostics">Diagnostics panel</string>
+    <string name="menu_quit">Quit game</string>
+    <string name="menu_quit_confirm">Press again to quit the game</string>
+    <string name="menu_quitting">Saving and closing…</string>
 </resources>
