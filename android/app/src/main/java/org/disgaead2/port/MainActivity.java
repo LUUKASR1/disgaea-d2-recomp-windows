@@ -94,11 +94,11 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         logView.setTextSize(10);
         logView.setTypeface(android.graphics.Typeface.MONOSPACE);
 
-        TextView title = new TextView(this);
-        title.setText("DISGAEA D2");
-        title.setTextColor(ink);
-        title.setTextSize(32);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        android.widget.ImageView title = new android.widget.ImageView(this);   // the game's logo instead of a text title
+        title.setImageResource(R.drawable.home_title);
+        title.setAdjustViewBounds(true);
+        title.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
+        title.setMaxHeight(dp(96));
         TextView subtitle = new TextView(this);
         subtitle.setText(R.string.home_subtitle);
         subtitle.setTextColor(0xFFD2342F);
@@ -129,7 +129,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
         left.setPadding(dp(32), dp(16), dp(20), dp(12));
-        left.addView(title);
+        left.addView(title, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         left.addView(subtitle);
         LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         pillLp.topMargin = dp(10);
