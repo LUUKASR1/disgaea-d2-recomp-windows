@@ -104,7 +104,7 @@ Saves e configurações do Windows ficam em `%LOCALAPPDATA%\DisgaeaD2Recomp-Grap
 | Gráficos | DirectX 12, FSR 1, resolução interna/saída | Vulkan, resolução interna, filtros (CRT, FXAA…) |
 | Controles | Teclado, controle, guia de comandos | Controles na tela + controle físico |
 | Saves | Slots, backup automático | Slots, importar saves do PC, backup automático |
-| Cheats | Janela **F1** com personagens e troféus (1.0.53) | Menu **L3 + R3**, editor de personagens |
+| Cheats | Menu **F1** do jogo: abas Cheats e Personagens (1.0.53) | Menu **L3 + R3**, editor de personagens |
 | Troféus | Aviso PlayStation e trava opcional (1.0.53) | Aviso PlayStation, resetar e trava |
 | Idiomas | Português · English | English · Português · 日本語 · Español |
 

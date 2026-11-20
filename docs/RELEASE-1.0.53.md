@@ -11,9 +11,9 @@ Lançamento oficial do projeto comunitário que roda **Disgaea D2: A Brighter Da
 
 ## Novidades da 1.0.53 (Windows)
 
-- **Menu do jogo com F1**, no visual do Android: com o jogo em primeiro plano e o launcher aberto, **F1** abre a janela com as abas **Cheats** (HP/SP infinito, dano máximo, loja grátis, multiplicador de EXP, presets e valores gerais), **Personagens** (editor por personagem) e **Troféus**.
-- **Aviso de troféu no estilo PlayStation** sobre a janela do jogo, com a taça (bronze, prata, ouro ou platina), o nome e o ícone original quando o launcher acha o `TROPHY.TRP` da sua pasta do jogo ou da sua ISO. **Trava de troféus** opcional ao usar cheats e botão para testar o aviso.
-- **Como usar:** abra o jogo pelo launcher e deixe o launcher aberto. Depois de atualizar, use **Preparar** uma vez para recompilar o jogo (o executável do jogo ganhou o canal usado por essa janela). O jogo precisa estar em janela ou tela cheia sem bordas para o aviso aparecer por cima.
+- **Cheats e editor de personagens dentro do menu F1 do jogo**, tudo numa janela só: o menu de opções (Vídeo, Filtros, Teclas, Sistema) ganhou as abas **Cheats** (HP/SP infinito, dano máximo, loja grátis, multiplicador de EXP, valores gerais, presets e a **trava de troféus**) e **Personagens** (editor por personagem). Clique = +, botão direito = −, Shift ×10, Ctrl ×100, Shift+Ctrl = máx./mín.; a roda do mouse também funciona.
+- **Aviso de troféu no estilo PlayStation** sobre a janela do jogo, com a taça (bronze, prata, ouro ou platina), o nome e o ícone original quando o launcher acha o `TROPHY.TRP` da sua pasta do jogo ou da sua ISO.
+- **Como usar:** abra o jogo pelo launcher (para ver o aviso de troféu, deixe o launcher aberto). Depois de atualizar, use **Preparar** uma vez para recompilar o jogo (o executável do jogo ganhou o canal usado por essa janela). O jogo precisa estar em janela ou tela cheia sem bordas para o aviso aparecer por cima.
 - Rótulos de "prévia" removidos da versão europeia e do núcleo Android no launcher.
 
 ## Versões do jogo e plataformas
@@ -64,9 +64,9 @@ Official release of the community project that runs a recompiled **Disgaea D2: A
 
 ## What's new in 1.0.53 (Windows)
 
-- **In-game menu on F1**, in the Android style: with the game in front and the launcher open, **F1** opens a window with **Cheats** (infinite HP/SP, maximum damage, free shop, EXP multiplier, presets and general values), **Characters** (per-character editor) and **Trophies** tabs.
-- **PlayStation-style trophy pop-up** over the game window, with the cup (bronze, silver, gold or platinum), the name and the original icon when the launcher finds `TROPHY.TRP` in your game folder or ISO. Optional **trophy lock** when using cheats and a button to test the pop-up.
-- **How to use:** start the game from the launcher and keep the launcher open. After updating, run **Prepare** once to rebuild the game (the game executable gained the channel this window uses). The game must be windowed or borderless for the pop-up to show on top.
+- **Cheats and character editor inside the game's F1 menu**, all in one window: the options menu (Video, Filters, Keys, System) gained **Cheats** (infinite HP/SP, maximum damage, free shop, EXP multiplier, general values, presets and the **trophy lock**) and **Characters** (per-character editor) tabs. Click = +, right click = −, Shift ×10, Ctrl ×100, Shift+Ctrl = max/min; the mouse wheel works too.
+- **PlayStation-style trophy pop-up** over the game window, with the cup (bronze, silver, gold or platinum), the name and the original icon when the launcher finds `TROPHY.TRP` in your game folder or ISO.
+- **How to use:** start the game from the launcher (keep the launcher open to see the trophy pop-up). After updating, run **Prepare** once to rebuild the game (the game executable gained the channel this window uses). The game must be windowed or borderless for the pop-up to show on top.
 
 ## Game versions and platforms
 
