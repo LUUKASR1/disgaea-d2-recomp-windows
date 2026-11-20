@@ -7,6 +7,19 @@
 - **Android: menu do jogo refeito, tematizado em "vidro"** (painel translúcido com desfoque no Android 12+), organizado em abas como no Windows: **Vídeo** (resolução, contador de FPS, liberação antecipada), **Filtros** (nitidez, scanlines, máscara CRT, vinheta, cores vivas, FXAA, desligar todos) e **Sistema** (diagnóstico, sair do jogo). A lista rola e o botão "Continuar" fica sempre visível, então nenhuma opção fica escondida em telas baixas. Navegável por direcional/controle com destaque de foco.
 
 
+### Capturas de tela (Android, AYN Odin 2 Portal)
+
+![Tela inicial do app Android](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-tela-inicial.jpg)
+![Tela de título do jogo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-titulo.jpg)
+![Batalha a 60 fps, com o contador de FPS ligado](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-batalha.jpg)
+![Cidade](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-cidade.jpg)
+![Seleção de área a 60 fps](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-selecao-de-area.jpg)
+![Cena no castelo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-sala.jpg)
+![Menu do jogo: aba Vídeo](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-menu-video.jpg)
+![Menu do jogo: aba Filtros](https://raw.githubusercontent.com/LUUKASR1/disgaea-d2-recomp-windows/04225f01bacee23504809e0f67a702f1a2840dbf/docs/images/android-menu-filtros.jpg)
+
+*Capturas do app rodando num AYN Odin 2 Portal; algumas mostram o filtro de máscara CRT ligado.*
+
 > **Pré-lançamento experimental.** A versão estável continua sendo a [1.0.2](RELEASE-1.0.2.md). Esta prévia existe para
 > testar o jogo europeu; pode falhar na preparação ou no jogo.
 
