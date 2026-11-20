@@ -277,6 +277,7 @@ set(D2_GAME_SOURCES
     main.cpp
     stubs.cpp
     src/d2_psn.cpp
+    src/d2_trophy_lock.cpp
     src/d2_movie.cpp
     src/d2_shader_trace.cpp
     src/d2_draw_trace.cpp

@@ -106,4 +106,7 @@
     <string name="tc_left_stick">Lado esquerdo: analógico</string>
     <string name="tc_right_on">Analógico direito: visível</string>
     <string name="tc_right_off">Analógico direito: oculto</string>
+    <string name="trophy_lock_on">Bloquear troféus ao usar cheats: ligado</string>
+    <string name="trophy_lock_off">Bloquear troféus ao usar cheats: desligado</string>
+    <string name="trophy_lock_note">Opcional. Ligado, depois que você usar qualquer cheat nesta sessão o jogo deixa de registrar novos troféus. Desligado por padrão.</string>
 </resources>

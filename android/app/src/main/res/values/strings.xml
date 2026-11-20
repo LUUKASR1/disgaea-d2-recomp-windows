@@ -106,4 +106,7 @@
     <string name="tc_left_stick">Left side: analog stick</string>
     <string name="tc_right_on">Right stick: shown</string>
     <string name="tc_right_off">Right stick: hidden</string>
+    <string name="trophy_lock_on">Block trophies when cheats are used: on</string>
+    <string name="trophy_lock_off">Block trophies when cheats are used: off</string>
+    <string name="trophy_lock_note">Optional. When on, once you use any cheat in this session the game stops recording new trophies. Off by default.</string>
 </resources>

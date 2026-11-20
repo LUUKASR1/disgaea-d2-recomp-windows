@@ -373,10 +373,16 @@ const std::unordered_map<unsigned, std::string>& skill_names()
     cached_table = table; cached_records = records; cached_count = count;
     return names;
 }
+std::atomic<bool> cheats_used{false}; // set once any value was edited or a cheat switched on this session
 int enqueue(Action a)
 {
     std::lock_guard<std::mutex> hold(bridge_lock);
     if (queue.size() >= 256) return -1; // a stalled guest must not grow this forever
+    // Switching things off, resetting the EXP multiplier and saving a preset slot are not cheating; everything else is
+    // (edits, switching a cheat on, adding/removing items, loading a preset).
+    if (a.kind != DISABLE_ALL && !(a.kind == TOGGLE && !a.value) && !(a.kind == EXP_MULTIPLIER && a.value == 1)
+        && !(a.kind == PRESET && a.value))
+        cheats_used.store(true);
     queue.push_back(std::move(a));
     return 0;
 }
@@ -589,6 +595,7 @@ extern "C" int d2_cheats_set_exp_multiplier(unsigned m)
     if (!m || m > 1024 || (m & (m - 1))) return -1;
     return enqueue({EXP_MULTIPLIER, "exp_multiplier", 0, 0, m, D2_CHEATS_ANY_GENERATION});
 }
+extern "C" int d2_cheats_used(void) { return cheats_used.load() ? 1 : 0; }
 extern "C" int d2_cheats_disable_all(void) { return enqueue({DISABLE_ALL, "", 0, 0, 0, D2_CHEATS_ANY_GENERATION}); }
 extern "C" int d2_cheats_preset(int save, unsigned slot)
 {

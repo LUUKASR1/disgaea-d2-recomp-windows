@@ -249,7 +249,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private File gameRoot() { return new File(getExternalFilesDir(null), "game"); }
 
-    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps", KEY_EARLY = "early_flip";
+    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps", KEY_EARLY = "early_flip", KEY_TROPHY_LOCK = "trophy_lock";
     private static final int[] SCALES = {50, 60, 75, 100};
 
     private SurfaceView surfaceView;
@@ -279,6 +279,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return getString(name) + ": " + value;
     }
 
+    private boolean trophyLock() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_TROPHY_LOCK, false); }
+
+    private String trophyLockLabel() { return getString(trophyLock() ? R.string.trophy_lock_on : R.string.trophy_lock_off); }
+
     private int scalePct() { return getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SCALE, 100); }
 
     private boolean showFps() { return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_FPS, false); }
@@ -294,7 +298,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
     // The core reads this file from its working directory (next to the log) when the first frame is presented.
     private void writeSettings() {
         try (OutputStream out = new FileOutputStream(new File(getExternalFilesDir(null), "d2_android.cfg"))) {
-            StringBuilder text = new StringBuilder("scale=100\nbufscale=" + scalePct() + "\nearlyflip=" + (earlyFlip() ? 1 : 0) + "\nshowfps=" + (showFps() ? 1 : 0) + "\n");
+            StringBuilder text = new StringBuilder("scale=100\nbufscale=" + scalePct() + "\nearlyflip=" + (earlyFlip() ? 1 : 0) + "\nshowfps=" + (showFps() ? 1 : 0) + "\ntrophylock=" + (trophyLock() ? 1 : 0) + "\n");
             for (String key : FILTER_KEYS) text.append(key).append('=').append(filterLevel(key)).append('\n');
             out.write(text.toString().getBytes("UTF-8"));
         } catch (java.io.IOException ignored) { }
@@ -943,6 +947,19 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         warn.setTextSize(12);
         warn.setPadding(0, dp(6), 0, 0);
         content.addView(warn);
+        final Button trophy = glassButton(trophyLockLabel(), false, accent);
+        trophy.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_TROPHY_LOCK, !trophyLock()).apply();
+            trophy.setText(trophyLockLabel());
+            writeSettings();   // the core notices the new file within a couple of seconds
+        });
+        addRow(content, trophy);
+        TextView trophyNote = new TextView(this);
+        trophyNote.setText(R.string.trophy_lock_note);
+        trophyNote.setTextColor(0xFFCFC6E6);
+        trophyNote.setTextSize(12);
+        trophyNote.setPadding(0, 0, 0, dp(6));
+        content.addView(trophyNote);
 
         final String[][] toggles = {
             {"hp_lock", getString(R.string.cheat_hp)}, {"sp_lock", getString(R.string.cheat_sp)},
