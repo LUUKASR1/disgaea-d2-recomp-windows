@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and compile the Windows build locally from the user's own executable (US 1.40 or EU)."""
+"""Generate and compile the Windows build locally from the user's own executable (US 1.40, EU or Japan 1.30)."""
 import argparse
 import hashlib
 import json
@@ -18,6 +18,10 @@ PROFILES = {
     'eu100': dict(sha='0257bc3ab36a63f55b0a8722fa54f7d5278a568941bdff7817934a891fcb0cbb', lift='eu', game='100',
                   build='port/build-windows-eu', generated='port-eu-windows-generated', elf='work/eu/EBOOT.elf',
                   recomp='src/recomp-eu', out='out-eu', spu='spu-eu', label='EU BLES01939'),
+    # Japanese BLJS10206 1.30 (experimental; mapped to the 1.40 code by signature matching, contributed by DesertDoggy).
+    'jp130': dict(sha='e30b3c7f83486a491f175be88642b778c0bcc3b2615272e7b44c072120026850', lift='130', game='130',
+                  build='port/build-windows-130', generated='port-130-windows-generated', elf='work/v130/EBOOT.elf',
+                  recomp='src/recomp-130', out='out-130', spu='spu-130', label='Japan BLJS10206 1.30'),
 }
 
 
