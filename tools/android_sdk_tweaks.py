@@ -92,8 +92,57 @@ def apply_loader_tweaks(path):
     return 'aplicado'
 
 
+CLOCK_DECL = """#ifdef __cplusplus
+extern "C" unsigned long long d2_guest_ns(unsigned long long real_ns);
+#else
+extern unsigned long long d2_guest_ns(unsigned long long real_ns);
+#endif
+"""
+
+# The guest clock stops while the app is in the background (the render thread holds the guest in present()). Without
+# this the game sees one frame that lasted seconds and its timers, loaders and animations jump ahead.
+CLOCK_FILES = {
+    'runtime/syscalls/sys_timer.c': [(
+        """    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * PS3_TIMEBASE_FREQ +
+           (uint64_t)ts.tv_nsec * PS3_TIMEBASE_FREQ / 1000000000ull;""",
+        """    clock_gettime(CLOCK_MONOTONIC, &ts);
+    {
+        const uint64_t ns = d2_guest_ns((uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec);
+        return (ns / 1000000000ull) * PS3_TIMEBASE_FREQ + (ns % 1000000000ull) * PS3_TIMEBASE_FREQ / 1000000000ull;
+    }"""),
+        ('uint64_t ppu_timebase_now(void)\n{', CLOCK_DECL + 'uint64_t ppu_timebase_now(void)\n{')],
+    'runtime/ppu/ppu_sysprx.cpp': [(
+        "    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);\n    ctx->gpr[3] = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)ts.tv_nsec / 1000ull;",
+        "    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);\n    ctx->gpr[3] = d2_guest_ns((uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec) / 1000ull;"),
+        ('static void sys_time_get_system_time(ppu_context* ctx)\n{', CLOCK_DECL + 'static void sys_time_get_system_time(ppu_context* ctx)\n{')],
+}
+
+
+def apply_clock_tweaks(destination):
+    done = []
+    for rel, edits in CLOCK_FILES.items():
+        path = Path(destination) / rel
+        if not path.is_file():
+            done.append(rel + ': ausente')
+            continue
+        text = path.read_text(encoding='utf-8', errors='surrogateescape')
+        if 'd2_guest_ns' in text:
+            done.append(rel + ': ja aplicado')
+            continue
+        if any(text.count(old) != 1 for old, _ in edits):
+            done.append(rel + ': ignorado (trecho nao encontrado)')
+            continue
+        for old, new in edits:
+            text = text.replace(old, new, 1)
+        path.write_text(text, encoding='utf-8', errors='surrogateescape')
+        done.append(rel + ': aplicado')
+    return '; '.join(done)
+
+
 def apply(destination):
     """Tweak the private SDK copy made by build_android_core.prepare_sdk."""
     loader = Path(destination) / 'runtime/ppu/ppu_loader.cpp'
     status = apply_loader_tweaks(loader) if loader.is_file() else 'ignorado (ppu_loader.cpp ausente)'
     print('Ajustes Android do SDK (acesso rapido a memoria do jogo): ' + status, flush=True)
+    print('Ajustes Android do SDK (relogio do jogo para em segundo plano): ' + apply_clock_tweaks(destination), flush=True)

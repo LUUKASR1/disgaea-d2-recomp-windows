@@ -47,6 +47,34 @@
 
 extern "C" uint8_t *vm_base;
 extern "C" void d2_android_audio_pause(int paused);
+
+// Guest clock: stopped while the app is in the background, so the game does not see one frame that lasted seconds.
+// The SDK's time sources (timebase, sys_time_get_system_time) pass their reading through d2_guest_ns().
+static std::atomic<uint64_t> g_clock_skew_ns{0};         // total time spent paused
+static std::atomic<uint64_t> g_clock_pause_since_ns{0};  // real time the current pause began (0 = running)
+static uint64_t real_now_ns() {
+  timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
+}
+extern "C" unsigned long long d2_guest_ns(unsigned long long real_ns) {
+  const uint64_t since = g_clock_pause_since_ns.load(std::memory_order_acquire);
+  const uint64_t skew = g_clock_skew_ns.load(std::memory_order_acquire);
+  // Frozen at the instant the pause began; never goes backwards.
+  const uint64_t at = (since && real_ns > since) ? since : real_ns;
+  return at > skew ? at - skew : 0;
+}
+static void guest_clock_pause(bool paused) {
+  if (paused) {
+    g_clock_pause_since_ns.store(real_now_ns(), std::memory_order_release);
+  } else {
+    const uint64_t since = g_clock_pause_since_ns.load(std::memory_order_acquire);
+    if (since) {
+      g_clock_skew_ns.fetch_add(real_now_ns() - since, std::memory_order_acq_rel);
+      g_clock_pause_since_ns.store(0, std::memory_order_release);
+    }
+  }
+}
 extern "C" u32 cellGcmResolveLocated(int local, u32 offset);
 extern "C" int cellGcmOffsetIsDisplay(u32 offset);
 extern "C" int d2_fp_extract_consts(const u8 *, u32, float *, int) __asm__("rsx_fp_extract_consts");
@@ -260,6 +288,7 @@ void rsx_vulkan_backend_present(void) {
       if (g.surface_lost || g_window == nullptr || g_window_gen != g.window_gen) {
         if (!g_window || g.surface_lost) D2LOG("[vulkan] surface %s; pausing until the window returns\n", g_window ? "lost" : "destroyed");
         const auto t0 = std::chrono::steady_clock::now();
+        guest_clock_pause(true);
         d2_android_audio_pause(1);
         while (!g.closed) {
           const bool fresh = g_window != nullptr && g_window_gen != g.window_gen;
@@ -269,6 +298,7 @@ void rsx_vulkan_backend_present(void) {
           g_window_cv.wait_for(lock, std::chrono::milliseconds(100));
         }
         d2_android_audio_pause(0);
+        guest_clock_pause(false);
         if (g.closed || !g_window) return;
         ANativeWindow *next = g_window;
         const uint64_t gen = g_window_gen;
