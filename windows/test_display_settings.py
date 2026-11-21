@@ -111,6 +111,34 @@ class DisplayTests(unittest.TestCase):
                     {'fsr_sharpness': True}, {'resolution': '1280x720', 'render_resolution': '3840x2160', 'upscaler': 'fsr1'}):
             with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, **bad))
 
+    def test_quality_presets_pick_render_size_and_upscaler(self):
+        def at(preset, out):
+            v = display.validate_settings(dict(display.DEFAULTS, quality_preset=preset, resolution=out))
+            return v['render_resolution'], v['upscaler']
+        self.assertEqual(at('native', '1920x1080'), ('native', 'native'))
+        self.assertEqual(at('ssaa2', '1920x1080'), ('3840x2160', 'native'))
+        self.assertEqual(at('ssaa2', '1280x720'), ('2560x1440', 'native'))
+        self.assertEqual(at('ssaa2', '2560x1440'), ('4096x2304', 'native'))      # clamped to the 4096 px limit
+        self.assertEqual(at('ssaa2', '3840x2160'), ('native', 'native'))        # <1.25x gain: not offered
+        self.assertEqual(at('fsr_quality', '1920x1080'), ('1280x720', 'fsr1'))
+        self.assertEqual(at('fsr_balanced', '1920x1080'), ('1130x636', 'fsr1'))
+        self.assertEqual(at('fsr_performance', '1920x1080'), ('960x540', 'fsr1'))
+        self.assertEqual(at('fsr_performance', '3840x2160'), ('1920x1080', 'fsr1'))
+        self.assertEqual(at('fsr_quality', '1280x720'), ('854x480', 'fsr1'))
+        with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, quality_preset='dlss'))
+
+    def test_preset_environment_reaches_the_game_and_respects_its_limits(self):
+        for preset in display.QUALITY_PRESETS[1:]:
+            for out in display.RESOLUTIONS:
+                env = display.display_environment({}, dict(display.DEFAULTS, quality_preset=preset, resolution=out))
+                self.assertTrue(320 <= int(env['D2_RENDER_WIDTH']) <= 4096 and 320 <= int(env['D2_RENDER_HEIGHT']) <= 4096)
+                if env['D2_UPSCALER'] == 'fsr1':
+                    self.assertLessEqual(int(env['D2_RENDER_WIDTH']), int(env['D2_OUTPUT_WIDTH']))
+        custom = display.validate_settings(dict(display.DEFAULTS, render_resolution='1500x844', upscaler='fsr1', resolution='1920x1080'))
+        self.assertEqual(custom['render_resolution'], '1500x844')      # hand-typed sizes keep working
+        with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, render_resolution='100x100'))
+        with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, render_resolution='5000x3000'))
+
     def test_window_fits_monitor_and_retains_aspect(self):
         value = dict(display.DEFAULTS, resolution='3840x2160')
         x, y, width, height = display.window_bounds(value, (0, 0, 1920, 1040), (0, 0, 1920, 1080), (16, 39))

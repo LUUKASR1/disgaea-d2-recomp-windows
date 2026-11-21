@@ -9,9 +9,43 @@ RESOLUTIONS = ('1280x720', '1600x900', '1920x1080', '2560x1440', '3840x2160')
 REFRESH_RATES = ('native', '60', '75', '120', '144', '165', '180')
 GRAPHICS_APIS = {'d3d12': 'DirectX 12', 'vulkan': 'Vulkan'}
 RENDER_RESOLUTIONS = ('native', '640x360', '960x540', *RESOLUTIONS)
+# Quality presets: they only pick the internal render size and upscaler from the output size; nothing new is drawn.
+# 'custom' keeps whatever render_resolution/upscaler the user chose by hand.
+QUALITY_PRESETS = ('custom', 'native', 'ssaa2', 'fsr_quality', 'fsr_balanced', 'fsr_performance')
+_FSR_RATIO = {'fsr_quality': 1.5, 'fsr_balanced': 1.7, 'fsr_performance': 2.0}   # AMD's published FSR scale factors
+MAX_RENDER, MIN_RENDER = 4096, 320   # the game's own limits for D2_RENDER_WIDTH/HEIGHT
+
+
+def _even(value):
+    return max(MIN_RENDER, int(round(value / 2.0)) * 2)
+
+
+def preset_render(preset, output):
+    """(render 'WxH' or 'native', upscaler) for a preset at an 'WxH' output size."""
+    ow, oh = map(int, output.split('x'))
+    if preset in _FSR_RATIO:
+        ratio = _FSR_RATIO[preset]
+        return '%dx%d' % (_even(ow / ratio), _even(oh / ratio)), 'fsr1'
+    if preset == 'ssaa2':
+        # 2x supersampling, reduced when the game's 4096 px limit gets in the way; below 1.25x it is not worth it.
+        scale = min(2.0, MAX_RENDER / ow, MAX_RENDER / oh)
+        if scale < 1.25:
+            return 'native', 'native'
+        return '%dx%d' % (_even(ow * scale), _even(oh * scale)), 'native'
+    return 'native', 'native'
+
+
+def _valid_render(text):
+    try:
+        w, h = map(int, text.split('x'))
+    except (ValueError, AttributeError):
+        return False
+    return text == '%dx%d' % (w, h) and MIN_RENDER <= w <= MAX_RENDER and MIN_RENDER <= h <= MAX_RENDER
+
+
 DEFAULTS = {'graphics_api': 'd3d12', 'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
             'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
-            'hud_after_upscale': False, 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
+            'hud_after_upscale': False, 'quality_preset': 'custom', 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
 
 
 def validate_settings(value):
@@ -33,7 +67,11 @@ def validate_settings(value):
     result['fps_unlimited'] = False
     if result['refresh_rate'] not in REFRESH_RATES:
         raise ValueError('Selecione uma taxa de atualização da lista.')
-    if result['render_resolution'] not in RENDER_RESOLUTIONS:
+    if result['quality_preset'] not in QUALITY_PRESETS:
+        raise ValueError('Preset de qualidade inválido.')
+    if result['quality_preset'] != 'custom':
+        result['render_resolution'], result['upscaler'] = preset_render(result['quality_preset'], result['resolution'])
+    if result['render_resolution'] != 'native' and not _valid_render(result['render_resolution']):
         raise ValueError('Resolução interna inválida.')
     if result['upscaler'] not in ('native', 'fsr1'):
         raise ValueError('DLSS/FSR temporal ainda indisponível nesta versão.')

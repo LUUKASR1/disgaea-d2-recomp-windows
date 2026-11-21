@@ -1,3 +1,8 @@
+# 1.0.54 — Presets de qualidade gráfica
+
+- Launcher: aba Vídeo ganhou "Qualidade gráfica" (Nativo, Nítido 2x com supersampling, FSR 1 Qualidade/Equilibrado/Desempenho, Personalizado). Os presets só escolhem a resolução interna e o upscaler a partir da resolução de saída; mexer nas opções manuais volta para Personalizado.
+- Testes: tamanhos gerados respeitam os limites do renderer (320–4096 px) e o FSR nunca recebe resolução interna maior que a saída.
+
 # 1.0.53 — Menu do jogo (F1) e aviso de troféu no Windows
 
 - Janela de cheats/personagens/troféus com F1 e aviso de troféu no estilo PlayStation, desenhados pelo launcher sobre o jogo; trava de troféus opcional.

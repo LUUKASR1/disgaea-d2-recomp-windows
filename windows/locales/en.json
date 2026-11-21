@@ -331,5 +331,16 @@
   "Não apague a pasta local para atualizar o launcher. O Android ainda está em desenvolvimento (prévia).": "Keep the local application folder when updating the launcher. Android is still in development (preview).",
   "Prévia Android: compila o jogo já preparado neste PC para o Odin 2 (ARM64). Baixa o NDK na primeira vez (~750 MB).": "Android preview: builds the game already prepared on this PC for the Odin 2 (ARM64). Downloads the NDK the first time (~750 MB).",
   "Preparar núcleo Android (prévia)": "Prepare Android core (preview)",
-  "Núcleo Android pronto: ": "Android core ready: "
+  "Núcleo Android pronto: ": "Android core ready: ",
+  "Qualidade gráfica": "Graphics quality",
+  "Personalizado": "Custom",
+  "Nativo — sem upscaling": "Native — no upscaling",
+  "Nítido — supersampling 2x": "Sharp — 2x supersampling",
+  "FSR 1 — Qualidade": "FSR 1 — Quality",
+  "FSR 1 — Equilibrado": "FSR 1 — Balanced",
+  "FSR 1 — Desempenho": "FSR 1 — Performance",
+  "Nítido desenha em 2x a resolução e reduz para a tela (bordas mais lisas). FSR 1 desenha em menos pixels e amplia: ganha desempenho em PCs fracos. Personalizado libera as opções abaixo.": "Sharp draws at 2x the resolution and scales down to the screen (smoother edges). FSR 1 draws fewer pixels and scales up: it gains performance on weaker PCs. Custom unlocks the options below.",
+  "Preset de qualidade inválido.": "Invalid quality preset.",
+  "Android: gera o núcleo do app (libd2core.so) a partir do jogo já preparado neste PC. Baixa o NDK na primeira vez (~750 MB).": "Android: builds the app core (libd2core.so) from the game already prepared on this PC. Downloads the NDK the first time (~750 MB).",
+  "Preparar núcleo Android": "Prepare Android core"
 }

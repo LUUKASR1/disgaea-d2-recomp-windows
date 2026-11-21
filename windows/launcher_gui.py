@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog as raw_filedialog, messagebox as raw_messagebox
 import webbrowser
 
-from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_RATES, load_settings, save_settings
+from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_RATES, QUALITY_PRESETS, preset_render, load_settings, save_settings
 from launcher_i18n import LANGUAGES, Localizer, Dialogs, load_language, save_language, text_variable_class, widget_bindings
 from controls_guide import build_controls_guide
 
@@ -193,6 +193,9 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     refresh_rate = TextVariable(choice=True, value='Nativo' if settings['refresh_rate']=='native' else settings['refresh_rate']+' Hz')
     fps_unlimited = tk.BooleanVar(value=settings['fps_unlimited'])
     vrr = tk.BooleanVar(value=settings['vrr'])
+    PRESET_LABELS = {'custom': 'Personalizado', 'native': 'Nativo — sem upscaling', 'ssaa2': 'Nítido — supersampling 2x',
+                     'fsr_quality': 'FSR 1 — Qualidade', 'fsr_balanced': 'FSR 1 — Equilibrado', 'fsr_performance': 'FSR 1 — Desempenho'}
+    quality_preset = TextVariable(choice=True, value=PRESET_LABELS[settings['quality_preset']])
     render_resolution = tk.StringVar(value=settings['render_resolution'])
     upscaler = TextVariable(choice=True, value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
@@ -337,7 +340,8 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
                 'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
                 'fsr_sharpness': sharpness.get(), 'frame_generation': False,
-                'hud_after_upscale': hud_after_upscale.get()}
+                'hud_after_upscale': hud_after_upscale.get(),
+                'quality_preset': next(key for key, text in PRESET_LABELS.items() if text == quality_preset.get())}
 
     def update_summary(*unused):
         display = resolution.get().replace('x', ' × ') if mode.get() == 'Janela' else 'Resolução do monitor'
@@ -674,6 +678,11 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         toggle.pack(anchor='w', pady=8); entries.append(toggle)
     label(video, 'Nativo mantém os Hz atuais do Windows. Uma taxa indisponível mantém o modo atual. A troca pode piscar e é restaurada ao fechar normalmente. A lógica permanece no ritmo original de 60 Hz; o modo sem limite foi suspenso após acelerar o jogo. VRR requer VSync desligado.', 10, MUTED)
     graphics = card(page)
+    label(graphics, 'Qualidade gráfica', bold=True)
+    preset_combo = ttk.Combobox(graphics, textvariable=quality_preset, values=tuple(PRESET_LABELS.values()),
+                                state='readonly', style='D2.TCombobox', width=32)
+    preset_combo.pack(anchor='w', pady=(0, 6)); entries.append(preset_combo)
+    label(graphics, 'Nítido desenha em 2x a resolução e reduz para a tela (bordas mais lisas). FSR 1 desenha em menos pixels e amplia: ganha desempenho em PCs fracos. Personalizado libera as opções abaixo.', 10, MUTED)
     label(graphics, 'Resolução interna de renderização', bold=True)
     render_combo = ttk.Combobox(graphics, textvariable=render_resolution, values=RENDER_RESOLUTIONS,
                                 state='readonly', style='D2.TCombobox', width=32)
@@ -694,6 +703,25 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     if not official:
         label(graphics, 'Capturas F8 incluem temporal-probe.json com constantes de dois frames.', 10, MUTED)
     label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
+
+    syncing = [False]
+    def apply_preset(*unused):
+        key = next(k for k, text in PRESET_LABELS.items() if text == quality_preset.get())
+        if key == 'custom': return
+        render, mode_name = preset_render(key, resolution.get())
+        syncing[0] = True
+        try:
+            render_resolution.set(render); upscaler.set('FSR 1 — espacial' if mode_name == 'fsr1' else 'Desligado')
+        finally:
+            syncing[0] = False
+    def manual_change(*unused):
+        # Touching the render size or upscaler by hand means the user is no longer on a preset.
+        if not syncing[0] and quality_preset.get() != PRESET_LABELS['custom']:
+            quality_preset.set(PRESET_LABELS['custom'])
+    quality_preset.trace_add('write', apply_preset)
+    resolution.trace_add('write', apply_preset)
+    render_resolution.trace_add('write', manual_change)
+    upscaler.trace_add('write', manual_change)
     def save_video():
         try:
             persist()
@@ -704,7 +732,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         graphics_api.set(DEFAULTS['graphics_api'])
         resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync']); refresh_rate.set('Nativo'); fps_unlimited.set(DEFAULTS['fps_unlimited']); vrr.set(DEFAULTS['vrr'])
         render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
-        hud_after_upscale.set(False)
+        hud_after_upscale.set(False); quality_preset.set(PRESET_LABELS['custom'])
         save_video()
     button(page, 'Restaurar padrão', reset)
 
@@ -818,6 +846,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
     if not standalone: button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
+    def build_android_core():
+        def work():
+            library = backend.prepare_android_core()
+            events.put(('android_ready', str(library)))
+        task(work)
+    label(page, 'Android: gera o núcleo do app (libd2core.so) a partir do jogo já preparado neste PC. Baixa o NDK na primeira vez (~750 MB).', 10, MUTED)
+    button(page, 'Preparar núcleo Android', build_android_core)
     label(page, 'Não apague a pasta local para atualizar o launcher. O projeto está em melhoria contínua; ajuda é bem-vinda.', 10, MUTED)
     for variable in (resolution, mode, vsync):
         variable.trace_add('write', update_summary)
