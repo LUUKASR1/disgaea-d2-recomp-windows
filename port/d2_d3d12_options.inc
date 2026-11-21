@@ -16,6 +16,8 @@ extern "C" void d2_texture_set_dump(int on);
 extern "C" void d2_graphics_set_outline(int level);
 extern "C" void d2_graphics_set_hdr(int level);
 extern "C" void d2_graphics_set_pause_unfocused(int on);
+extern "C" void d2_graphics_set_menu_pause(int on);
+extern "C" void d2_trophy_test_event(int kind, int trophy);
 extern "C" int d2_graphics_hdr_enabled(void);
 extern "C" int d2_graphics_hdr_display(void);
 extern "C" int d2_texture_dump_enabled(void);
@@ -41,7 +43,7 @@ constexpr int A_KEY0 = 200;
 enum Act { A_NONE = -1, A_MODE, A_WINSIZE, A_VSYNC, A_LANG, A_API, A_RESET, A_CLOSE, A_KEYS_RESET, A_FPS, A_SHARPEN, A_SCAN, A_MASK, A_VIGNETTE, A_VIVID, A_AA, A_OUTRES, A_SCALE, A_UPSCALER, A_RESTART, A_TEXDUMP, A_OUTLINE, A_HDR, A_PAUSE, A_TAB0 = 100 };
 constexpr int kTabs = 6; // 0 video, 1 filters, 2 controls, 3 system, 4 cheats, 5 characters
 /* Cheats / characters tab actions (>= 300 so they never clash with the key-listening range 200..214). */
-constexpr int A_CH_TOG0 = 300, A_CH_EXP = 304, A_CH_OFF = 305, A_CH_PRESET = 306, A_CH_LOCK = 307, A_CH_UNIT = 308, A_CH_PAGE = 309,
+constexpr int A_CH_TOG0 = 300, A_CH_EXP = 304, A_CH_OFF = 305, A_CH_PRESET = 306, A_CH_LOCK = 307, A_CH_UNIT = 308, A_CH_PAGE = 309, A_TR_TEST_OK = 310, A_TR_TEST_BLK = 311,
               A_CH_GEN0 = 320, A_CH_CHR0 = 340, kCells = 16, kCharPerPage = 14;
 
 constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
@@ -504,8 +506,15 @@ static unsigned long long edit_value(unsigned long long cur, const D2CheatsField
 
 static unsigned char_pages() { return ccount ? (ccount + kCharPerPage - 1) / kCharPerPage : 1; }
 
+static ULONGLONG tr_test_until = 0;   // shows "pop-up sent" in the hint for a few seconds
+
 static void cheat_activate(int act, int dir)
 {
+    if (act == A_TR_TEST_OK || act == A_TR_TEST_BLK) {
+        d2_trophy_test_event(act == A_TR_TEST_BLK ? 1 : 0, 1);
+        tr_test_until = GetTickCount64() + 5000;
+        return;
+    }
     cheats_refresh();
     if (act == A_CH_LOCK) {
         cfg.trophy_lock = cfg.trophy_lock ? 0u : 1u;
@@ -836,10 +845,15 @@ static void layout_rows(Row* rows, std::string& hint)
         rows[1] = Row{A_API, L("API gráfica", "Graphics API"), std::string("« DirectX 12 (") + L("sem Vulkan nesta versão", "no Vulkan in this build") + ") »", false, false};
 #endif
         rows[3] = Row{A_PAUSE, L("Pausar ao perder o foco", "Pause when unfocused"), on_off[cfg.pause_focus ? 1 : 0], true, false};
+        rows[5] = Row{A_TR_TEST_OK, L("Testar aviso: troféu conquistado", "Test pop-up: trophy earned"), "", true, true};
+        rows[6] = Row{A_TR_TEST_BLK, L("Testar aviso: troféu bloqueado", "Test pop-up: trophy blocked"), "", true, true};
         rows[2] = Row{A_TEXDUMP, L("Salvar texturas (PNG)", "Save textures (PNG)"), on_off[d2_texture_dump_enabled() ? 1 : 0], true, false};
         rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};
         hint = L("Trocar a API reinicia o jogo (o progresso não salvo é perdido). O Vulkan (experimental) é outro renderizador, com os mesmos filtros. Salvar texturas grava PNGs em texture-pack\\dump (para fazer pacotes HD).",
                  "Switching the API restarts the game (unsaved progress is lost). Vulkan (experimental) is a different renderer with the same filters. Save textures writes PNGs to texture-pack\\dump (for HD packs).");
+        if (GetTickCount64() < tr_test_until)
+            hint = L("Aviso de teste enviado. Ele aparece no launcher aberto, no canto da tela; nenhum troféu é gravado.",
+                     "Test pop-up sent. It shows from the open launcher, in the screen corner; no trophy is recorded.");
     }
 }
 
@@ -1072,6 +1086,7 @@ static void open_panel()
     hover = A_NONE;
     listening = -1;
     is_open = true;
+    d2_graphics_set_menu_pause(1);   // the game stands still while the menu is open
     ShowWindow(panel, SW_SHOW);
     SetForegroundWindow(panel);
     SetFocus(panel);
@@ -1084,6 +1099,7 @@ static void close_panel()
 {
     if (!is_open) return;
     is_open = false;
+    d2_graphics_set_menu_pause(0);
     listening = -1;
     api_armed_until = 0;
     if (panel) { KillTimer(panel, 7); ShowWindow(panel, SW_HIDE); }

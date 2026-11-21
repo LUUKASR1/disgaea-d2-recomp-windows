@@ -17,6 +17,7 @@
  *   preset <save|load> <slot>  -> result code
  *   trophy                     -> "kind|id" (kind 0 recorded, 1 blocked by the lock) or "none"
  *   trophylock <0|1>           -> "0"
+ *   trophytest <kind> <id>     -> "0" (queues a fake trophy event to test the pop-up)
  * Result codes: 0 queued, -1 refused (unknown name / out of range), -2 not available. */
 #ifdef _WIN32
 #include "d2_cheats.h"
@@ -32,6 +33,7 @@
 
 extern "C" int d2_trophy_event_pop(int* kind, int* trophy);
 extern "C" void d2_trophy_lock_set(int on);
+extern "C" void d2_trophy_test_event(int kind, int trophy);
 extern "C" int d2_cheats_used(void);
 
 namespace {
@@ -133,6 +135,7 @@ std::string handle(const std::string& request)
         if (!d2_trophy_event_pop(&kind, &id)) return "";
         return std::to_string(kind) + "|" + std::to_string(id);
     }
+    if (k == "trophytest") { d2_trophy_test_event(got >= 2 && std::atoi(a) ? 1 : 0, got >= 3 ? std::atoi(b) : 1); return "0"; }
     if (k == "trophylock") { d2_trophy_lock_set(got >= 2 && std::atoi(a) ? 1 : 0); return "0"; }
     return "-1";
 }

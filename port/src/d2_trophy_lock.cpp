@@ -96,6 +96,10 @@ extern "C" int d2_trophy_event_pop(int* kind, int* trophy)
     return 1;
 }
 
+/* Test hook (F1 menu / companion): queues a fake event so the pop-up can be checked without earning a trophy.
+ * It never touches the trophy data. */
+extern "C" void d2_trophy_test_event(int kind, int trophy) { push_event(kind ? 1 : 0, trophy); }
+
 /* Live switch for the Windows companion (cheats window). */
 extern "C" void d2_trophy_lock_set(int on) { lock_override = on ? 1 : 0; }
 
