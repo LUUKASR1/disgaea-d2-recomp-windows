@@ -309,6 +309,7 @@ extern "C" UINT d2_display_swap_flags(void* object){
 // "present" = time inside Present (VSync / compositor / GPU wait). The larger one tells which side the hitch came from.
 namespace flog{
     FILE* file=nullptr;bool ready=false;LARGE_INTEGER freq{},start{},last_exit{};bool have_last=false;
+    ULONGLONG last_thread=0,last_proc=0;   // CPU time (100 ns units) at the previous present, to tell "computing" from "waiting"
     double ema=16.7;std::vector<float> window;double sum_game=0,sum_present=0,worst=0;int hitches=0;double next_report=5.0;
     double ms(LARGE_INTEGER a,LARGE_INTEGER b){return static_cast<double>(b.QuadPart-a.QuadPart)*1000.0/static_cast<double>(freq.QuadPart);}
     void open(UINT interval){
@@ -330,14 +331,25 @@ namespace flog{
         std::fflush(file);
         window.clear();sum_game=sum_present=worst=0;hitches=0;
     }
+    ULONGLONG cpu_of(const FILETIME& a,const FILETIME& b){
+        return ((static_cast<ULONGLONG>(a.dwHighDateTime)<<32)|a.dwLowDateTime)+((static_cast<ULONGLONG>(b.dwHighDateTime)<<32)|b.dwLowDateTime);
+    }
     void frame(double game_ms,double present_ms,LARGE_INTEGER now){
         const double total=game_ms+present_ms;
+        FILETIME c,e,k,u,k2,u2;ULONGLONG thread_now=0,proc_now=0;
+        if(GetThreadTimes(GetCurrentThread(),&c,&e,&k,&u))thread_now=cpu_of(k,u);
+        if(GetProcessTimes(GetCurrentProcess(),&c,&e,&k2,&u2))proc_now=cpu_of(k2,u2);
+        const double cpu_thread=last_thread?static_cast<double>(thread_now-last_thread)/10000.0:0;
+        const double cpu_proc=last_proc?static_cast<double>(proc_now-last_proc)/10000.0:0;
+        last_thread=thread_now;last_proc=proc_now;
         if(!have_last)return;
         window.push_back(static_cast<float>(total));sum_game+=game_ms;sum_present+=present_ms;if(total>worst)worst=total;
         const double at=ms(start,now)/1000.0;
         if(total>20.0&&total>1.6*ema){
             ++hitches;
-            std::fprintf(file,"[%6.1fs] ENGASGO %.1fms (jogo=%.1f present=%.1f) origem=%s\n",at,total,game_ms,present_ms,game_ms>present_ms?"jogo/CPU/carregamento":"apresentacao/VSync/GPU");
+            // cpu_thread ~ total: this thread was computing. Both far below total: it was waiting (GPU fence, disk, lock, sleep).
+            const char* kind=game_ms<=present_ms?"apresentacao/VSync/GPU":(cpu_thread>0.8*total?"CPU (thread do jogo calculando)":(cpu_proc>0.8*total?"CPU (outra thread trabalhando)":"espera (GPU/disco/trava)"));
+            std::fprintf(file,"[%6.1fs] ENGASGO %.1fms (jogo=%.1f present=%.1f cpu_thread=%.1f cpu_proc=%.1f) origem=%s\n",at,total,game_ms,present_ms,cpu_thread,cpu_proc,kind);
             std::fflush(file);
         }else ema=ema*0.95+total*0.05;
         if(at>=next_report){report(at);next_report=at+5.0;}

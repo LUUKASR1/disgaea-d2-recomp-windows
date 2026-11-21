@@ -1,7 +1,7 @@
 # 1.0.54 — Presets de qualidade gráfica
 
 - Launcher: aba Vídeo ganhou "Qualidade gráfica" (Nativo, Nítido 2x com supersampling, FSR 1 Qualidade/Equilibrado/Desempenho, Personalizado). Os presets só escolhem a resolução interna e o upscaler a partir da resolução de saída; mexer nas opções manuais volta para Personalizado.
-- Diagnóstico: opção "Gravar tempo dos quadros" (D2_FRAME_LOG) registra cada engasgo, separando tempo do jogo e tempo dentro do Present, e um resumo a cada 5 s.
+- Diagnóstico: opção "Gravar tempo dos quadros" (D2_FRAME_LOG) registra cada engasgo, separando tempo do jogo e tempo dentro do Present, e um resumo a cada 5 s. Cada engasgo também traz o tempo de CPU da thread do jogo e do processo, para separar "calculando" de "esperando" (GPU, disco, trava).
 - Testes: tamanhos gerados respeitam os limites do renderer (320–4096 px) e o FSR nunca recebe resolução interna maior que a saída.
 
 # 1.0.53 — Menu do jogo (F1) e aviso de troféu no Windows
