@@ -14,7 +14,8 @@ Lançamento oficial do projeto comunitário que roda **Disgaea D2: A Brighter Da
 - **Presets de qualidade gráfica** na aba Vídeo do launcher: **Nativo**, **Nítido — supersampling 2x** (o jogo desenha em 2x a resolução e reduz para a tela, com bordas mais lisas) e **FSR 1 Qualidade / Equilibrado / Desempenho** (desenha em menos pixels e amplia, para PCs mais fracos). **Personalizado** mantém as opções manuais de antes.
 - O supersampling se limita ao máximo de 4096 px do renderer e não é oferecido quando o ganho seria pequeno (por exemplo, tela de 4K).
 - Não é DLSS nem geração de quadros: são técnicas espaciais. O DLSS e o FSR temporal dependem de vetores de movimento que o jogo ainda não fornece e continuam em estudo.
-- Depois de atualizar, use **Preparar** só se o launcher pedir; os presets são aplicados na próxima abertura do jogo.
+- O botão **Preparar núcleo Android** voltou em Arquivos e suporte (tinha sido removido por engano na 1.0.53).
+- Os presets são aplicados na próxima abertura do jogo.
 - **Diagnóstico de engasgos:** aba Vídeo → "Gravar tempo dos quadros". Grava `frame-times.log` (pasta `logs` do launcher) com cada engasgo e se veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU), mais um resumo a cada 5 s. Não muda o desempenho.
 
 ## Versões do jogo e plataformas
@@ -65,13 +66,11 @@ Official release of the community project that runs a recompiled **Disgaea D2: A
 
 ## What's new in 1.0.54 (Windows)
 
-- **Cheats and character editor inside the game's F1 menu**, all in one window: the options menu (Video, Filters, Keys, System) gained **Cheats** (infinite HP/SP, maximum damage, free shop, EXP multiplier, general values, presets and the **trophy lock**) and **Characters** (per-character editor) tabs. Click = +, right click = −, Shift ×10, Ctrl ×100, Shift+Ctrl = max/min; the mouse wheel works too.
-- **Menu from the controller:** **Start + Select** opens and closes the F1 menu. While open: D-pad moves, left/right change a value, **A** selects, **B** closes and **LB/RB** switch tabs.
-- **The game pauses while the F1 menu is open** (it used to keep running behind it) and resumes on close. The **System** tab has buttons to **test the trophy pop-up** (earned / blocked) without recording any trophy; the pop-up shows from the open launcher.
-- **Leaner launcher and menu:** test and developer items were removed (the home "Play from ISO (experimental)" button, "Test clean ISO install", the DLSS notice, "Save textures" and the menu's Vulkan row). The F1 System tab now holds only language, pause when unfocused and the trophy pop-up tests.
-- **PlayStation-style trophy pop-up** over the game window, with the cup (bronze, silver, gold or platinum), the name and the original icon when the launcher finds `TROPHY.TRP` in your game folder or ISO.
-- **How to use:** start the game from the launcher (keep the launcher open to see the trophy pop-up). After updating, run **Prepare** once to rebuild the game (the game executable gained the channel this window uses). The game must be windowed or borderless for the pop-up to show on top.
+- **Graphics quality presets** in the launcher Video tab: **Native**, **Sharp — 2x supersampling** (the game draws at 2x the resolution and scales down to the screen, for smoother edges) and **FSR 1 Quality / Balanced / Performance** (draws fewer pixels and scales up, for weaker PCs). **Custom** keeps the manual options.
+- Supersampling is capped at the renderer's 4096 px limit and is not offered when the gain would be small (for example on a 4K screen).
+- This is not DLSS or frame generation: both are spatial techniques. DLSS and temporal FSR need motion vectors the game does not provide yet and remain under study.
 - **Stutter diagnostics:** Video tab → "Record frame times". Writes `frame-times.log` (launcher `logs` folder) with each hitch and whether it came from the game (CPU/loading) or from presentation (VSync/GPU), plus a summary every 5 s. It does not change performance.
+- The **Prepare Android core** button is back in Files and support (it was removed by mistake in 1.0.53).
 
 ## Game versions and platforms
 
