@@ -16,6 +16,14 @@ def generate(source, output):
     source = Path(source).resolve(); data = source.read_bytes()
     if hashlib.sha256(data).hexdigest() != EXPECTED: raise RuntimeError('Pinned renderer differs; SDK preserved')
     text = data.decode()
+    # Persistent shader/pipeline cache: the guest pixel/vertex shaders and PSOs are built on the render thread the first time a
+    # scene needs them, which is what the user saw as 100-700 ms hitches. Later runs read them back from D2_SHADER_CACHE_DIR.
+    text = replace(text, '    HRESULT hr = D3DCompile(hlsl, strlen(hlsl), "guest_fp", NULL, NULL,\n                            "main", "ps_5_0", 0, 0, &pb, &e);',
+        '    HRESULT hr = d2_cached_compile(hlsl, strlen(hlsl), "guest_fp", "ps_5_0", (void**)&pb, (void**)&e);')
+    text = replace(text, '    HRESULT hr = D3DCompile(hlsl, strlen(hlsl), "guest_vp2", NULL, NULL,\n                            "main", "vs_5_0", 0, 0, &vb, &e);',
+        '    HRESULT hr = d2_cached_compile(hlsl, strlen(hlsl), "guest_vp2", "vs_5_0", (void**)&vb, (void**)&e);')
+    text = replace(text, '    ID3D12PipelineState* pso = NULL;\n    hr = s_d3d.device->lpVtbl->CreateGraphicsPipelineState(\n        s_d3d.device, &pd, &IID_ID3D12PipelineState, (void**)&pso);\n    pb->lpVtbl->Release(pb);',
+        '    ID3D12PipelineState* pso = NULL;\n    hr = d2_create_pso_cached(s_d3d.device, &pd, (void**)&pso);\n    pb->lpVtbl->Release(pb);')
     text = replace(text, '    s_d3d.width = width;\n    s_d3d.height = height;',
         '    if (d2_graphics_configure(width, height) != 0) return -1;\n'
         '    width = d2_graphics_render_width(); height = d2_graphics_render_height();\n'

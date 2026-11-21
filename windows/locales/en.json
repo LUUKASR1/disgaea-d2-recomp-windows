@@ -346,5 +346,9 @@
   "Gravar tempo dos quadros (diagnóstico de engasgos)": "Record frame times (stutter diagnostics)",
   "Grava um arquivo com cada engasgo e se ele veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU). Não muda o desempenho. Salve, jogue e envie o arquivo frame-times.log.": "Writes a file with each hitch and whether it came from the game (CPU/loading) or from presentation (VSync/GPU). It does not change performance. Save, play and send the frame-times.log file.",
   "Abrir pasta dos registros": "Open logs folder",
-  "O registro de quadros deve estar ligado ou desligado.": "Frame logging must be on or off."
+  "O registro de quadros deve estar ligado ou desligado.": "Frame logging must be on or off.",
+  "Limpar cache de shaders": "Clear shader cache",
+  "Cache de shaders": "Shader cache",
+  "O cache de shaders está vazio.": "The shader cache is empty.",
+  "Apagar o cache de shaders? O jogo vai recompilá-los (e pode engasgar) na próxima vez.": "Delete the shader cache? The game will recompile them (and may stutter) next time."
 }

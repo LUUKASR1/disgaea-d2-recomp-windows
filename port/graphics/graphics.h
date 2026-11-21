@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
@@ -37,6 +38,11 @@ int d2_texture_pack_enabled(void);
 /* RGBA8 replacement for the texture (malloc'd, free with d2_texture_free) or NULL. */
 uint8_t* d2_texture_replacement(const uint8_t* source,uint32_t source_bytes,uint32_t w,uint32_t h,uint32_t format,uint32_t* out_w,uint32_t* out_h);
 void d2_texture_free(void* p);
+/* On-disk cache for the shaders and pipelines the game builds on the fly (D2_SHADER_CACHE_DIR; without it these just forward).
+ * The first run still compiles; later runs reuse the result instead of stalling a frame on D3DCompile / the driver. */
+long d2_cached_compile(const char* hlsl, size_t length, const char* name, const char* target, void** blob, void** errors);
+long d2_create_pso_cached(void* device, const void* desc, void** pso);
+
 #ifdef __cplusplus
 }
 #endif

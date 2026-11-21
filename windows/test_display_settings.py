@@ -145,6 +145,12 @@ class DisplayTests(unittest.TestCase):
         self.assertTrue(env['D2_FRAME_LOG'].replace('\\', '/').endswith('home/logs/frame-times.log'))
         with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, frame_log='yes'))
 
+    def test_shader_cache_directory_is_private_to_the_launcher_home(self):
+        env = display.display_environment({}, display.DEFAULTS, 'C:/home')
+        self.assertTrue(env['D2_SHADER_CACHE_DIR'].replace('\\', '/').endswith('home/shader-cache/d3d12'))
+        vulkan = display.display_environment({'D2_SHADER_CACHE_DIR': 'x'}, dict(display.DEFAULTS, graphics_api='vulkan'), 'C:/home')
+        self.assertNotIn('D2_SHADER_CACHE_DIR', vulkan)
+
     def test_window_fits_monitor_and_retains_aspect(self):
         value = dict(display.DEFAULTS, resolution='3840x2160')
         x, y, width, height = display.window_bounds(value, (0, 0, 1920, 1040), (0, 0, 1920, 1080), (16, 39))

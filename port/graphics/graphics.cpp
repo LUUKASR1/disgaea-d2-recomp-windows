@@ -304,6 +304,101 @@ extern "C" UINT d2_display_swap_flags(void* object){
     std::fprintf(stderr,"[D2DISPLAY] tearing-supported=%d\n",supported);
     return supported?DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING:0;
 }
+// ---- On-disk cache for shaders (DXBC) and pipelines (driver blobs) built while playing ----
+// Safe by construction: any miss, damaged file or driver mismatch falls back to compiling exactly as before.
+namespace shader_cache{
+    std::atomic<int> dxbc_hit{0},dxbc_miss{0},pso_hit{0},pso_miss{0};std::atomic<long long> compile_us{0};
+    const wchar_t* dir(){static const std::wstring d=[]{const wchar_t* v=_wgetenv(L"D2_SHADER_CACHE_DIR");return std::wstring(v?v:L"");}();return d.empty()?nullptr:d.c_str();}
+    unsigned long long fnv(const void* p,size_t n,unsigned long long h=1469598103934665603ULL){
+        const unsigned char* b=static_cast<const unsigned char*>(p);for(size_t i=0;i<n;i++){h^=b[i];h*=1099511628211ULL;}return h;}
+    std::wstring file_for(const wchar_t* kind,unsigned long long a,unsigned long long b){
+        auto hex=[](unsigned long long v){std::wstring t(16,L'0');for(int i=15;i>=0;i--,v>>=4)t[i]=L"0123456789abcdef"[v&15];return t;};
+        CreateDirectoryW(dir(),nullptr);   // the launcher creates the parent; this only makes the leaf if missing
+        return std::wstring(dir())+L"\\"+kind+L"-"+hex(a)+hex(b)+L".bin";}
+    bool read_all(const std::wstring& path,std::vector<unsigned char>& out){
+        HANDLE f=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        if(f==INVALID_HANDLE_VALUE)return false;
+        LARGE_INTEGER size{};bool ok=GetFileSizeEx(f,&size)&&size.QuadPart>0&&size.QuadPart<(64<<20);
+        if(ok){out.resize(static_cast<size_t>(size.QuadPart));DWORD got=0;ok=ReadFile(f,out.data(),static_cast<DWORD>(out.size()),&got,nullptr)&&got==out.size();}
+        CloseHandle(f);return ok;}
+    void write_all(const std::wstring& path,const void* data,size_t size){
+        const std::wstring tmp=path+L".tmp";
+        HANDLE f=CreateFileW(tmp.c_str(),GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+        if(f==INVALID_HANDLE_VALUE)return;
+        DWORD put=0;const bool ok=WriteFile(f,data,static_cast<DWORD>(size),&put,nullptr)&&put==size;CloseHandle(f);
+        if(!ok||!MoveFileExW(tmp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING))DeleteFileW(tmp.c_str());}
+    double now_us(){LARGE_INTEGER c,f;QueryPerformanceCounter(&c);QueryPerformanceFrequency(&f);return static_cast<double>(c.QuadPart)*1e6/static_cast<double>(f.QuadPart);}
+    // Header = magic + payload size + payload hash, so a truncated or corrupted file is never trusted.
+    struct Header{unsigned magic;unsigned size;unsigned long long check;};
+    constexpr unsigned kMagic=0x32534344u;  // "DCS2"
+    bool load(const std::wstring& path,std::vector<unsigned char>& payload){
+        std::vector<unsigned char> raw;if(!read_all(path,raw)||raw.size()<sizeof(Header))return false;
+        Header h;std::memcpy(&h,raw.data(),sizeof h);
+        if(h.magic!=kMagic||h.size!=raw.size()-sizeof h||h.check!=fnv(raw.data()+sizeof h,h.size))return false;
+        payload.assign(raw.begin()+sizeof h,raw.end());return true;}
+    void store(const std::wstring& path,const void* data,size_t size){
+        std::vector<unsigned char> raw(sizeof(Header)+size);
+        Header h{kMagic,static_cast<unsigned>(size),fnv(data,size)};
+        std::memcpy(raw.data(),&h,sizeof h);std::memcpy(raw.data()+sizeof h,data,size);write_all(path,raw.data(),raw.size());}
+}
+extern "C" long d2_cached_compile(const char* hlsl,size_t length,const char* name,const char* target,void** blob,void** errors){
+    ID3DBlob** out=reinterpret_cast<ID3DBlob**>(blob);ID3DBlob** err=reinterpret_cast<ID3DBlob**>(errors);
+    const bool cached=shader_cache::dir()!=nullptr;
+    unsigned long long a=0,b=0;std::wstring path;
+    if(cached){
+        a=shader_cache::fnv(hlsl,length);b=shader_cache::fnv(target,std::strlen(target),a^0x9e3779b97f4a7c15ULL);
+        path=shader_cache::file_for(target[0]=='v'?L"vs":L"ps",a,b);
+        std::vector<unsigned char> bytes;
+        if(shader_cache::load(path,bytes)){
+            ID3DBlob* b2=nullptr;
+            if(SUCCEEDED(D3DCreateBlob(bytes.size(),&b2))){std::memcpy(b2->GetBufferPointer(),bytes.data(),bytes.size());*out=b2;shader_cache::dxbc_hit++;return S_OK;}
+        }
+    }
+    const double t0=shader_cache::now_us();
+    const HRESULT hr=D3DCompile(hlsl,length,name,nullptr,nullptr,"main",target,0,0,out,err);
+    shader_cache::compile_us+=static_cast<long long>(shader_cache::now_us()-t0);shader_cache::dxbc_miss++;
+    if(cached&&SUCCEEDED(hr)&&*out)shader_cache::store(path,(*out)->GetBufferPointer(),(*out)->GetBufferSize());
+    return hr;
+}
+extern "C" long d2_create_pso_cached(void* device_ptr,const void* desc_ptr,void** pso_out){
+    auto* device=static_cast<ID3D12Device*>(device_ptr);
+    const auto* desc=static_cast<const D3D12_GRAPHICS_PIPELINE_STATE_DESC*>(desc_ptr);
+    ID3D12PipelineState** out=reinterpret_cast<ID3D12PipelineState**>(pso_out);
+    if(!shader_cache::dir()){return device->CreateGraphicsPipelineState(desc,IID_ID3D12PipelineState,pso_out);}
+    // Key = everything that shapes the pipeline except the root signature pointer (the signature is fixed by the game).
+    using shader_cache::fnv;
+    unsigned long long a=fnv(desc->VS.pShaderBytecode,desc->VS.BytecodeLength),b=fnv(desc->PS.pShaderBytecode,desc->PS.BytecodeLength,0x51ed270b0b0b0b0bULL);
+    auto mix=[&](const void* p,size_t n){a=fnv(p,n,a);b=fnv(p,n,b^0x9e3779b97f4a7c15ULL);};
+    mix(&desc->BlendState,sizeof desc->BlendState);mix(&desc->RasterizerState,sizeof desc->RasterizerState);
+    mix(&desc->DepthStencilState,sizeof desc->DepthStencilState);mix(&desc->SampleMask,sizeof desc->SampleMask);
+    mix(&desc->PrimitiveTopologyType,sizeof desc->PrimitiveTopologyType);mix(&desc->NumRenderTargets,sizeof desc->NumRenderTargets);
+    mix(desc->RTVFormats,sizeof desc->RTVFormats);mix(&desc->DSVFormat,sizeof desc->DSVFormat);mix(&desc->SampleDesc,sizeof desc->SampleDesc);
+    mix(&desc->Flags,sizeof desc->Flags);mix(&desc->IBStripCutValue,sizeof desc->IBStripCutValue);
+    for(UINT i=0;i<desc->InputLayout.NumElements;i++){
+        const D3D12_INPUT_ELEMENT_DESC& e=desc->InputLayout.pInputElementDescs[i];
+        mix(e.SemanticName,std::strlen(e.SemanticName));mix(&e.SemanticIndex,sizeof e.SemanticIndex);mix(&e.Format,sizeof e.Format);
+        mix(&e.InputSlot,sizeof e.InputSlot);mix(&e.AlignedByteOffset,sizeof e.AlignedByteOffset);
+        mix(&e.InputSlotClass,sizeof e.InputSlotClass);mix(&e.InstanceDataStepRate,sizeof e.InstanceDataStepRate);
+    }
+    const std::wstring path=shader_cache::file_for(L"pso",a,b);
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC copy=*desc;
+    std::vector<unsigned char> blob;
+    if(shader_cache::load(path,blob)){
+        copy.CachedPSO.pCachedBlob=blob.data();copy.CachedPSO.CachedBlobSizeInBytes=blob.size();
+        if(SUCCEEDED(device->CreateGraphicsPipelineState(&copy,IID_ID3D12PipelineState,pso_out))){shader_cache::pso_hit++;return S_OK;}
+        DeleteFileW(path.c_str());   // stale (new driver/GPU): rebuild below and replace it
+        copy.CachedPSO={};
+    }
+    const double t0=shader_cache::now_us();
+    const HRESULT hr=device->CreateGraphicsPipelineState(&copy,IID_ID3D12PipelineState,pso_out);
+    shader_cache::compile_us+=static_cast<long long>(shader_cache::now_us()-t0);shader_cache::pso_miss++;
+    if(SUCCEEDED(hr)&&*out){
+        ID3DBlob* cached=nullptr;
+        if(SUCCEEDED((*out)->GetCachedBlob(&cached))&&cached){shader_cache::store(path,cached->GetBufferPointer(),cached->GetBufferSize());cached->Release();}
+    }
+    return hr;
+}
+
 // Frame-time diagnostics (D2_FRAME_LOG=<file>): one line per hitch plus a summary every 5 s. It only measures; it never changes pacing.
 // "game" = time between two presents (the game's own work: recompiled code, uploads, shader/pipeline compiles);
 // "present" = time inside Present (VSync / compositor / GPU wait). The larger one tells which side the hitch came from.
@@ -328,6 +423,11 @@ namespace flog{
         const double n=static_cast<double>(window.size());
         std::fprintf(file,"[%6.1fs] fps=%.1f medio=%.1fms p99=%.1fms max=%.1fms engasgos=%d jogo=%.1fms present=%.1fms\n",
             now_s,n/5.0,(sum_game+sum_present)/n,static_cast<double>(window[static_cast<size_t>(n*0.99)>=window.size()?window.size()-1:static_cast<size_t>(n*0.99)]),worst,hitches,sum_game/n,sum_present/n);
+        static int pdh=0,pdm=0,pph=0,ppm=0;static long long pus=0;
+        const int dh=shader_cache::dxbc_hit,dm=shader_cache::dxbc_miss,ph=shader_cache::pso_hit,pm=shader_cache::pso_miss;const long long us=shader_cache::compile_us;
+        if(dh!=pdh||dm!=pdm||ph!=pph||pm!=ppm)
+            std::fprintf(file,"          cache de shaders (ultimos 5s): shader lido do disco=%d compilado=%d | pipeline lido do disco=%d criado=%d | tempo gasto compilando=%.0fms\n",dh-pdh,dm-pdm,ph-pph,pm-ppm,static_cast<double>(us-pus)/1000.0);
+        pdh=dh;pdm=dm;pph=ph;ppm=pm;pus=us;
         std::fflush(file);
         window.clear();sum_game=sum_present=worst=0;hitches=0;
     }

@@ -126,6 +126,12 @@ def display_environment(inherited, settings, home=None):
     else:
         for key in ('D2_VULKAN_EXPERIMENTAL', 'D2_VULKAN_FALLBACK'):
             env.pop(key, None)
+    if value['graphics_api'] == 'd3d12':
+        # Shaders/pipelines the game compiles on the fly are kept here, so only the first run stutters on them.
+        base = Path(home) if home else Path(env.get('LOCALAPPDATA') or tempfile.gettempdir())
+        env['D2_SHADER_CACHE_DIR'] = str(base / 'shader-cache' / 'd3d12')
+    else:
+        env.pop('D2_SHADER_CACHE_DIR', None)
     if value['frame_log']:
         base = Path(home) if home else Path(env.get('LOCALAPPDATA') or tempfile.gettempdir())
         env['D2_FRAME_LOG'] = str(base / 'logs' / 'frame-times.log')

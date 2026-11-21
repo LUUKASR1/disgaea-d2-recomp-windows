@@ -7,6 +7,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog as raw_filedialog, messagebox as raw_messagebox
+import shutil
 import webbrowser
 
 from display_settings import DEFAULTS, RESOLUTIONS, RENDER_RESOLUTIONS, REFRESH_RATES, QUALITY_PRESETS, preset_render, load_settings, save_settings
@@ -709,6 +710,13 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI',11))
     log_toggle.pack(anchor='w', pady=8); entries.append(log_toggle)
     label(stutter, 'Grava um arquivo com cada engasgo e se ele veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU). Não muda o desempenho. Salve, jogue e envie o arquivo frame-times.log.', 10, MUTED)
+    def clear_shader_cache():
+        target = home / 'shader-cache'
+        if not target.exists():
+            messagebox.showinfo('Cache de shaders', 'O cache de shaders está vazio.'); return
+        if messagebox.askyesno('Cache de shaders', 'Apagar o cache de shaders? O jogo vai recompilá-los (e pode engasgar) na próxima vez.'):
+            shutil.rmtree(target, ignore_errors=True)
+    button(stutter, 'Limpar cache de shaders', clear_shader_cache)
     button(stutter, 'Abrir pasta dos registros', lambda: (home / 'logs').mkdir(parents=True, exist_ok=True) or open_path(home / 'logs'))
 
     syncing = [False]

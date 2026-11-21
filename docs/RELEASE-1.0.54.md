@@ -17,6 +17,7 @@ Lançamento oficial do projeto comunitário que roda **Disgaea D2: A Brighter Da
 - O botão **Preparar núcleo Android** voltou em Arquivos e suporte (tinha sido removido por engano na 1.0.53).
 - Os presets são aplicados na próxima abertura do jogo.
 - **Diagnóstico de engasgos:** aba Vídeo → "Gravar tempo dos quadros". Grava `frame-times.log` (pasta `logs` do launcher) com cada engasgo e se veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU), mais um resumo a cada 5 s. Não muda o desempenho.
+- **Menos engasgos ao entrar em cenas novas:** os shaders e pipelines que o jogo compila na hora agora ficam num **cache em disco** (`shader-cache` na pasta do launcher). Só a primeira vez que cada cena aparece pode engasgar; nas próximas, o jogo lê do cache. A aba Vídeo tem **Limpar cache de shaders**. O registro de quadros mostra quantos shaders foram lidos do disco e quantos foram compilados.
 
 ## Versões do jogo e plataformas
 
@@ -70,6 +71,7 @@ Official release of the community project that runs a recompiled **Disgaea D2: A
 - Supersampling is capped at the renderer's 4096 px limit and is not offered when the gain would be small (for example on a 4K screen).
 - This is not DLSS or frame generation: both are spatial techniques. DLSS and temporal FSR need motion vectors the game does not provide yet and remain under study.
 - **Stutter diagnostics:** Video tab → "Record frame times". Writes `frame-times.log` (launcher `logs` folder) with each hitch and whether it came from the game (CPU/loading) or from presentation (VSync/GPU), plus a summary every 5 s. It does not change performance.
+- **Fewer hitches when entering new scenes:** the shaders and pipelines the game compiles on the fly are now kept in an **on-disk cache** (`shader-cache` in the launcher folder). Only the first time a scene appears can hitch; afterwards the game reads them back. The Video tab has **Clear shader cache**. The frame log reports how many shaders were read from disk vs compiled.
 - The **Prepare Android core** button is back in Files and support (it was removed by mistake in 1.0.53).
 
 ## Game versions and platforms
