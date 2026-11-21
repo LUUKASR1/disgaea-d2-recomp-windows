@@ -200,6 +200,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     upscaler = TextVariable(choice=True, value='FSR 1 — espacial' if settings['upscaler'] == 'fsr1' else 'Desligado')
     sharpness = tk.DoubleVar(value=settings['fsr_sharpness'])
     hud_after_upscale = tk.BooleanVar(value=settings['hud_after_upscale'])
+    frame_log = tk.BooleanVar(value=settings['frame_log'])
     capture_enabled = tk.BooleanVar(value=False)
     capture_goal = TextVariable(choice=True, value="Cenário — girar câmera")
     capture_status = TextVariable(value='Captura desativada.')
@@ -340,7 +341,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         return {'graphics_api': graphics_api.get(), 'resolution': resolution.get(), 'mode': 'windowed' if mode.get() == 'Janela' else 'borderless', 'vsync': vsync.get(), 'refresh_rate': 'native' if refresh_rate.get()=='Nativo' else refresh_rate.get().split()[0], 'fps_unlimited': fps_unlimited.get(), 'vrr': vrr.get(), 'render_resolution': render_resolution.get(),
                 'upscaler': 'fsr1' if upscaler.get().startswith('FSR 1') else 'native',
                 'fsr_sharpness': sharpness.get(), 'frame_generation': False,
-                'hud_after_upscale': hud_after_upscale.get(),
+                'hud_after_upscale': hud_after_upscale.get(), 'frame_log': frame_log.get(),
                 'quality_preset': next(key for key, text in PRESET_LABELS.items() if text == quality_preset.get())}
 
     def update_summary(*unused):
@@ -703,6 +704,12 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     if not official:
         label(graphics, 'Capturas F8 incluem temporal-probe.json com constantes de dois frames.', 10, MUTED)
     label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
+    stutter = card(page)
+    log_toggle = tk.Checkbutton(stutter, text='Gravar tempo dos quadros (diagnóstico de engasgos)', variable=frame_log,
+        bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI',11))
+    log_toggle.pack(anchor='w', pady=8); entries.append(log_toggle)
+    label(stutter, 'Grava um arquivo com cada engasgo e se ele veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU). Não muda o desempenho. Salve, jogue e envie o arquivo frame-times.log.', 10, MUTED)
+    button(stutter, 'Abrir pasta dos registros', lambda: (home / 'logs').mkdir(parents=True, exist_ok=True) or open_path(home / 'logs'))
 
     syncing = [False]
     def apply_preset(*unused):
@@ -732,7 +739,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         graphics_api.set(DEFAULTS['graphics_api'])
         resolution.set(DEFAULTS['resolution']); mode.set('Janela'); vsync.set(DEFAULTS['vsync']); refresh_rate.set('Nativo'); fps_unlimited.set(DEFAULTS['fps_unlimited']); vrr.set(DEFAULTS['vrr'])
         render_resolution.set('native'); upscaler.set('Desligado'); sharpness.set(DEFAULTS['fsr_sharpness'])
-        hud_after_upscale.set(False); quality_preset.set(PRESET_LABELS['custom'])
+        hud_after_upscale.set(False); frame_log.set(False); quality_preset.set(PRESET_LABELS['custom'])
         save_video()
     button(page, 'Restaurar padrão', reset)
 

@@ -45,7 +45,7 @@ def _valid_render(text):
 
 DEFAULTS = {'graphics_api': 'd3d12', 'resolution': '1280x720', 'mode': 'windowed', 'vsync': False,
             'render_resolution': 'native', 'upscaler': 'native', 'fsr_sharpness': 0.2, 'frame_generation': False,
-            'hud_after_upscale': False, 'quality_preset': 'custom', 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
+            'hud_after_upscale': False, 'quality_preset': 'custom', 'frame_log': False, 'refresh_rate': 'native', 'fps_unlimited': False, 'vrr': False}
 
 
 def validate_settings(value):
@@ -80,6 +80,8 @@ def validate_settings(value):
         raise ValueError('Nitidez FSR deve estar entre 0 e 1.')
     if result['frame_generation'] is not False:
         raise ValueError('Frame generation ainda indisponível nesta versão.')
+    if type(result['frame_log']) is not bool:
+        raise ValueError('O registro de quadros deve estar ligado ou desligado.')
     if type(result['hud_after_upscale']) is not bool:
         raise ValueError('HUD após upscaling deve estar ligada ou desligada.')
     rw, rh = map(int, ('1280x720' if result['render_resolution'] == 'native' else result['render_resolution']).split('x'))
@@ -124,6 +126,11 @@ def display_environment(inherited, settings, home=None):
     else:
         for key in ('D2_VULKAN_EXPERIMENTAL', 'D2_VULKAN_FALLBACK'):
             env.pop(key, None)
+    if value['frame_log']:
+        base = Path(home) if home else Path(env.get('LOCALAPPDATA') or tempfile.gettempdir())
+        env['D2_FRAME_LOG'] = str(base / 'logs' / 'frame-times.log')
+    else:
+        env.pop('D2_FRAME_LOG', None)
     env['D2_PRESENT_INTERVAL'] = '1' if value['vsync'] else '0'
     rw, rh = ('1280x720' if value['render_resolution'] == 'native' else value['render_resolution']).split('x')
     ow, oh = value['resolution'].split('x')

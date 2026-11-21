@@ -342,5 +342,9 @@
   "Nítido desenha em 2x a resolução e reduz para a tela (bordas mais lisas). FSR 1 desenha em menos pixels e amplia: ganha desempenho em PCs fracos. Personalizado libera as opções abaixo.": "Sharp draws at 2x the resolution and scales down to the screen (smoother edges). FSR 1 draws fewer pixels and scales up: it gains performance on weaker PCs. Custom unlocks the options below.",
   "Preset de qualidade inválido.": "Invalid quality preset.",
   "Android: gera o núcleo do app (libd2core.so) a partir do jogo já preparado neste PC. Baixa o NDK na primeira vez (~750 MB).": "Android: builds the app core (libd2core.so) from the game already prepared on this PC. Downloads the NDK the first time (~750 MB).",
-  "Preparar núcleo Android": "Prepare Android core"
+  "Preparar núcleo Android": "Prepare Android core",
+  "Gravar tempo dos quadros (diagnóstico de engasgos)": "Record frame times (stutter diagnostics)",
+  "Grava um arquivo com cada engasgo e se ele veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU). Não muda o desempenho. Salve, jogue e envie o arquivo frame-times.log.": "Writes a file with each hitch and whether it came from the game (CPU/loading) or from presentation (VSync/GPU). It does not change performance. Save, play and send the frame-times.log file.",
+  "Abrir pasta dos registros": "Open logs folder",
+  "O registro de quadros deve estar ligado ou desligado.": "Frame logging must be on or off."
 }

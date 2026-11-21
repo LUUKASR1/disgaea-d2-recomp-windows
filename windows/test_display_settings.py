@@ -139,6 +139,12 @@ class DisplayTests(unittest.TestCase):
         with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, render_resolution='100x100'))
         with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, render_resolution='5000x3000'))
 
+    def test_frame_log_is_opt_in_and_points_inside_the_launcher_home(self):
+        self.assertNotIn('D2_FRAME_LOG', display.display_environment({'D2_FRAME_LOG': 'x'}, display.DEFAULTS, 'C:/home'))
+        env = display.display_environment({}, dict(display.DEFAULTS, frame_log=True), 'C:/home')
+        self.assertTrue(env['D2_FRAME_LOG'].replace('\\', '/').endswith('home/logs/frame-times.log'))
+        with self.assertRaises(ValueError): display.validate_settings(dict(display.DEFAULTS, frame_log='yes'))
+
     def test_window_fits_monitor_and_retains_aspect(self):
         value = dict(display.DEFAULTS, resolution='3840x2160')
         x, y, width, height = display.window_bounds(value, (0, 0, 1920, 1040), (0, 0, 1920, 1080), (16, 39))

@@ -15,6 +15,7 @@ Lançamento oficial do projeto comunitário que roda **Disgaea D2: A Brighter Da
 - O supersampling se limita ao máximo de 4096 px do renderer e não é oferecido quando o ganho seria pequeno (por exemplo, tela de 4K).
 - Não é DLSS nem geração de quadros: são técnicas espaciais. O DLSS e o FSR temporal dependem de vetores de movimento que o jogo ainda não fornece e continuam em estudo.
 - Depois de atualizar, use **Preparar** só se o launcher pedir; os presets são aplicados na próxima abertura do jogo.
+- **Diagnóstico de engasgos:** aba Vídeo → "Gravar tempo dos quadros". Grava `frame-times.log` (pasta `logs` do launcher) com cada engasgo e se veio do jogo (CPU/carregamento) ou da apresentação (VSync/GPU), mais um resumo a cada 5 s. Não muda o desempenho.
 
 ## Versões do jogo e plataformas
 
@@ -70,6 +71,7 @@ Official release of the community project that runs a recompiled **Disgaea D2: A
 - **Leaner launcher and menu:** test and developer items were removed (the home "Play from ISO (experimental)" button, "Test clean ISO install", the DLSS notice, "Save textures" and the menu's Vulkan row). The F1 System tab now holds only language, pause when unfocused and the trophy pop-up tests.
 - **PlayStation-style trophy pop-up** over the game window, with the cup (bronze, silver, gold or platinum), the name and the original icon when the launcher finds `TROPHY.TRP` in your game folder or ISO.
 - **How to use:** start the game from the launcher (keep the launcher open to see the trophy pop-up). After updating, run **Prepare** once to rebuild the game (the game executable gained the channel this window uses). The game must be windowed or borderless for the pop-up to show on top.
+- **Stutter diagnostics:** Video tab → "Record frame times". Writes `frame-times.log` (launcher `logs` folder) with each hitch and whether it came from the game (CPU/loading) or from presentation (VSync/GPU), plus a summary every 5 s. It does not change performance.
 
 ## Game versions and platforms
 

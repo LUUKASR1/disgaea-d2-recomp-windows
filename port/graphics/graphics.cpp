@@ -304,8 +304,50 @@ extern "C" UINT d2_display_swap_flags(void* object){
     std::fprintf(stderr,"[D2DISPLAY] tearing-supported=%d\n",supported);
     return supported?DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING:0;
 }
+// Frame-time diagnostics (D2_FRAME_LOG=<file>): one line per hitch plus a summary every 5 s. It only measures; it never changes pacing.
+// "game" = time between two presents (the game's own work: recompiled code, uploads, shader/pipeline compiles);
+// "present" = time inside Present (VSync / compositor / GPU wait). The larger one tells which side the hitch came from.
+namespace flog{
+    FILE* file=nullptr;bool ready=false;LARGE_INTEGER freq{},start{},last_exit{};bool have_last=false;
+    double ema=16.7;std::vector<float> window;double sum_game=0,sum_present=0,worst=0;int hitches=0;double next_report=5.0;
+    double ms(LARGE_INTEGER a,LARGE_INTEGER b){return static_cast<double>(b.QuadPart-a.QuadPart)*1000.0/static_cast<double>(freq.QuadPart);}
+    void open(UINT interval){
+        ready=true;const char* path=std::getenv("D2_FRAME_LOG");
+        if(!path||!*path)return;
+        file=std::fopen(path,"a");if(!file)return;
+        QueryPerformanceFrequency(&freq);QueryPerformanceCounter(&start);
+        SYSTEMTIME t;GetLocalTime(&t);
+        std::fprintf(file,"=== sessao %04u-%02u-%02u %02u:%02u:%02u  render=%ux%u saida=%ux%u upscaler=%s intervalo_present=%u ===\n",
+            t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1":"nenhum",interval);
+        std::fflush(file);
+    }
+    void report(double now_s){
+        if(window.empty())return;
+        std::sort(window.begin(),window.end());
+        const double n=static_cast<double>(window.size());
+        std::fprintf(file,"[%6.1fs] fps=%.1f medio=%.1fms p99=%.1fms max=%.1fms engasgos=%d jogo=%.1fms present=%.1fms\n",
+            now_s,n/5.0,(sum_game+sum_present)/n,static_cast<double>(window[static_cast<size_t>(n*0.99)>=window.size()?window.size()-1:static_cast<size_t>(n*0.99)]),worst,hitches,sum_game/n,sum_present/n);
+        std::fflush(file);
+        window.clear();sum_game=sum_present=worst=0;hitches=0;
+    }
+    void frame(double game_ms,double present_ms,LARGE_INTEGER now){
+        const double total=game_ms+present_ms;
+        if(!have_last)return;
+        window.push_back(static_cast<float>(total));sum_game+=game_ms;sum_present+=present_ms;if(total>worst)worst=total;
+        const double at=ms(start,now)/1000.0;
+        if(total>20.0&&total>1.6*ema){
+            ++hitches;
+            std::fprintf(file,"[%6.1fs] ENGASGO %.1fms (jogo=%.1f present=%.1f) origem=%s\n",at,total,game_ms,present_ms,game_ms>present_ms?"jogo/CPU/carregamento":"apresentacao/VSync/GPU");
+            std::fflush(file);
+        }else ema=ema*0.95+total*0.05;
+        if(at>=next_report){report(at);next_report=at+5.0;}
+    }
+}
 extern "C" int d2_display_present(void* object,UINT interval){
     if(!object)return -1;auto* swap=static_cast<IDXGISwapChain3*>(object);
+    if(!flog::ready)flog::open(interval);
+    LARGE_INTEGER t_enter{};double game_ms=0;
+    if(flog::file){QueryPerformanceCounter(&t_enter);game_ms=flog::have_last?flog::ms(flog::last_exit,t_enter):0;}
     // F1 menu open: hold the frame so the game stands still behind the panel (messages keep being pumped for the panel and the pad).
     if(menu_pause.load()){
         HWND window=nullptr;
@@ -351,7 +393,9 @@ extern "C" int d2_display_present(void* object,UINT interval){
     if(flag("D2_VRR") && interval==0 && SUCCEEDED(swap->GetDesc1(&desc)) &&
        (desc.Flags&DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) && SUCCEEDED(swap->GetFullscreenState(&fullscreen,nullptr)) && !fullscreen)
         flags=DXGI_PRESENT_ALLOW_TEARING;
+    LARGE_INTEGER t_present{};if(flog::file)QueryPerformanceCounter(&t_present);
     HRESULT result=swap->Present(interval,flags);
+    if(flog::file){LARGE_INTEGER t_done;QueryPerformanceCounter(&t_done);flog::frame(game_ms,flog::ms(t_present,t_done),t_done);flog::last_exit=t_done;flog::have_last=true;}
     if(FAILED(result))std::fprintf(stderr,"[D2DISPLAY] present failed HRESULT=%lu\n",static_cast<unsigned long>(result));
     return FAILED(result)?-1:0;
 }
