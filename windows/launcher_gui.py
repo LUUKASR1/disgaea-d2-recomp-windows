@@ -581,10 +581,16 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     cartoon = wire_cartoon(hero)
 
     play_button = CartoonButton(hero, art, 20, 238, 'play', '▶  JOGAR DISGAEA D2', play, 17, '#56102a', shift=26)
-    iso_button = CartoonButton(hero, art, 20, 326, 'iso', 'Escolher ISO' if clean else 'Jogar pela ISO (experimental)', play_iso, 11, '#101a62', shift=14)
-    video_button = CartoonButton(hero, art, 196, 326, 'gear', 'Configurações', lambda: show('Vídeo'), 11, '#101a62', shift=14)
-    cartoon.extend([play_button, iso_button, video_button])
-    buttons.extend([play_button, iso_button, video_button])
+    # The ISO path stays in Preparação ("Selecionar ISO e preparar"); the home screen keeps only play + settings (ISO test build keeps its own button).
+    if clean:
+        iso_button = CartoonButton(hero, art, 20, 326, 'iso', 'Escolher ISO', play_iso, 11, '#101a62', shift=14)
+        video_button = CartoonButton(hero, art, 196, 326, 'gear', 'Configurações', lambda: show('Vídeo'), 11, '#101a62', shift=14)
+        extra = [iso_button, video_button]
+    else:
+        video_button = CartoonButton(hero, art, 20, 326, 'gear', 'Configurações', lambda: show('Vídeo'), 11, '#101a62', shift=14)
+        extra = [video_button]
+    cartoon.extend([play_button] + extra)
+    buttons.extend([play_button] + extra)
 
     def sync_pill(*_):
         hero.itemconfigure(pill_text, text=tk.StringVar.get(build_status))
@@ -685,7 +691,6 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         bg=CARD, fg=TEXT, selectcolor=PANEL, activebackground=CARD, activeforeground=TEXT, font=('Segoe UI',11))
     hud_toggle.pack(anchor='w',pady=8);entries.append(hud_toggle)
     label(graphics, 'Desenha a interface na resolução de saída nas cenas reconhecidas. Cenas sem suporte usam o caminho atual. Requer reiniciar o jogo.', 10, MUTED)
-    label(graphics, 'DLSS e Frame Generation ainda não estão disponíveis.', 10, MUTED)
     if not official:
         label(graphics, 'Capturas F8 incluem temporal-probe.json com constantes de dois frames.', 10, MUTED)
     label(page, 'As configurações são aplicadas na próxima abertura do jogo.', 10, MUTED)
@@ -741,7 +746,6 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     label(page, 'Na primeira execução, as ferramentas são baixadas e a build é criada automaticamente. Depois, Jogar reutiliza sua build local.', 10, MUTED)
 
     page = bodies['Arquivos e suporte']
-    if not standalone: button(page, 'Testar instalação ISO limpa', backend.open_clean_iso_test)
     label(page, 'TUDO EM UM LUGAR', 10, GOLD, True)
     label(page, 'Arquivos e suporte', 28, bold=True)
     label(page, 'Sua build, configuração e saves ficam na pasta local do aplicativo.', color=MUTED)
@@ -814,14 +818,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     button(page, 'Abrir projeto no GitHub', lambda: webbrowser.open('https://github.com/LUUKASR1/disgaea-d2-recomp-windows'))
     if not standalone: button(page, 'Página oficial do firmware PS3', lambda: webbrowser.open('https://www.playstation.com/pt-br/support/hardware/ps3/system-software/'))
     label(page, 'O compilador e o Git são portáteis e preparados pelo launcher, sem instalação manual.', 10, MUTED)
-    def build_android_core():
-        def work():
-            library = backend.prepare_android_core()
-            events.put(('android_ready', str(library)))
-        task(work)
-    label(page, 'Android: compila o jogo já preparado neste PC para o Odin 2 (ARM64). Baixa o NDK na primeira vez (~750 MB).', 10, MUTED)
-    button(page, 'Preparar núcleo Android', build_android_core)
-    label(page, 'Não apague a pasta local para atualizar o launcher. O Android está em melhoria contínua; ajuda é bem-vinda.', 10, MUTED)
+    label(page, 'Não apague a pasta local para atualizar o launcher. O projeto está em melhoria contínua; ajuda é bem-vinda.', 10, MUTED)
     for variable in (resolution, mode, vsync):
         variable.trace_add('write', update_summary)
     update_summary()

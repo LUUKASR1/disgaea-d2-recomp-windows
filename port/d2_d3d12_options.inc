@@ -839,18 +839,12 @@ static void layout_rows(Row* rows, std::string& hint)
                  "Click an action and press the new key (Esc cancels). Applies with no controller connected or together with one.");
     } else {
         rows[0] = Row{A_LANG, L("Idioma", "Language"), cfg.lang ? "« English »" : "« Português »", true, false};
-#ifdef D2_VULKAN_GAME_BACKEND
-        rows[1] = Row{A_API, L("API gráfica", "Graphics API"), api_armed() ? std::string("« ") + L("Clique: reiniciar em Vulkan", "Click: restart in Vulkan") + " »" : "« DirectX 12 »", true, false};
-#else
-        rows[1] = Row{A_API, L("API gráfica", "Graphics API"), std::string("« DirectX 12 (") + L("sem Vulkan nesta versão", "no Vulkan in this build") + ") »", false, false};
-#endif
-        rows[3] = Row{A_PAUSE, L("Pausar ao perder o foco", "Pause when unfocused"), on_off[cfg.pause_focus ? 1 : 0], true, false};
-        rows[5] = Row{A_TR_TEST_OK, L("Testar aviso: troféu conquistado", "Test pop-up: trophy earned"), "", true, true};
-        rows[6] = Row{A_TR_TEST_BLK, L("Testar aviso: troféu bloqueado", "Test pop-up: trophy blocked"), "", true, true};
-        rows[2] = Row{A_TEXDUMP, L("Salvar texturas (PNG)", "Save textures (PNG)"), on_off[d2_texture_dump_enabled() ? 1 : 0], true, false};
+        rows[1] = Row{A_PAUSE, L("Pausar ao perder o foco", "Pause when unfocused"), on_off[cfg.pause_focus ? 1 : 0], true, false};
+        rows[2] = Row{A_TR_TEST_OK, L("Testar aviso: troféu conquistado", "Test pop-up: trophy earned"), "", true, true};
+        rows[3] = Row{A_TR_TEST_BLK, L("Testar aviso: troféu bloqueado", "Test pop-up: trophy blocked"), "", true, true};
         rows[9] = Row{A_CLOSE, L("Voltar ao jogo", "Back to game"), "", true, true};
-        hint = L("Trocar a API reinicia o jogo (o progresso não salvo é perdido). O Vulkan (experimental) é outro renderizador, com os mesmos filtros. Salvar texturas grava PNGs em texture-pack\\dump (para fazer pacotes HD).",
-                 "Switching the API restarts the game (unsaved progress is lost). Vulkan (experimental) is a different renderer with the same filters. Save textures writes PNGs to texture-pack\\dump (for HD packs).");
+        hint = L("O jogo fica pausado enquanto este menu está aberto. Os botões de teste mostram o aviso de troféu no launcher aberto, sem gravar nenhum troféu.",
+                 "The game stays paused while this menu is open. The test buttons show the trophy pop-up from the open launcher without recording any trophy.");
         if (GetTickCount64() < tr_test_until)
             hint = L("Aviso de teste enviado. Ele aparece no launcher aberto, no canto da tela; nenhum troféu é gravado.",
                      "Test pop-up sent. It shows from the open launcher, in the screen corner; no trophy is recorded.");
