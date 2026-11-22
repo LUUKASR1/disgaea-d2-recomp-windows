@@ -311,9 +311,13 @@ namespace shader_cache{
     const wchar_t* dir(){static const std::wstring d=[]{const wchar_t* v=_wgetenv(L"D2_SHADER_CACHE_DIR");return std::wstring(v?v:L"");}();return d.empty()?nullptr:d.c_str();}
     unsigned long long fnv(const void* p,size_t n,unsigned long long h=1469598103934665603ULL){
         const unsigned char* b=static_cast<const unsigned char*>(p);for(size_t i=0;i<n;i++){h^=b[i];h*=1099511628211ULL;}return h;}
+    void make_dirs(const std::wstring& path){
+        for(size_t i=1;i<=path.size();i++)
+            if(i==path.size()||path[i]==L'\\'||path[i]==L'/')CreateDirectoryW(path.substr(0,i).c_str(),nullptr);   // existing levels just fail harmlessly
+    }
     std::wstring file_for(const wchar_t* kind,unsigned long long a,unsigned long long b){
         auto hex=[](unsigned long long v){std::wstring t(16,L'0');for(int i=15;i>=0;i--,v>>=4)t[i]=L"0123456789abcdef"[v&15];return t;};
-        CreateDirectoryW(dir(),nullptr);   // the launcher creates the parent; this only makes the leaf if missing
+        make_dirs(dir());   // creates every missing level: CreateDirectoryW alone only makes the last one
         return std::wstring(dir())+L"\\"+kind+L"-"+hex(a)+hex(b)+L".bin";}
     bool read_all(const std::wstring& path,std::vector<unsigned char>& out){
         HANDLE f=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
@@ -415,6 +419,8 @@ namespace flog{
         SYSTEMTIME t;GetLocalTime(&t);
         std::fprintf(file,"=== sessao %04u-%02u-%02u %02u:%02u:%02u  render=%ux%u saida=%ux%u upscaler=%s intervalo_present=%u ===\n",
             t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1":"nenhum",interval);
+        if(shader_cache::dir())std::fprintf(file,"    cache de shaders em: %ls\n",shader_cache::dir());
+        else std::fprintf(file,"    cache de shaders: desligado (sem pasta)\n");
         std::fflush(file);
     }
     void report(double now_s){
