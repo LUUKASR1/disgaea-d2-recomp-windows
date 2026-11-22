@@ -1,5 +1,6 @@
 #include "graphics.h"
 #include <windows.h>
+#include <tlhelp32.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
@@ -15,6 +16,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <map>
 #include <string>
 #define A_CPU 1
 #include "vendor/fsr1/ffx_a.h"
@@ -406,6 +408,63 @@ extern "C" long d2_create_pso_cached(void* device_ptr,const void* desc_ptr,void*
 // Frame-time diagnostics (D2_FRAME_LOG=<file>): one line per hitch plus a summary every 5 s. It only measures; it never changes pacing.
 // "game" = time between two presents (the game's own work: recompiled code, uploads, shader/pipeline compiles);
 // "present" = time inside Present (VSync / compositor / GPU wait). The larger one tells which side the hitch came from.
+
+// Per-thread CPU sampler (only when the frame log is on). Every ~100 ms it compares each thread's CPU time with the previous sample and,
+// when the process used more than 1.5 cores, writes which threads did the work, so a hitch can be matched to the code that caused it.
+namespace tsamp{
+    struct Info{ULONGLONG last=0;std::string label;};
+    typedef LONG (WINAPI* QueryThreadFn)(HANDLE,int,PVOID,ULONG,PULONG);
+    typedef HRESULT (WINAPI* GetDescFn)(HANDLE,PWSTR*);
+    FILE* out=nullptr;LARGE_INTEGER freq{},t0{};
+    ULONGLONG cpu(HANDLE h){FILETIME c,e,k,u;if(!GetThreadTimes(h,&c,&e,&k,&u))return 0;
+        return ((static_cast<ULONGLONG>(k.dwHighDateTime)<<32)|k.dwLowDateTime)+((static_cast<ULONGLONG>(u.dwHighDateTime)<<32)|u.dwLowDateTime);}
+    std::string describe(HANDLE h,DWORD tid){
+        char buf[200];std::string label="tid="+std::to_string(tid);
+        static auto query=reinterpret_cast<QueryThreadFn>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtQueryInformationThread"));
+        static auto desc=reinterpret_cast<GetDescFn>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"GetThreadDescription"));
+        PVOID start=nullptr;
+        if(query&&query(h,9,&start,sizeof(start),nullptr)>=0&&start){
+            HMODULE mod=nullptr;wchar_t path[MAX_PATH]={};
+            if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(start),&mod)&&GetModuleFileNameW(mod,path,MAX_PATH)){
+                const wchar_t* base=std::wcsrchr(path,L'\\');base=base?base+1:path;
+                std::snprintf(buf,sizeof(buf)," inicio=%ls+0x%llx",base,static_cast<unsigned long long>(reinterpret_cast<ULONG_PTR>(start)-reinterpret_cast<ULONG_PTR>(mod)));
+            }else std::snprintf(buf,sizeof(buf)," inicio=0x%llx",static_cast<unsigned long long>(reinterpret_cast<ULONG_PTR>(start)));
+            label+=buf;
+        }
+        PWSTR name=nullptr;
+        if(desc&&SUCCEEDED(desc(h,&name))&&name){if(*name){std::snprintf(buf,sizeof(buf)," nome=%ls",name);label+=buf;}LocalFree(name);}
+        return label;
+    }
+    DWORD WINAPI run(LPVOID){
+        std::map<DWORD,Info> threads;const DWORD pid=GetCurrentProcessId();
+        LARGE_INTEGER prev;QueryPerformanceCounter(&prev);
+        for(;;){
+            Sleep(100);
+            LARGE_INTEGER now;QueryPerformanceCounter(&now);
+            const double wall=static_cast<double>(now.QuadPart-prev.QuadPart)*1000.0/static_cast<double>(freq.QuadPart);prev=now;
+            HANDLE snap=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);if(snap==INVALID_HANDLE_VALUE)continue;
+            THREADENTRY32 te{};te.dwSize=sizeof(te);
+            std::vector<std::pair<double,std::string>> top;double total=0;
+            if(Thread32First(snap,&te))do{
+                if(te.th32OwnerProcessID!=pid)continue;
+                HANDLE h=OpenThread(THREAD_QUERY_INFORMATION,FALSE,te.th32ThreadID);if(!h)h=OpenThread(THREAD_QUERY_LIMITED_INFORMATION,FALSE,te.th32ThreadID);if(!h)continue;
+                const ULONGLONG c=cpu(h);auto it=threads.find(te.th32ThreadID);
+                if(it==threads.end()){Info info;info.last=c;info.label=describe(h,te.th32ThreadID);threads.emplace(te.th32ThreadID,info);}
+                else{const double d=static_cast<double>(c-it->second.last)/10000.0;it->second.last=c;total+=d;if(d>=15.0)top.emplace_back(d,it->second.label);}
+                CloseHandle(h);
+            }while(Thread32Next(snap,&te));
+            CloseHandle(snap);
+            if(wall>0&&total>1.5*wall){
+                std::sort(top.begin(),top.end(),[](const auto&a,const auto&b){return a.first>b.first;});
+                const double at=static_cast<double>(now.QuadPart-t0.QuadPart)/static_cast<double>(freq.QuadPart);
+                std::fprintf(out,"[%6.1fs] CARGA %.1f nucleos em %.0fms:",at,total/wall,wall);
+                for(size_t i=0;i<top.size()&&i<5;++i)std::fprintf(out," | %.0fms %s",top[i].first,top[i].second.c_str());
+                std::fprintf(out,"\n");std::fflush(out);
+            }
+        }
+    }
+    void start(FILE* f,LARGE_INTEGER frequency,LARGE_INTEGER zero){out=f;freq=frequency;t0=zero;HANDLE t=CreateThread(nullptr,0,run,nullptr,0,nullptr);if(t)CloseHandle(t);}
+}
 namespace flog{
     FILE* file=nullptr;bool ready=false;LARGE_INTEGER freq{},start{},last_exit{};bool have_last=false;
     ULONGLONG last_thread=0,last_proc=0;   // CPU time (100 ns units) at the previous present, to tell "computing" from "waiting"
@@ -422,6 +481,7 @@ namespace flog{
         if(shader_cache::dir())std::fprintf(file,"    cache de shaders em: %ls\n",shader_cache::dir());
         else std::fprintf(file,"    cache de shaders: desligado (sem pasta)\n");
         std::fflush(file);
+        tsamp::start(file,freq,start);
     }
     void report(double now_s){
         if(window.empty())return;
