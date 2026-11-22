@@ -1,6 +1,7 @@
 #include "graphics.h"
 #include <windows.h>
 #include <tlhelp32.h>
+#include <dbghelp.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
@@ -435,6 +436,7 @@ namespace tsamp{
         if(desc&&SUCCEEDED(desc(h,&name))&&name){if(*name){std::snprintf(buf,sizeof(buf)," nome=%ls",name);label+=buf;}LocalFree(name);}
         return label;
     }
+    void register_hot(DWORD tid,const std::string& label);
     DWORD WINAPI run(LPVOID){
         std::map<DWORD,Info> threads;const DWORD pid=GetCurrentProcessId();
         LARGE_INTEGER prev;QueryPerformanceCounter(&prev);
@@ -449,7 +451,7 @@ namespace tsamp{
                 if(te.th32OwnerProcessID!=pid)continue;
                 HANDLE h=OpenThread(THREAD_QUERY_INFORMATION,FALSE,te.th32ThreadID);if(!h)h=OpenThread(THREAD_QUERY_LIMITED_INFORMATION,FALSE,te.th32ThreadID);if(!h)continue;
                 const ULONGLONG c=cpu(h);auto it=threads.find(te.th32ThreadID);
-                if(it==threads.end()){Info info;info.last=c;info.label=describe(h,te.th32ThreadID);threads.emplace(te.th32ThreadID,info);}
+                if(it==threads.end()){Info info;info.last=c;info.label=describe(h,te.th32ThreadID);register_hot(te.th32ThreadID,info.label);threads.emplace(te.th32ThreadID,info);}
                 else{const double d=static_cast<double>(c-it->second.last)/10000.0;it->second.last=c;total+=d;if(d>=15.0)top.emplace_back(d,it->second.label);}
                 CloseHandle(h);
             }while(Thread32Next(snap,&te));
@@ -463,7 +465,77 @@ namespace tsamp{
             }
         }
     }
-    void start(FILE* f,LARGE_INTEGER frequency,LARGE_INTEGER zero){out=f;freq=frequency;t0=zero;HANDLE t=CreateThread(nullptr,0,run,nullptr,0,nullptr);if(t)CloseHandle(t);}
+
+    // Instruction-pointer sampler: every few ms it briefly suspends the busy game threads, reads where they are executing and, once a second,
+    // writes the most frequent places (function name if a PDB sits next to the exe, otherwise exe RVA). It never allocates or prints while a thread is suspended.
+    std::mutex hot_mutex;std::vector<std::pair<DWORD,std::string>> hot_threads;
+    void register_hot(DWORD tid,const std::string& label){
+        auto ends=[&](const char* key){size_t at=label.find(key);if(at==std::string::npos)return false;const size_t n=std::strlen(key);return at+n==label.size()||label[at+n]==' ';};
+        if(label.find("DisgaeaD2Recomp.exe")==std::string::npos)return;
+        if(ends("+0x13d0")||ends("+0x124b0c0")){std::lock_guard<std::mutex> g(hot_mutex);hot_threads.emplace_back(tid,label);}
+    }
+    typedef BOOL (WINAPI* SymInitFn)(HANDLE,PCSTR,BOOL);
+    typedef DWORD (WINAPI* SymOptFn)(DWORD);
+    typedef BOOL (WINAPI* SymFromFn)(HANDLE,DWORD64,PDWORD64,PSYMBOL_INFO);
+    DWORD WINAPI hot(LPVOID){
+        const HMODULE exe=GetModuleHandleW(nullptr);
+        SymFromFn sym_from=nullptr;
+        if(HMODULE dh=LoadLibraryW(L"dbghelp.dll")){
+            auto init=reinterpret_cast<SymInitFn>(GetProcAddress(dh,"SymInitialize"));auto opt=reinterpret_cast<SymOptFn>(GetProcAddress(dh,"SymSetOptions"));
+            sym_from=reinterpret_cast<SymFromFn>(GetProcAddress(dh,"SymFromAddr"));
+            if(opt)opt(SYMOPT_UNDNAME|SYMOPT_DEFERRED_LOADS);
+            if(!init||!init(GetCurrentProcess(),nullptr,TRUE))sym_from=nullptr;
+        }
+        std::map<DWORD,HANDLE> handles;std::map<DWORD,std::map<ULONG_PTR,int>> hist;std::map<ULONG_PTR,std::string> names;std::map<DWORD,int> total;
+        ULONGLONG last_dump=GetTickCount64();
+        for(;;){
+            Sleep(2);
+            std::vector<std::pair<DWORD,std::string>> targets;{std::lock_guard<std::mutex> g(hot_mutex);targets=hot_threads;}
+            for(auto& t:targets){
+                auto it=handles.find(t.first);
+                if(it==handles.end())it=handles.emplace(t.first,OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_QUERY_INFORMATION,FALSE,t.first)).first;
+                if(!it->second)continue;
+                CONTEXT ctx{};ctx.ContextFlags=CONTEXT_CONTROL;
+                if(SuspendThread(it->second)==static_cast<DWORD>(-1))continue;
+                const BOOL ok=GetThreadContext(it->second,&ctx);
+                ResumeThread(it->second);
+                if(!ok)continue;
+                const ULONG_PTR rip=static_cast<ULONG_PTR>(ctx.Rip);
+                ULONG_PTR key=rip&~static_cast<ULONG_PTR>(0xFF);
+                if(names.find(key)==names.end()||sym_from){
+                    HMODULE mod=nullptr;std::string label;
+                    if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(rip),&mod)&&mod!=exe){
+                        wchar_t path[MAX_PATH]={};GetModuleFileNameW(mod,path,MAX_PATH);const wchar_t* base=std::wcsrchr(path,L'\\');base=base?base+1:path;
+                        char b[MAX_PATH+8];std::snprintf(b,sizeof(b),"[%ls]",base);label=b;key=reinterpret_cast<ULONG_PTR>(mod);
+                    }else{
+                        char b[300];bool named=false;
+                        if(sym_from){
+                            alignas(SYMBOL_INFO) char raw[sizeof(SYMBOL_INFO)+200]={};auto* si=reinterpret_cast<SYMBOL_INFO*>(raw);si->SizeOfStruct=sizeof(SYMBOL_INFO);si->MaxNameLen=200;DWORD64 disp=0;
+                            if(sym_from(GetCurrentProcess(),rip,&disp,si)){std::snprintf(b,sizeof(b),"%s",si->Name);key=static_cast<ULONG_PTR>(si->Address);named=true;}
+                        }
+                        if(!named)std::snprintf(b,sizeof(b),"exe+0x%llx",static_cast<unsigned long long>(key-reinterpret_cast<ULONG_PTR>(exe)));
+                        label=b;
+                    }
+                    names[key]=label;
+                }
+                ++hist[t.first][key];++total[t.first];
+            }
+            if(GetTickCount64()-last_dump>=1000){
+                last_dump=GetTickCount64();
+                const double at=static_cast<double>([]{LARGE_INTEGER n;QueryPerformanceCounter(&n);return n.QuadPart-t0.QuadPart;}())/static_cast<double>(freq.QuadPart);
+                for(auto& t:targets){
+                    auto h=hist.find(t.first);if(h==hist.end()||total[t.first]<5)continue;
+                    std::vector<std::pair<int,ULONG_PTR>> v;for(auto& kv:h->second)v.emplace_back(kv.second,kv.first);
+                    std::sort(v.begin(),v.end(),[](const auto&a,const auto&b){return a.first>b.first;});
+                    std::fprintf(out,"[%6.1fs] AMOSTRA %s (%d amostras):",at,t.second.c_str(),total[t.first]);
+                    for(size_t i=0;i<v.size()&&i<6;++i)std::fprintf(out," | %d%% %s",100*v[i].first/total[t.first],names[v[i].second].c_str());
+                    std::fprintf(out,"\n");
+                }
+                std::fflush(out);hist.clear();total.clear();
+            }
+        }
+    }
+    void start(FILE* f,LARGE_INTEGER frequency,LARGE_INTEGER zero){out=f;freq=frequency;t0=zero;HANDLE t=CreateThread(nullptr,0,run,nullptr,0,nullptr);if(t)CloseHandle(t);HANDLE h=CreateThread(nullptr,0,hot,nullptr,0,nullptr);if(h)CloseHandle(h);}
 }
 namespace flog{
     FILE* file=nullptr;bool ready=false;LARGE_INTEGER freq{},start{},last_exit{};bool have_last=false;
