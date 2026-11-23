@@ -33,6 +33,9 @@
 #include <type_traits>
 #include <vector>
 #include <vulkan/vulkan.h>
+#ifdef __ANDROID__
+std::atomic<void *(*)()> d2_vulkan_library_opener{nullptr};   // set by d2_core_set_vulkan_loader (rsx_vulkan_android.cpp)
+#endif
 namespace d2::vulkan {
 void check(VkResult r, const char *call) {
   if (r != VK_SUCCESS)
@@ -1021,7 +1024,11 @@ public:
         GetProcAddress(library, "vkGetInstanceProcAddr"));
 #else
 #ifdef __ANDROID__
-    library = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    // Optional host hook (Android app): returns a libvulkan handle that uses a user-supplied driver (e.g. Turnip). Null = system driver.
+    if (auto opener = d2_vulkan_library_opener.load())
+      library = opener();
+    if (!library)
+      library = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
 #else
     library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 #endif

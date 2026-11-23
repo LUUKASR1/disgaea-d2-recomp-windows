@@ -158,6 +158,10 @@ extern "C" __attribute__((visibility("default"))) void d2_core_set_window(void *
   g_window_cv.notify_all();
 }
 
+extern std::atomic<void *(*)()> d2_vulkan_library_opener;
+// The Android host hands over a function that opens libvulkan with a user-supplied driver (Turnip). Call before the game starts.
+extern "C" __attribute__((visibility("default"))) void d2_core_set_vulkan_loader(void *(*opener)()) { d2_vulkan_library_opener.store(opener); }
+
 extern "C" {
 
 int rsx_vulkan_backend_init(uint32_t width, uint32_t height, const char *) {

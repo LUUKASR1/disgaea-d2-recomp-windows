@@ -1,5 +1,6 @@
 // Loads the recompiled game core (libd2core.so, generated on the user's PC from their own ISO) and runs it.
 #include <jni.h>
+#include <adrenotools/driver.h>
 #include "bridge.h"
 #include <android/log.h>
 #include <dlfcn.h>
@@ -46,6 +47,26 @@ std::string str(JNIEnv* env, jstring s) {
 }
 }  // namespace
 
+// Optional custom Vulkan driver (Turnip, Adreno GPUs only). Empty strings = use the system driver.
+namespace {
+std::string g_native_lib_dir, g_driver_dir, g_driver_name;
+void* open_custom_vulkan() {
+    if (g_driver_dir.empty() || g_driver_name.empty()) return nullptr;
+    void* handle = adrenotools_open_libvulkan(RTLD_NOW | RTLD_LOCAL, ADRENOTOOLS_DRIVER_CUSTOM, nullptr, g_native_lib_dir.c_str(),
+                                              g_driver_dir.c_str(), g_driver_name.c_str(), nullptr, nullptr);
+    __android_log_print(handle ? ANDROID_LOG_INFO : ANDROID_LOG_WARN, "d2core", "custom Vulkan driver %s: %s",
+                        g_driver_name.c_str(), handle ? "loaded" : "failed, using the system driver");
+    return handle;
+}
+}  // namespace
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_disgaead2_port_NativeBridge_setCustomDriver(JNIEnv* env, jclass, jstring nativeLibDir, jstring driverDir, jstring driverName) {
+    g_native_lib_dir = str(env, nativeLibDir);
+    g_driver_dir = str(env, driverDir);
+    g_driver_name = str(env, driverName);
+}
+
 bool d2_core_active() { return g_set_window.load() != nullptr; }
 
 void d2_core_forward_pad(int buttons, float lx, float ly, float rx, float ry) {
@@ -88,6 +109,8 @@ Java_org_disgaead2_port_NativeBridge_startCore(JNIEnv* env, jclass, jstring so, 
     g_result = -1000;
     // The core draws with its own Vulkan swapchain: stop the milestone-0 renderer, then give it the window.
     d2_demo_stop();
+    if (auto set_loader = reinterpret_cast<void (*)(void* (*)())>(dlsym(lib, "d2_core_set_vulkan_loader")))
+        set_loader(&open_custom_vulkan);   // older cores do not have it and keep the system driver
     auto set_window = reinterpret_cast<void (*)(void*)>(dlsym(lib, "d2_core_set_window"));
     if (set_window) {
         g_set_window = set_window;

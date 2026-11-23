@@ -82,3 +82,10 @@ The unchanged AMD FSR 1 headers in port/graphics/vendor/fsr1 are MIT-licensed.
 The full license and pinned source/hash provenance are included in that folder.
 The native graphics preview embeds their EASU/RCAS shader implementations.
 DLSS and frame generation are not included or claimed as active.
+
+## libadrenotools and linkernsbypass (Android)
+
+android/third_party/libadrenotools contains the unmodified BSD 2-Clause sources of
+libadrenotools and linkernsbypass (Copyright (c) 2021 Billy Laws; licenses in that folder).
+The Android app uses them only to load a GPU driver package (for example Mesa Turnip) that the
+user imports themselves. No GPU driver is bundled with the app.

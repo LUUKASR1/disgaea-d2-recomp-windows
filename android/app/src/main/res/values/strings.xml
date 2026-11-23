@@ -133,4 +133,11 @@
     <string name="lang_label">Language: %1$s</string>
     <string name="lang_auto">Auto (device language)</string>
     <string name="trophy_icons_found2">Game icons found (%1$d trophies, %2$d names)</string>
+    <string name="gpu_driver_label">GPU driver: %1$s</string>
+    <string name="gpu_driver_system">System (default)</string>
+    <string name="gpu_driver_import">Import GPU driver (.zip)</string>
+    <string name="gpu_driver_note">Experimental, only for Snapdragon/Adreno GPUs. Import a Turnip driver package (.zip with meta.json); tap the driver button to choose it. It applies the next time the game starts. If the driver fails to load, the system driver is used.</string>
+    <string name="gpu_driver_restart">Takes effect the next time the game starts.</string>
+    <string name="gpu_driver_imported">Driver imported: %1$s</string>
+    <string name="gpu_driver_bad">That file is not a valid GPU driver package.</string>
 </resources>

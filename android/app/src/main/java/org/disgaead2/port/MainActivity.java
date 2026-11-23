@@ -33,7 +33,7 @@ import android.widget.TextView;
 
 /** Milestone 0: Vulkan surface + gamepad + ISO document picker + secondary display (Thor). */
 public final class MainActivity extends Activity implements DisplayManager.DisplayListener {
-    private static final int PICK_ISO = 1, PICK_CORE = 2, PICK_SAVE_TREE = 3, PICK_SAVE_ZIP = 4, EXPORT_SAVE = 5, PICK_TRP = 6;
+    private static final int PICK_ISO = 1, PICK_CORE = 2, PICK_SAVE_TREE = 3, PICK_SAVE_ZIP = 4, EXPORT_SAVE = 5, PICK_TRP = 6, PICK_GPU_DRIVER = 7;
     private static final String PREFS = "d2", KEY_ISO = "iso_uri";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -394,7 +394,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
 
     private File gameRoot() { return new File(getExternalFilesDir(null), "game"); }
 
-    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps", KEY_EARLY = "early_flip", KEY_TROPHY_LOCK = "trophy_lock";
+    private static final String KEY_SCALE = "scale_pct", KEY_FPS = "show_fps", KEY_EARLY = "early_flip", KEY_TROPHY_LOCK = "trophy_lock", KEY_GPU_DRIVER = "gpu_driver";
     private static final int[] SCALES = {50, 60, 75, 100};
 
     private SurfaceView surfaceView;
@@ -554,6 +554,90 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return out.toString();
     }
 
+    // ---- Custom GPU driver (Turnip, Adreno only). Drivers are .zip files with a meta.json ("libraryName") and the .so, imported by the user. ----
+    private File driversDir() { return new File(getFilesDir(), "gpu_drivers"); }
+    private String gpuDriverId() { return getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GPU_DRIVER, ""); }
+    private java.util.List<String> installedDrivers() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        File[] dirs = driversDir().listFiles();
+        if (dirs != null) for (File d : dirs) if (d.isDirectory() && new File(d, "meta.json").isFile()) out.add(d.getName());
+        java.util.Collections.sort(out);
+        return out;
+    }
+    private String driverLibraryName(File dir) {
+        try (java.io.InputStream in = new java.io.FileInputStream(new File(dir, "meta.json"))) {
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[4096];
+            int n;
+            while ((n = in.read(b)) > 0) buf.write(b, 0, n);
+            return new org.json.JSONObject(buf.toString("UTF-8")).optString("libraryName", "");
+        } catch (java.io.IOException | org.json.JSONException e) { return ""; }
+    }
+    private String gpuDriverLabel() {
+        String id = gpuDriverId();
+        return getString(R.string.gpu_driver_label, id.isEmpty() ? getString(R.string.gpu_driver_system) : id);
+    }
+    /** Tells the native layer which driver the next game start uses; the system driver when none is chosen or the files are missing. */
+    private void applyGpuDriver() {
+        String id = gpuDriverId();
+        File dir = new File(driversDir(), id);
+        String lib = id.isEmpty() ? "" : driverLibraryName(dir);
+        if (lib.isEmpty() || !new File(dir, lib).isFile()) { NativeBridge.setCustomDriver("", "", ""); return; }
+        NativeBridge.setCustomDriver(getApplicationInfo().nativeLibraryDir, dir.getAbsolutePath() + "/", lib);
+    }
+    private void importGpuDriver(Uri uri) {
+        new Thread(() -> {
+            String message;
+            File tmp = new File(driversDir(), ".importing");
+            try {
+                deleteTree(tmp);
+                if (!tmp.mkdirs()) throw new java.io.IOException("mkdir");
+                String canonicalTmp = tmp.getCanonicalPath() + File.separator;
+                try (java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(getContentResolver().openInputStream(uri))) {
+                    java.util.zip.ZipEntry e;
+                    long total = 0;
+                    while ((e = zip.getNextEntry()) != null) {
+                        if (e.isDirectory()) continue;
+                        File out = new File(tmp, new File(e.getName()).getName());   // flat: drivers keep everything at the root
+                        if (!out.getCanonicalPath().startsWith(canonicalTmp)) continue;
+                        try (OutputStream os = new FileOutputStream(out)) {
+                            byte[] b = new byte[65536];
+                            int n;
+                            while ((n = zip.read(b)) > 0) { total += n; if (total > 200L * 1024 * 1024) throw new java.io.IOException("too big"); os.write(b, 0, n); }
+                        }
+                    }
+                }
+                String lib = driverLibraryName(tmp);
+                if (lib.isEmpty() || !new File(tmp, lib).isFile()) throw new java.io.IOException("meta");
+                String name = "driver";
+                try (java.io.InputStream in = new java.io.FileInputStream(new File(tmp, "meta.json"))) {
+                    java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                    byte[] b = new byte[4096];
+                    int n;
+                    while ((n = in.read(b)) > 0) buf.write(b, 0, n);
+                    name = new org.json.JSONObject(buf.toString("UTF-8")).optString("name", name);
+                } catch (org.json.JSONException ignored) { }
+                name = name.replaceAll("[^A-Za-z0-9._ -]", "_").trim();
+                if (name.isEmpty()) name = "driver";
+                File dest = new File(driversDir(), name);
+                deleteTree(dest);
+                if (!tmp.renameTo(dest)) throw new java.io.IOException("rename");
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_GPU_DRIVER, name).apply();
+                message = getString(R.string.gpu_driver_imported, name);
+            } catch (java.io.IOException | RuntimeException e) {
+                deleteTree(tmp);
+                message = getString(R.string.gpu_driver_bad);
+            }
+            final String text = message;
+            runOnUiThread(() -> toast(text));
+        }).start();
+    }
+    private static void deleteTree(File f) {
+        File[] kids = f.listFiles();
+        if (kids != null) for (File k : kids) deleteTree(k);
+        f.delete();
+    }
+
     private void startCore() {
         if (coreStarted) return;
         if (!coreFile().exists()) { logView.setText(R.string.core_missing); return; }
@@ -569,6 +653,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             return;
         }
         writeSettings();
+        applyGpuDriver();
         try { SaveSlots.autoBackup(getExternalFilesDir(null)); } catch (java.io.IOException | RuntimeException ignored) { }
         String error = NativeBridge.startCore(coreFile().getAbsolutePath(), eboot.getAbsolutePath(),
                 root.getAbsolutePath(), logFile().getAbsolutePath());
@@ -599,6 +684,10 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         super.onActivityResult(request, result, data);
         if (request == PICK_CORE && result == RESULT_OK && data != null && data.getData() != null) {
             importCore(data.getData());
+            return;
+        }
+        if (request == PICK_GPU_DRIVER && result == RESULT_OK && data != null && data.getData() != null) {
+            importGpuDriver(data.getData());
             return;
         }
         if (request == PICK_TRP && result == RESULT_OK && data != null && data.getData() != null) {
@@ -1546,6 +1635,28 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     writeSettings();
                 });
                 addRow(content, resolution); addRow(content, fps); addRow(content, early);
+                final Button gpuDriver = glassButton(gpuDriverLabel(), false, accent);
+                gpuDriver.setOnClickListener(v -> {
+                    java.util.List<String> options = new java.util.ArrayList<>();
+                    options.add("");
+                    options.addAll(installedDrivers());
+                    int next = (options.indexOf(gpuDriverId()) + 1) % options.size();
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_GPU_DRIVER, options.get(next)).apply();
+                    gpuDriver.setText(gpuDriverLabel());
+                    toast(getString(R.string.gpu_driver_restart));
+                });
+                addRow(content, gpuDriver);
+                final Button gpuImport = glassButton(getString(R.string.gpu_driver_import), false, accent);
+                gpuImport.setOnClickListener(v -> {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+                    startActivityForResult(intent, PICK_GPU_DRIVER);
+                });
+                addRow(content, gpuImport);
+                TextView gpuNote = new TextView(this);
+                gpuNote.setText(R.string.gpu_driver_note);
+                gpuNote.setTextColor(0xFF4A4060);
+                gpuNote.setTextSize(12);
+                content.addView(gpuNote);
             } else if (current[0] == 1) {
                 final Button[] rows = new Button[FILTER_KEYS.length];
                 for (int i = 0; i < FILTER_KEYS.length; i++) {

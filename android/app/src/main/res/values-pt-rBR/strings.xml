@@ -133,4 +133,11 @@
     <string name="lang_label">Idioma: %1$s</string>
     <string name="lang_auto">Automático (idioma do aparelho)</string>
     <string name="trophy_icons_found2">Ícones do jogo encontrados (%1$d troféus, %2$d nomes)</string>
+    <string name="gpu_driver_label">Driver de GPU: %1$s</string>
+    <string name="gpu_driver_system">Sistema (padrão)</string>
+    <string name="gpu_driver_import">Importar driver de GPU (.zip)</string>
+    <string name="gpu_driver_note">Experimental, só para GPUs Snapdragon/Adreno. Importe um pacote de driver Turnip (.zip com meta.json) e toque no botão do driver para escolhê-lo. Vale na próxima vez que o jogo iniciar. Se o driver não carregar, o driver do sistema é usado.</string>
+    <string name="gpu_driver_restart">Vale na próxima vez que o jogo iniciar.</string>
+    <string name="gpu_driver_imported">Driver importado: %1$s</string>
+    <string name="gpu_driver_bad">Esse arquivo não é um pacote de driver de GPU válido.</string>
 </resources>

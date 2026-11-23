@@ -16,6 +16,9 @@ final class NativeBridge {
 
     static native String info();
 
+    /** Custom Vulkan driver (Turnip, Adreno only) used by the next startCore. Empty strings = the system driver. */
+    static native void setCustomDriver(String nativeLibDir, String driverDir, String driverName);
+
     /** Loads libd2core.so and runs the game on a worker thread. Returns an error text, or null when started. */
     static native String startCore(String soPath, String ebootPath, String vfsRoot, String logPath);
 

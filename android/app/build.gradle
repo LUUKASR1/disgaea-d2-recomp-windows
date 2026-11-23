@@ -20,6 +20,7 @@ android {
             minifyEnabled false
         }
     }
+    packaging { jniLibs { useLegacyPackaging = true } }   // libadrenotools hooks must exist as real files in nativeLibraryDir
     lint { checkReleaseBuilds false; abortOnError false }
     defaultConfig {
         applicationId 'org.disgaead2.port'
