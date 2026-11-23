@@ -60,8 +60,28 @@ header.parent.mkdir(parents=True)
 header.write_bytes(data)
 (vendor / 'JSON-LICENSE.MIT').write_bytes(urllib.request.urlopen('https://raw.githubusercontent.com/nlohmann/json/v3.11.3/LICENSE.MIT', timeout=60).read())
 (vendor / 'json-sha256.txt').write_text(hashlib.sha256(data).hexdigest() + '\n')
+# Windows version resource: an executable with no company/product/description metadata is one of the signals that make
+# antivirus heuristics distrust a PyInstaller launcher.
+version_file = staging / 'version-info.txt'
+version_file.write_text('''VSVersionInfo(
+  ffi=FixedFileInfo(filevers=(1, 0, 54, 0), prodvers=(1, 0, 54, 0), mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', 'Disgaea D2 PC Port (open source community project)'),
+      StringStruct('FileDescription', 'Disgaea D2 PC Port launcher'),
+      StringStruct('FileVersion', '1.0.54.0'),
+      StringStruct('InternalName', 'DisgaeaD2Launcher'),
+      StringStruct('LegalCopyright', 'Open source, see LICENSE. No game content is included.'),
+      StringStruct('OriginalFilename', 'DisgaeaD2Launcher.exe'),
+      StringStruct('ProductName', 'Disgaea D2 PC Port'),
+      StringStruct('ProductVersion', '1.0.54')])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+''', encoding='utf-8')
 subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
                 '--onefile' if onefile else '--onedir', '--windowed', '--name', package_name,
+                '--version-file', str(version_file),
                 '--icon', str(root / 'windows/assets/launcher.ico'), '--collect-all', 'capstone',
                 '--collect-all', 'construct', '--collect-all', 'Crypto', '--collect-all', 'tabulate',
                 '--collect-all', 'tqdm', '--collect-all', 'py7zr', '--add-data', str(payload) + ';payload',
