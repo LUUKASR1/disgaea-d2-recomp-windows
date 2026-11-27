@@ -91,7 +91,7 @@ jobs:
               assert data[:2] == b'MZ' and len(data) > 1_000_000
               shutil.copy2(source, out / Path(source).name)
           with zipfile.ZipFile(out / 'DisgaeaD2Launcher-1.0.54-Windows-x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-1.0.54.md', 'README.md'), ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
+              for source, name in [('dist/DisgaeaD2Launcher.exe', 'DisgaeaD2Launcher.exe'), ('docs/RELEASE-1.0.54.md', 'README.md'), ('LICENSE', 'LICENSE'), ('NOTICE.md', 'NOTICE.md'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')]:
                   z.write(source, name)
           (out / 'release-build.json').write_text(json.dumps({'version': '1.0.54', 'source_commit': os.environ['GITHUB_SHA'], 'renderer': 'd3d12', 'game_content_bundled': False}, indent=2))
           sums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(out.iterdir()))

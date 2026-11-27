@@ -30,7 +30,7 @@ for directory in ('tools', 'port', 'patches', 'windows'):
         destination.parent.mkdir(parents=True, exist_ok=True)
         # Read committed bytes, preserving patch hashes across Windows CRLF checkout.
         destination.write_bytes(subprocess.check_output(['git', '-C', str(root), 'show', 'HEAD:' + name]))
-for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
+for name in ('LICENSE', 'NOTICE.md', 'THIRD_PARTY_NOTICES.md'):
     if (root / name).is_file():
         shutil.copy2(root / name, payload / name)
 vendor = staging / 'vendor'
