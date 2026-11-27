@@ -864,7 +864,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         return layers;
     }
 
-    // Original artwork for the home screen: a purple-to-crimson field with a curved left edge, soft bokeh and sparkles.
+    // Home screen panel: the player's own PIC1.PNG when the game is installed, else the app's original art, on a purple-to-crimson field with a curved left edge, soft bokeh and sparkles.
     private static final class ArtView extends View {
         private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Path edge = new android.graphics.Path();
@@ -872,7 +872,18 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
         ArtView(android.content.Context c) {
             super(c);
             setFocusable(false);
-            try { picture = android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.home_art); } catch (Throwable ignored) { }
+            // The player's own title picture (game/PS3_GAME/PIC1.PNG) when the game is installed; otherwise the app's original art.
+            try {
+                java.io.File base = c.getExternalFilesDir(null);
+                java.io.File pic = base == null ? null : new java.io.File(base, "game/PS3_GAME/PIC1.PNG");
+                if (pic != null && pic.isFile()) {
+                    android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                    o.inSampleSize = 2;   // 1920x1080 -> 960x540 is plenty for this panel
+                    picture = android.graphics.BitmapFactory.decodeFile(pic.getAbsolutePath(), o);
+                }
+            } catch (Throwable ignored) { }
+            if (picture == null)
+                try { picture = android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.home_art); } catch (Throwable ignored) { }
             try { logo = android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.home_logo); } catch (Throwable ignored) { }
         }
         @Override protected void onDraw(android.graphics.Canvas canvas) {
@@ -888,7 +899,7 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
             paint.setShader(new android.graphics.LinearGradient(0, 0, w, h, 0xFF2A1250, 0xFF9B2350, android.graphics.Shader.TileMode.CLAMP));
             canvas.drawRect(0, 0, w, h, paint);
             paint.setShader(null);
-            if (picture != null) {   // the game's title screen, cropped to fill the panel (centred, no stretching)
+            if (picture != null) {   // title picture, cropped to fill the panel (centred, no stretching)
                 float scale = Math.max((float) w / picture.getWidth(), (float) h / picture.getHeight());
                 float sw = w / scale, sh = h / scale;
                 android.graphics.Rect src = new android.graphics.Rect((int) ((picture.getWidth() - sw) / 2), (int) ((picture.getHeight() - sh) / 2),

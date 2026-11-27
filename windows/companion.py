@@ -6,7 +6,7 @@ import os
 import re
 import struct
 
-from trophy_names import TROPHIES
+from trophy_names import TROPHIES, TROPHY_COUNT
 
 PIPE_NAME = r'\\.\pipe\DisgaeaD2Companion'
 EXP_STEPS = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
@@ -205,7 +205,7 @@ def png_data(png_bytes):
 
 
 class TrophyInfo:
-    """Names, grades and icons from TROPHY.TRP when one is available; otherwise the built-in English list."""
+    """Names, grades and icons from the player's TROPHY.TRP when one is available; otherwise "Trophy #N"."""
 
     LANGUAGE_CODES = {'pt-BR': ('17', '07'), 'en': ('01', '18')}
 
@@ -292,10 +292,10 @@ class TrophyInfo:
         return entry
 
     def count(self):
-        return max(len(self.entries), len(TROPHIES))
+        return max(len(self.entries), TROPHY_COUNT)
 
     def named(self):
-        return sum(1 for entry in self.entries.values() if entry.name) or len(TROPHIES)
+        return sum(1 for entry in self.entries.values() if entry.name)
 
 
 def clean_xml(raw):

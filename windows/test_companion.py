@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import companion
-from trophy_names import TROPHIES
+from trophy_names import TROPHIES, TROPHY_COUNT
 
 
 class FakeHandle:
@@ -42,10 +42,11 @@ def make_trp(path, files):
 
 class CompanionTests(unittest.TestCase):
     def test_builtin_trophy_list(self):
-        self.assertEqual(len(TROPHIES), 74)
-        self.assertEqual(TROPHIES[0][0], 'P')
-        self.assertEqual(companion.builtin_entry(1).name, 'Ultimate Destroyer')
-        self.assertEqual(companion.builtin_entry(999).name, '')
+        # No game text is shipped: names come only from the player's TROPHY.TRP.
+        self.assertEqual(TROPHIES, ())
+        self.assertEqual(TROPHY_COUNT, 74)
+        self.assertEqual(companion.builtin_entry(1).name, '')
+        self.assertEqual(companion.TrophyInfo().count(), 74)
 
     def test_parse_state_and_fields(self):
         state = companion.parse_state('ok=1\nready=1\nstatus=Ready\nhp_lock=1\nexp=8\ngen=5\nunit=2\ng.hl=100\nc.level=30\np.0=Laharl|30|12\np.1=Etna|25|3\n')
@@ -93,13 +94,12 @@ class CompanionTests(unittest.TestCase):
             self.assertEqual((first.name, first.grade), ('Platina PT', 'P'))
             self.assertEqual(info.get(1).name, 'Ouro & Co')
             self.assertEqual(info.get(1).icon, b'\x89PNGdata')
-            self.assertEqual(info.get(2).name, 'Item Hoarder')   # not in the TRP: built-in fallback
-            self.assertEqual(info.get(2).grade, 'G')
+            self.assertEqual((info.get(2).name, info.get(2).grade), ('', ''))   # not in the TRP: shown as "Trophy #2"
 
     def test_trp_missing_falls_back(self):
         info = companion.TrophyInfo('en')
         self.assertFalse(info.load('Z:/definitely/not/here'))
-        self.assertEqual(info.get(1).name, 'Ultimate Destroyer')
+        self.assertEqual(info.get(1).name, '')   # no TRP: the pop-up shows "Trophy #1"
         self.assertEqual(info.count(), 74)
 
     def test_extract_from_iso(self):

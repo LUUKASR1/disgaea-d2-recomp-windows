@@ -37,9 +37,7 @@ programs). A signature that ties the binary to this public repository lets users
    repository.
 3. Expect a question about the game: answer that the repository holds only the launcher, the recompiler tooling and
    patches, and that the game itself is never distributed.
-4. **Resolve this first:** the repository and the packaged launcher contain artwork from the game (for example
-   `android/app/src/main/res/drawable-nodpi/home_art.jpg`, `home_title.png`, launcher branding images), screenshots in
-   `docs/` and trophy names in `windows/trophy_names.py` / `TrophyNames.java`. SignPath requires that signed packages hold
-   no proprietary components. Replace the game artwork in the launcher and app with original art (or load it from the
-   player's own game files at run time, as the trophy icons already are) before applying. Screenshots in `docs/` are not
-   part of the signed files, but reviewers may still ask about them.
+4. **Done:** the launcher and the Android app no longer ship any game artwork or trophy names. Their images are
+   original (`tools/make_original_art.py`), and the game's own title picture and trophy names are read at run time from
+   the player's game files. Screenshots and the banner in `docs/` (README only) are not part of the signed files; replace
+   them too if the reviewers ask.

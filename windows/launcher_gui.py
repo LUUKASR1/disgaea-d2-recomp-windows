@@ -265,10 +265,27 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
         for state in 'nhpd':
             art[name + state] = tk.PhotoImage(file=str(assets / ('btn-%s-%s.png' % (name, state))))
     hero_images = [tk.PhotoImage(file=str(assets / ('hero-%d.png' % number))) for number in range(1, 6)]
+    # The player's own title picture (PS3_GAME/PIC1.PNG from their folder or ISO) becomes the first slide when available.
+    player_slide = None
+    try:
+        from player_art import find_title_art
+        picture = find_title_art(home, config.get('game_root'), config.get('iso_path'))
+        if picture:
+            source = tk.PhotoImage(file=str(picture))
+            factor = max(1, source.width() // 760)
+            player_slide = tk.PhotoImage(width=760, height=430)
+            x0 = max(0, (source.width() // factor - 760) // 2) * factor
+            y0 = max(0, (source.height() // factor - 430) // 2) * factor
+            player_slide.tk.call(player_slide, 'copy', source, '-from', x0, y0, x0 + 760 * factor, y0 + 430 * factor,
+                                 '-subsample', factor, factor)
+            hero_images.insert(0, player_slide)
+    except Exception:
+        player_slide = None
+    glass_overlay = tk.PhotoImage(file=str(assets / 'glass-panel.png'))
     logo_game, pill_image = tk.PhotoImage(file=str(assets / 'logo-disgaea.png')), tk.PhotoImage(file=str(assets / 'pill.png'))
     sidebar_glass = tk.PhotoImage(file=str(assets / 'sidebar-glass.png'))
     sidebar_logo = tk.PhotoImage(file=str(assets / 'logo-sidebar.png'))
-    app._home_art = (art, hero_images, logo_game, pill_image, sidebar_glass, sidebar_logo)
+    app._home_art = (art, hero_images, logo_game, pill_image, sidebar_glass, sidebar_logo, glass_overlay)
 
     sidebar = tk.Canvas(app, width=220, bg=PANEL, highlightthickness=0)
     sidebar.pack(side='left', fill='y')
@@ -575,6 +592,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     hero = tk.Canvas(page, width=760, height=430, bg=BG, highlightthickness=0)
     hero.pack(anchor='w', pady=(0, 10))
     hero_image = hero.create_image(0, 0, image=hero_images[0], anchor='nw')
+    hero_glass = hero.create_image(8, 10, image=glass_overlay, anchor='nw', state='hidden')
     hero.create_image(22, 26, image=logo_game, anchor='nw')
     hero.create_image(20, 196, image=pill_image, anchor='nw')
     pill_text = hero.create_text(36, 213, anchor='w', fill=GOLD, font=('Segoe UI', 9, 'bold'), text='')
@@ -607,6 +625,7 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
     def hero_show(index):
         hero_state['index'] = index
         hero.itemconfigure(hero_image, image=hero_images[index])
+        hero.itemconfigure(hero_glass, state='normal' if player_slide is not None and hero_images[index] is player_slide else 'hidden')
         for position, dot in enumerate(hero_dots):
             hero.itemconfigure(dot, fill='#ffb000' if position == index else '#ffffff')
 

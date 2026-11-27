@@ -905,7 +905,7 @@ def main():
         lock = json.loads((ROOT / 'payload/patches/SDK-WINDOWS.lock').read_text())
         if digest(ROOT / 'payload/patches' / lock['patch']) != lock['patch_sha256']:
             raise RuntimeError('SDK patch bytes changed during packaging')
-        for asset in ('logo-winport.png', 'launcher-icon.png', 'launcher.ico'):
+        for asset in ('logo-winport.png', 'launcher-icon.png', 'launcher.ico', 'glass-panel.png'):
             if not (ROOT / 'windows/assets' / asset).is_file():
                 raise RuntimeError('Arte do launcher ausente: ' + asset)
         if OFFICIAL_RELEASE:
