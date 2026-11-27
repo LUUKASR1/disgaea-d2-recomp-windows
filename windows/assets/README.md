@@ -1,11 +1,10 @@
-# Identidade visual do launcher
+# Arte do launcher / Launcher artwork
 
-Logo WIN PORT e imagem quadrada fornecidas por LUUKASR1 para uso no launcher.
-A logo foi dimensionada para a interface, preservando a proporção e a transparência.
-A imagem quadrada foi convertida para PNG e ICO em vários tamanhos para o Windows.
-Nenhum personagem, texto ou composição foi redesenhado.
+Toda a arte desta pasta é original do projeto, gerada por `tools/make_original_art.py` a partir de formas e da fonte
+Poppins (SIL Open Font License): logos em fonte comum com o emblema do projeto, ícone, slides da tela inicial e
+botões. Nenhuma ilustração, logo ou captura de tela do jogo é distribuída.
 
-As ilustrações e marcas de Disgaea pertencem aos respectivos titulares. A indicação
-WIN PORT identifica esta adaptação de fãs, independente e não oficial.
-Essas imagens de apresentação não são ROM, firmware, dados extraídos da instalação
-nem código recompilado do jogo.
+All artwork here is original, made by `tools/make_original_art.py` from shapes and the Poppins font (SIL OFL). No game
+illustration, logo or screenshot is distributed.
+
+Disgaea is a trademark of its owners. This is an unofficial fan project; the name is used only to say which game it runs.
