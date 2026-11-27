@@ -140,4 +140,8 @@
     <string name="gpu_driver_restart">次回のゲーム起動時に反映されます。</string>
     <string name="gpu_driver_imported">ドライバーをインポートしました：%1$s</string>
     <string name="gpu_driver_bad">有効なGPUドライバーのパッケージではありません。</string>
+    <string name="gpu_driver_remove">選択中のGPUドライバーを削除</string>
+    <string name="gpu_driver_remove_confirm">もう一度タップすると %1$s を削除します</string>
+    <string name="gpu_driver_removed">%1$s を削除しました。システムのドライバーに戻ります。</string>
+    <string name="gpu_driver_none_selected">カスタムドライバーが選択されていません。</string>
 </resources>

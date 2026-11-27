@@ -350,5 +350,10 @@
   "Limpar cache de shaders": "Clear shader cache",
   "Cache de shaders": "Shader cache",
   "O cache de shaders está vazio.": "The shader cache is empty.",
-  "Apagar o cache de shaders? O jogo vai recompilá-los (e pode engasgar) na próxima vez.": "Delete the shader cache? The game will recompile them (and may stutter) next time."
+  "Apagar o cache de shaders? O jogo vai recompilá-los (e pode engasgar) na próxima vez.": "Delete the shader cache? The game will recompile them (and may stutter) next time.",
+  "Troféus": "Trophies",
+  "Recomeça os troféus do zero. Os arquivos atuais são guardados em trophy-backups, não são apagados. Só funciona com o jogo fechado.": "Starts trophies over from scratch. The current files are kept in trophy-backups, not deleted. Only works with the game closed.",
+  "Resetar troféus": "Reset trophies",
+  "Nenhum troféu salvo foi encontrado.": "No saved trophies were found.",
+  "Resetar todos os troféus? Uma cópia de segurança fica em trophy-backups.": "Reset all trophies? A backup copy is kept in trophy-backups."
 }

@@ -1652,6 +1652,27 @@ public final class MainActivity extends Activity implements DisplayManager.Displ
                     startActivityForResult(intent, PICK_GPU_DRIVER);
                 });
                 addRow(content, gpuImport);
+                // Remove the chosen driver: first tap arms, a second tap within 4 s deletes (no dialog needed).
+                final Button gpuRemove = glassButton(getString(R.string.gpu_driver_remove), false, accent);
+                final long[] armedAt = {0};
+                gpuRemove.setOnClickListener(v -> {
+                    String id = gpuDriverId();
+                    if (id.isEmpty()) { toast(getString(R.string.gpu_driver_none_selected)); return; }
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (now - armedAt[0] > 4000) {
+                        armedAt[0] = now;
+                        gpuRemove.setText(getString(R.string.gpu_driver_remove_confirm, id));
+                        gpuRemove.postDelayed(() -> gpuRemove.setText(R.string.gpu_driver_remove), 4000);
+                        return;
+                    }
+                    armedAt[0] = 0;
+                    deleteTree(new File(driversDir(), id));
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_GPU_DRIVER, "").apply();
+                    gpuRemove.setText(R.string.gpu_driver_remove);
+                    gpuDriver.setText(gpuDriverLabel());
+                    toast(getString(R.string.gpu_driver_removed, id));
+                });
+                addRow(content, gpuRemove);
                 TextView gpuNote = new TextView(this);
                 gpuNote.setText(R.string.gpu_driver_note);
                 gpuNote.setTextColor(0xFF4A4060);

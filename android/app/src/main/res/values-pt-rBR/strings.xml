@@ -140,4 +140,8 @@
     <string name="gpu_driver_restart">Vale na próxima vez que o jogo iniciar.</string>
     <string name="gpu_driver_imported">Driver importado: %1$s</string>
     <string name="gpu_driver_bad">Esse arquivo não é um pacote de driver de GPU válido.</string>
+    <string name="gpu_driver_remove">Remover driver de GPU selecionado</string>
+    <string name="gpu_driver_remove_confirm">Toque de novo para remover %1$s</string>
+    <string name="gpu_driver_removed">Driver removido: %1$s. O driver do sistema volta a ser usado.</string>
+    <string name="gpu_driver_none_selected">Nenhum driver personalizado está selecionado.</string>
 </resources>

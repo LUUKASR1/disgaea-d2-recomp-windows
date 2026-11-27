@@ -140,4 +140,8 @@
     <string name="gpu_driver_restart">Takes effect the next time the game starts.</string>
     <string name="gpu_driver_imported">Driver imported: %1$s</string>
     <string name="gpu_driver_bad">That file is not a valid GPU driver package.</string>
+    <string name="gpu_driver_remove">Remove selected GPU driver</string>
+    <string name="gpu_driver_remove_confirm">Tap again to remove %1$s</string>
+    <string name="gpu_driver_removed">Driver removed: %1$s. The system driver is used again.</string>
+    <string name="gpu_driver_none_selected">No custom driver is selected.</string>
 </resources>

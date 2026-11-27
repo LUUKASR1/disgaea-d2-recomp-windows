@@ -1,4 +1,5 @@
 """Disgaea-themed desktop UI using bundled Tk and user-provided branding artwork."""
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -718,6 +719,18 @@ def run_gui(Backend, home, version, firmware_present, preview=False, official=Fa
             shutil.rmtree(target, ignore_errors=True)
     button(stutter, 'Limpar cache de shaders', clear_shader_cache)
     button(stutter, 'Abrir pasta dos registros', lambda: (home / 'logs').mkdir(parents=True, exist_ok=True) or open_path(home / 'logs'))
+    trophies = card(page)
+    label(trophies, 'Troféus', 13, TEXT)
+    label(trophies, 'Recomeça os troféus do zero. Os arquivos atuais são guardados em trophy-backups, não são apagados. Só funciona com o jogo fechado.', 10, MUTED)
+    def reset_trophy_progress():
+        from trophies import trophy_files, reset_trophies
+        if not trophy_files(home):
+            messagebox.showinfo('Troféus', 'Nenhum troféu salvo foi encontrado.'); return
+        if not messagebox.askyesno('Troféus', 'Resetar todos os troféus? Uma cópia de segurança fica em trophy-backups.'):
+            return
+        count, backup = reset_trophies(home, datetime.now().strftime('%Y%m%d-%H%M%S'))
+        messagebox.showinfo('Troféus', f'{count} arquivo(s) de troféus movido(s) para:\n{backup}')
+    button(trophies, 'Resetar troféus', reset_trophy_progress)
 
     syncing = [False]
     def apply_preset(*unused):

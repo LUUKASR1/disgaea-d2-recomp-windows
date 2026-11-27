@@ -151,10 +151,28 @@ def apply_clock_tweaks(destination, files=None, marker='d2_guest_ns'):
     return '; '.join(done)
 
 
+def apply_pad_tweaks(destination):
+    """Android has no SDLActivity, so SDL's controller subsystem can never start there (it only printed a scary
+    'did you include SDL_main.h' error). Controllers reach the game through the app's Java input path instead."""
+    path = Path(destination) / 'libs/input/cellPad.c'
+    if not path.is_file():
+        return 'ignorado (cellPad.c ausente)'
+    text = path.read_text(encoding='utf-8')
+    old = '    if (s_sdl_inited) return; /* system UI may initialize before guest libpad */\n'
+    if 'd2: no SDL controller backend on Android' in text:
+        return 'ja aplicado'
+    if old not in text:
+        return 'ignorado (trecho nao encontrado)'
+    text = text.replace(old, old + '#ifdef __ANDROID__\n    return; /* d2: no SDL controller backend on Android; the app feeds pad state */\n#endif\n', 1)
+    path.write_text(text, encoding='utf-8')
+    return 'aplicado'
+
+
 def apply(destination):
     """Tweak the private SDK copy made by build_android_core.prepare_sdk."""
     loader = Path(destination) / 'runtime/ppu/ppu_loader.cpp'
     status = apply_loader_tweaks(loader) if loader.is_file() else 'ignorado (ppu_loader.cpp ausente)'
     print('Ajustes Android do SDK (acesso rapido a memoria do jogo): ' + status, flush=True)
     print('Ajustes Android do SDK (relogio do jogo para em segundo plano): ' + apply_clock_tweaks(destination), flush=True)
+    print('Ajustes Android do SDK (controle sem SDL): ' + apply_pad_tweaks(destination), flush=True)
     print('Ajustes Android do SDK (trava de saves para os slots): ' + apply_clock_tweaks(destination, SAVE_FILES, 'd2_save_host_lock'), flush=True)

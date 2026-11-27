@@ -28,6 +28,8 @@
 
 ## 🇧🇷 Português
 
+> **Assinatura de código:** veja a [política de assinatura](CODE_SIGNING_POLICY.md). Alguns antivírus marcam o launcher por engano (detecção genérica de programas Python empacotados); os hashes SHA-256 de cada versão estão na release.
+
 > **Projeto comunitário em melhoria contínua. Qualquer ajuda é bem-vinda**: testes em outros aparelhos e versões do jogo, relatos de erro com log, capturas de tela, tradução e código.
 > **Nenhum arquivo do jogo, atualização, firmware, chave, save ou código compilado do jogo é distribuído.** Você precisa da sua própria cópia. Projeto independente, sem vínculo com os detentores dos direitos.
 
@@ -119,6 +121,8 @@ Nasceu da paixão por Disgaea, em especial **Disgaea D2**, e é uma aventura de 
 ---
 
 ## 🇺🇸 English
+
+> **Code signing:** see the [code signing policy](CODE_SIGNING_POLICY.md). Some antivirus engines flag the launcher by mistake (a generic detection of packaged Python programs); the SHA-256 hashes of every version are in the release.
 
 > **Community project, improved continuously. Any help is welcome**: testing on other devices and game versions, bug reports with logs, screenshots, translations and code.
 > **No game files, updates, firmware, keys, saves or compiled game code are distributed.** You need your own copy. Independent project, not affiliated with the rights holders.
