@@ -6,14 +6,21 @@ This port builds a native x86-64 Windows (`DisgaeaD2Recomp.exe`) binary that run
 
 ## 1. Steam Deck OLED Measured Performance (Main Castle Hub)
 
-Measured on Steam Deck OLED (`1280×800`, Main Castle Hub, ~`1,000` draws/frame, warm shader cache):
+Measured live on Steam Deck OLED (Main Castle Hub, ~`942–1,021` draws/frame):
 
-| Build / Stage | Warm `60 FPS` Total CPU | PPU Thread | RSX Thread | Package Power | Uncapped (`D2_GCM_UNLIMITED=1`) |
-| --- | --- | --- | --- | --- | --- |
-| Baseline (Pass 2: early batch + palette/surface caches) | `202.7%` (`152.0% USR` / `50.7% SYS`) | `74.9%` | `67.5%` | `7.52–9.87 W` | — |
-| Pass 3 (`vertplus`, D3D12 upload & spin backoff) | `190.5%` (`152.0% USR` / `38.5% SYS`) | `64.6%` | `58.2%` | `6.30–7.13 W` | — |
-| Pass 4 (HLE dispatch + cold-split `vm_read/write32`) | `191.7%` (`147.8% USR` / `43.9% SYS`) | `65.6%` | `58.7%` | `6.73–7.77 W` | `88.92 FPS` (`11.25 ms/fr`, `9.59–11.43 W`) |
-| Pass 5 (`d2_vm_fast` + ThinLTO + AVX2 vertex/cache) | **`163.3%`** (`137.2% USR` / `26.2% SYS`) | **`44.7%`** | **`57.7%`** | **`4.43–6.72 W`** | **`103.82 FPS`** (`9.63 ms/fr`, `9.04–10.61 W`) |
+| Build / Stage | Warm `60 Hz` Rate | Total CPU (`Usr / Sys`) | PPU Thread | RSX Thread | Audio SPU (`_synth2`) | Package Power | Uncapped (`D2_GCM_UNLIMITED=1`) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Stock Baseline** (`v1.0.53`, `640×400` FSR1, ~`1,009` draws/fr) | `32.21 FPS` (`31.04 ms`) | `~352%` *(`gcm_put_watch` `99.5%`)* | `85.4%` (`60% / 25%`) | `69.9%` | `97.1%` | `~10–12 W` *(pinned @ `2.87 GHz`)* | — *(CPU-bound below `60 Hz`)* |
+| **Pass 1** (`1280×800` native Vert+, `d2_vm_fast`, SPU AVX2/FMA3, vertex context, `gcm_put_watch` wait, Vert+ WC shadow) | `59.30 FPS` (`16.86 ms`) | `270.6%` (`200.6% / 69.9%`) | `82.0%` (`47.4% / 34.6%`) | `79.8%` | `36.6%` | `10.0–11.6 W` | — |
+| **Pass 2** (SPU LS `vpshufb`, O(1) RSX caches, `d2_copy`/`d2_crt`, SPU coh bloom/range, ThinLTO) | `59.32 FPS` (`16.86 ms`) | `202.7%` (`152.0% / 50.7%`) | `74.9%` (`47.0% / 27.9%`) | `67.5%` | `18.3%` | `7.52–9.87 W` | `74.15 FPS` (`13.49 ms`, `9.2–14.4 W`) |
+| **Pass 3** (AVX2 constant-pair hashing, vertex decode inlining, `d2_bswap32_copy`) | `59.22 FPS` (`16.89 ms`) | `190.5%` (`152.0% / 38.5%`) | `64.6%` (`50.8% / 13.8%`) | `58.2%` | `21.5%` | `6.30–7.13 W` | `88.95 FPS` (`11.24 ms`, `9.9–11.4 W`) |
+| **Pass 4** (O(1) HLE dispatch, cold-split `vm_read/write32`, lazy RA profiler, scalar `rsx_process_method`) | `59.20 FPS` (`16.89 ms`) | `191.7%` (`147.8% / 43.9%`) | `65.6%` (`46.6% / 19.0%`) | `58.7%` | `22.0%` | `6.73–7.77 W` | `88.92 FPS` (`11.25 ms`, `9.59–11.43 W`) |
+| **Pass 5** (`NtDelayExecution` backoff/usleep, Zen 2 16B STLF fix, folded RSX debug) | **`59.22 FPS`** (`16.89 ms`) | **`163.3%`** (`137.2% / 26.2%`) | **`44.7%`** (`41.0% / 3.7%`) | **`57.7%`** | **`22.0%`** | **`4.43–6.72 W`** | **`103.82 FPS`** (`9.63 ms`, `9.04–10.61 W`) |
+
+End-to-end gains from Stock Baseline (`v1.0.53`) to Pass 5:
+- **Framerate & Resolution:** `32.21 FPS` (`31.04 ms/fr`) at `640×400` FSR1 → locked **`59.22 FPS`** (`16.89 ms/fr`) / **`103.82 FPS`** uncapped at native **`1280×800` Vert+**.
+- **CPU & Thread Efficiency:** Total process CPU cut from `~352%` → **`163.3%`** (`gcm_put_watch` busy-spin `99.5%` → `< 1%`, SPU `_synth2` `97.1%` → `18.3–22.0%`, PPU thread `85.4%` → `44.7%`).
+- **Power Draw:** APU package power reduced from `~10–12 W` (`2.87 GHz`-pinned) to **`4.43–6.72 W`** at `60 Hz`.
 
 ---
 
