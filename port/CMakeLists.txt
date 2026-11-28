@@ -14,6 +14,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(D2_ENABLE_ISO_VFS "Experimental direct UDF/ISO9660 ISO assets (decrypted images)" OFF)
+option(D2_TARGET_X86_64_V3 "Compile for x86-64-v3 (AVX2/BMI2/FMA) and tune for Zen 2 (Steam Deck / modern CPUs)" OFF)
+option(D2_ENABLE_THINLTO "Enable ThinLTO (-flto=thin) for Windows x64 Clang non-Debug builds" OFF)
 
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
@@ -47,7 +49,7 @@ if(D2_GAME_VERSION STREQUAL "140")
     set(D2_EXPECTED_TOC "0x0047DF98")
     set(D2_DEFAULT_SPU_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spu-140")
     set(D2_MOVIE_OVERRIDES 001686AC 00168304 00167FC8)
-    set(D2_NATIVE_OVERRIDES 002FE4AC 0033D91C)   # VP upload -> d2_shader.cpp, memset -> d2_fill.cpp (lift file order)
+    set(D2_NATIVE_OVERRIDES 002D9F84 002FE4AC 00335FE4 003365A8 00338980 0033A320 0033A474 0033A6C4 0033A888 0033D91C)   # 3D proj -> d2_aspect.cpp, VP upload -> d2_shader.cpp, memcpy -> d2_copy.cpp, memmove/strlen/strcmp/strcpy/strncmp/strncpy -> d2_crt.cpp, memset -> d2_fill.cpp (lift file order)
 elseif(D2_GAME_VERSION STREQUAL "130")
     # Japanese BLJS10206 1.30. Addresses mapped from 1.40 by masked-signature
     # function matching; every mapped body is identical apart from addresses.
@@ -98,6 +100,7 @@ file(GLOB RECOMP_SOURCES CONFIGURE_DEPENDS
     "${RECOMP_DIR}/*.c"
     "${RECOMP_DIR}/*.cpp"
 )
+list(SORT RECOMP_SOURCES)
 if(NOT RECOMP_SOURCES)
     message(FATAL_ERROR
         "${RECOMP_DIR} has a ppu_recomp.h but no .c or .cpp beside it. The "
@@ -170,7 +173,11 @@ if(NOT "${D2_NATIVE_FOUND}" STREQUAL "${D2_NATIVE_OVERRIDES}")
 endif()
 set(D2_NATIVE_SOURCES)
 if(D2_NATIVE_OVERRIDES)
-    set(D2_NATIVE_SOURCES src/d2_fill.cpp src/d2_shader.cpp)
+    if(D2_GAME_VERSION STREQUAL "140")
+        set(D2_NATIVE_SOURCES src/d2_fill.cpp src/d2_copy.cpp src/d2_crt.cpp src/d2_shader.cpp src/d2_aspect.cpp)
+    else()
+        set(D2_NATIVE_SOURCES src/d2_fill.cpp src/d2_shader.cpp)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -441,6 +448,82 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         -Wall -Wextra -Wno-unused-parameter
         -fno-strict-aliasing
     )
+    if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "Clang" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        if(MSVC)
+            target_compile_options(${PROJECT_NAME} PRIVATE
+                $<$<COMPILE_LANGUAGE:C,CXX>:/clang:-ffp-contract=off>
+            )
+        else()
+            target_compile_options(${PROJECT_NAME} PRIVATE
+                $<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=off>
+            )
+        endif()
+        if(D2_TARGET_X86_64_V3)
+            target_compile_options(${PROJECT_NAME} PRIVATE
+                $<$<COMPILE_LANGUAGE:C,CXX>:-march=x86-64-v3>
+                $<$<COMPILE_LANGUAGE:C,CXX>:-mtune=znver2>
+            )
+            if(NOT MSVC)
+                target_link_options(${PROJECT_NAME} PRIVATE -march=x86-64-v3 -mtune=znver2)
+            endif()
+            if(TARGET ps3recomp_runtime)
+                get_target_property(_d2_ps3_opts ps3recomp_runtime COMPILE_OPTIONS)
+                if(NOT _d2_ps3_opts MATCHES "-march=x86-64-v3")
+                    target_compile_options(ps3recomp_runtime PRIVATE
+                        $<$<COMPILE_LANGUAGE:C,CXX>:-march=x86-64-v3>
+                        $<$<COMPILE_LANGUAGE:C,CXX>:-mtune=znver2>
+                    )
+                endif()
+            endif()
+            foreach(d2_dep_target IN ITEMS d2_graphics d2_iso_vfs d2_vulkan_game d2_shader_compiler)
+                if(TARGET ${d2_dep_target})
+                    target_compile_options(${d2_dep_target} PRIVATE
+                        $<$<COMPILE_LANGUAGE:C,CXX>:-march=x86-64-v3>
+                        $<$<COMPILE_LANGUAGE:C,CXX>:-mtune=znver2>
+                    )
+                endif()
+            endforeach()
+        endif()
+        if(D2_ENABLE_THINLTO)
+            if(NOT MSVC AND NOT CMAKE_AR MATCHES "llvm-ar")
+                get_filename_component(_d2_cc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+                find_program(_d2_llvm_ar NAMES x86_64-w64-mingw32-llvm-ar llvm-ar HINTS "${_d2_cc_dir}" NO_DEFAULT_PATH)
+                find_program(_d2_llvm_ranlib NAMES x86_64-w64-mingw32-llvm-ranlib llvm-ranlib HINTS "${_d2_cc_dir}" NO_DEFAULT_PATH)
+                if(_d2_llvm_ar AND _d2_llvm_ranlib)
+                    set(CMAKE_AR "${_d2_llvm_ar}" CACHE FILEPATH "Archiver" FORCE)
+                    set(CMAKE_RANLIB "${_d2_llvm_ranlib}" CACHE FILEPATH "Ranlib" FORCE)
+                    set(CMAKE_C_COMPILER_AR "${_d2_llvm_ar}" CACHE FILEPATH "C archiver" FORCE)
+                    set(CMAKE_CXX_COMPILER_AR "${_d2_llvm_ar}" CACHE FILEPATH "CXX archiver" FORCE)
+                    set(CMAKE_C_COMPILER_RANLIB "${_d2_llvm_ranlib}" CACHE FILEPATH "C ranlib" FORCE)
+                    set(CMAKE_CXX_COMPILER_RANLIB "${_d2_llvm_ranlib}" CACHE FILEPATH "CXX ranlib" FORCE)
+                else()
+                    message(WARNING "D2_ENABLE_THINLTO is ON but llvm-ar/llvm-ranlib was not found beside ${CMAKE_C_COMPILER}; static archive ThinLTO may fail")
+                endif()
+            endif()
+            foreach(d2_lto_target IN ITEMS ${PROJECT_NAME} ps3recomp_runtime d2_graphics d2_iso_vfs d2_vulkan_game d2_shader_compiler)
+                if(TARGET ${d2_lto_target})
+                    target_compile_options(${d2_lto_target} PRIVATE
+                        $<$<AND:$<NOT:$<CONFIG:Debug>>,$<COMPILE_LANGUAGE:C,CXX>>:-flto=thin>
+                    )
+                endif()
+            endforeach()
+            if(MSVC)
+                if(NOT CMAKE_LINKER MATCHES "lld-link")
+                    message(FATAL_ERROR "D2_ENABLE_THINLTO with clang-cl requires -DCMAKE_LINKER=lld-link")
+                endif()
+                target_link_options(${PROJECT_NAME} PRIVATE
+                    $<$<NOT:$<CONFIG:Debug>>:/opt:lldlto=3>
+                )
+            else()
+                target_link_options(${PROJECT_NAME} PRIVATE
+                    $<$<NOT:$<CONFIG:Debug>>:-flto=thin>
+                    $<$<NOT:$<CONFIG:Debug>>:-fuse-ld=lld>
+                    $<$<NOT:$<CONFIG:Debug>>:-Wl,--lto-O3>
+                )
+            endif()
+            message(STATUS "ThinLTO:         enabled (-flto=thin, --lto-O3 for non-Debug)")
+        endif()
+    endif()
 elseif(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE
         /W3 /wd4100 /wd4244 /wd4267
@@ -467,11 +550,16 @@ endif()
 #   - /bigobj on MSVC. A single lifted file routinely passes the 65,536-section
 #     limit of the default object format.
 if(MSVC)
-    set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "/w;/bigobj")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
+            COMPILE_OPTIONS "/w;/bigobj;/FI${CMAKE_CURRENT_SOURCE_DIR}/src/d2_vm_fast.h")
+    else()
+        set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
+            COMPILE_OPTIONS "/w;/bigobj")
+    endif()
 else()
     set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "-w;-ffp-contract=off")
+        COMPILE_OPTIONS "-w;-ffp-contract=off;-include;${CMAKE_CURRENT_SOURCE_DIR}/src/d2_vm_fast.h")
 endif()
 
 # Instrument the host runtime/scaffold, keeping generated guest code out of
@@ -516,14 +604,18 @@ endif()
 option(D2_SPU_SIMD_SSE41 "Use existing SSE4.1 helpers for Disgaea 1.40 SPU code" OFF)
 if(D2_SPU_SIMD_SSE41)
     if(NOT WIN32 OR NOT CMAKE_C_COMPILER_ID MATCHES "Clang" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-        message(FATAL_ERROR "D2_SPU_SIMD_SSE41 expects Windows x64 clang-cl")
+        message(FATAL_ERROR "D2_SPU_SIMD_SSE41 expects Windows x64 Clang")
     endif()
     get_target_property(d2_spu_target_sources DisgaeaD2Recomp SOURCES)
     set(d2_spu_simd_count 0)
     foreach(d2_spu_source IN LISTS d2_spu_target_sources)
         string(REPLACE "\\" "/" d2_spu_norm "${d2_spu_source}")
         if(d2_spu_norm MATCHES "/spu-([0-9]+|eu)/.*\\.(c|cpp)$")
-            set_property(SOURCE "${d2_spu_source}" APPEND PROPERTY COMPILE_OPTIONS "-msse4.1")
+            if(D2_TARGET_X86_64_V3)
+                set_property(SOURCE "${d2_spu_source}" APPEND PROPERTY COMPILE_OPTIONS "-march=x86-64-v3;-mtune=znver2")
+            else()
+                set_property(SOURCE "${d2_spu_source}" APPEND PROPERTY COMPILE_OPTIONS "-msse4.1")
+            endif()
             math(EXPR d2_spu_simd_count "${d2_spu_simd_count}+1")
         endif()
     endforeach()

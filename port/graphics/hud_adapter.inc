@@ -2,12 +2,12 @@
 static int d2_hud_record_candidate(const D3D12DrawRecord* r, u32 parity)
 {
     if(!r->is_vp || r->is_clear || r->rt_off || r->rt_mrt[0] || r->rt_mrt[1] || r->rt_mrt[2] ||
-       r->d2_capture_vs_hash!=0x2003CB89u || !s_d3d.vp_vb_mapped || !r->vertex_count ||
+       r->d2_capture_vs_hash!=0x2003CB89u || !r->vertex_count ||
        r->vb_byte_offset%256u || r->vb_byte_offset/256u>MAX_VERTICES ||
        r->vertex_count>MAX_VERTICES-r->vb_byte_offset/256u) return 0;
     for(unsigned u=0;u<4;u++) if(r->tex_rt[u]>=0) return 0;
-    const void* vertices=(const char*)s_d3d.vp_vb_mapped+(u64)parity*MAX_VERTICES*256u+r->vb_byte_offset;
-    return d2_hud_vertices(vertices,r->vertex_count,256u);
+    const u32 vbase=parity*MAX_VERTICES+(r->vb_byte_offset>>8);
+    return d2_hud_vertices(d2_vp_pos_shadow[vbase],r->vertex_count,16u);
 }
 
 static const char* d2_hud_boundary_reason = "not-evaluated";
@@ -62,7 +62,16 @@ static int d2_hud_draws(ID3D12GraphicsCommandList* list,u32 start,u32 count,u32 
         float th=post?(float)d2_graphics_output_height():(float)s_d3d.height;
         float gw=(float)d2_graphics_guest_width(),gh=(float)d2_graphics_guest_height();
         D3D12_VIEWPORT viewport={0,0,tw,th,0,1};
-        if(r->vp_w>=2 && r->vp_h>=2 && (float)(r->vp_x+r->vp_w)<=gw+0.5f && (float)(r->vp_y+r->vp_h)<=gh+0.5f) {
+        if(d2_graphics_vertplus_enabled() && !d2_vp_is_fullscreen_fade(r,parity)) {
+            float ox=0.0f,oy=0.0f,sc=1.0f;
+            d2_vertplus_16x9_box(tw,th,gw,gh,&ox,&oy,&sc);
+            if(r->vp_w>=2 && r->vp_h>=2 && (float)(r->vp_x+r->vp_w)<=gw+0.5f && (float)(r->vp_y+r->vp_h)<=gh+0.5f) {
+                viewport.TopLeftX=ox+(float)r->vp_x*sc;viewport.TopLeftY=oy+(float)r->vp_y*sc;
+                viewport.Width=(float)r->vp_w*sc;viewport.Height=(float)r->vp_h*sc;
+            } else {
+                viewport.TopLeftX=ox;viewport.TopLeftY=oy;viewport.Width=gw*sc;viewport.Height=gh*sc;
+            }
+        } else if(r->vp_w>=2 && r->vp_h>=2 && (float)(r->vp_x+r->vp_w)<=gw+0.5f && (float)(r->vp_y+r->vp_h)<=gh+0.5f) {
             viewport.TopLeftX=(float)r->vp_x*tw/gw;viewport.TopLeftY=(float)r->vp_y*th/gh;
             viewport.Width=(float)r->vp_w*tw/gw;viewport.Height=(float)r->vp_h*th/gh;
         }
@@ -75,7 +84,8 @@ static int d2_hud_draws(ID3D12GraphicsCommandList* list,u32 start,u32 count,u32 
             s_d3d.vp_cb->lpVtbl->GetGPUVirtualAddress(s_d3d.vp_cb)+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_CB_STRIDE);
         list->lpVtbl->SetGraphicsRootConstantBufferView(list,2,
             s_d3d.vp_fpcb->lpVtbl->GetGPUVirtualAddress(s_d3d.vp_fpcb)+((u64)parity*MAX_DRAWS+r->cb_slot)*VP_FPCB_STRIDE);
-        list->lpVtbl->DrawInstanced(list,r->vertex_count,1,r->vb_byte_offset/256u,0);
+        if (!d2_vertplus_draw_hud_split(list, d, r, parity, tw, th, gw, gh))
+            list->lpVtbl->DrawInstanced(list,r->vertex_count,1,r->vb_byte_offset/256u,0);
     }
     return 0;
 }

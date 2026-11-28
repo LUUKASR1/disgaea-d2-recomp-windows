@@ -674,7 +674,8 @@ static void d2_prune_logs(const std::filesystem::path& dir)
 static bool d2_standalone_start(std::string& eboot_ansi)
 {
     const std::filesystem::path exe = d2_exe_path();
-    std::ifstream in(exe.parent_path() / L"DisgaeaD2.ini", std::ios::binary);
+    const std::filesystem::path exe_dir = exe.parent_path();
+    std::ifstream in(exe_dir / L"DisgaeaD2.ini", std::ios::binary);
     if (!in) {
         d2_message(L"O Disgaea D2 ainda não foi preparado neste computador.\n\n"
                    L"Abra o launcher uma vez e jogue por ele. Depois disso este programa abre direto, sem o launcher.\n\n"
@@ -682,34 +683,65 @@ static bool d2_standalone_start(std::string& eboot_ansi)
                    L"after that this program opens on its own.");
         return false;
     }
+    auto resolve_rel = [&](const std::wstring& raw) -> std::wstring {
+        if (raw.empty()) return raw;
+        std::filesystem::path p(raw);
+        if (!p.is_absolute()) p = exe_dir / p;
+        return p.lexically_normal().make_preferred().wstring();
+    };
     std::wstring eboot, cwd;
     std::string line;
+    std::error_code ec;
     while (std::getline(in, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         const size_t eq = line.find('=');
         const std::string key = eq == std::string::npos ? line : line.substr(0, eq);
         const std::string value = eq == std::string::npos ? std::string() : line.substr(eq + 1);
-        if (key == "eboot") eboot = d2_widen(value);
-        else if (key == "cwd") cwd = d2_widen(value);
+        if (key == "eboot") eboot = resolve_rel(d2_widen(value));
+        else if (key == "cwd") cwd = resolve_rel(d2_widen(value));
         else if (key == "iso") _wputenv_s(L"D2_GAME_ISO", d2_widen(value).c_str());
-        else if (key.rfind("env.", 0) == 0 && key.size() > 4) _wputenv_s(d2_widen(key.substr(4)).c_str(), d2_widen(value).c_str());
-        else if (key.rfind("unset.", 0) == 0 && key.size() > 6) _wputenv_s(d2_widen(key.substr(6)).c_str(), L"");
+        else if (key.rfind("env.", 0) == 0 && key.size() > 4) {
+            const std::string env_name = key.substr(4);
+            std::wstring env_val = d2_widen(value);
+            if (env_name == "PS3_VFS_ROOT" || env_name == "PS3_HDD0_ROOT" || env_name == "PS3_HDD1_ROOT" ||
+                env_name == "D2_SETTINGS_DIR" || env_name == "D2_LOGS_DIR" || env_name == "D2_SHADER_CACHE_DIR") {
+                env_val = resolve_rel(env_val);
+                if (!env_val.empty() && env_name != "PS3_VFS_ROOT") {
+                    std::filesystem::create_directories(std::filesystem::path(env_val), ec);
+                }
+            }
+            _wputenv_s(d2_widen(env_name).c_str(), env_val.c_str());
+        } else if (key.rfind("unset.", 0) == 0 && key.size() > 6) {
+            _wputenv_s(d2_widen(key.substr(6)).c_str(), L"");
+        }
     }
-    std::error_code ec;
     if (eboot.empty() || !std::filesystem::exists(std::filesystem::path(eboot), ec)) {
         d2_message(L"Os arquivos preparados do jogo não foram encontrados (a pasta foi movida ou apagada?).\n\n"
                    L"Abra o launcher e prepare o jogo de novo.\n\n"
                    L"The prepared game files were not found. Open the launcher and prepare the game again.");
         return false;
     }
-    if (!cwd.empty()) SetCurrentDirectoryW(cwd.c_str());
+    if (cwd.empty()) cwd = exe_dir.wstring();
+    SetCurrentDirectoryW(cwd.c_str());
     if (!getenv("D2_CONSOLE")) { /* D2_CONSOLE=1 keeps the console for debugging */
-        wchar_t* local = nullptr;
-        size_t length = 0;
-        if (_wdupenv_s(&local, &length, L"LOCALAPPDATA") == 0 && local) {
-            const std::filesystem::path logs = std::filesystem::path(local) / L"DisgaeaD2Recomp" / L"logs";
+        FreeConsole();
+        std::filesystem::path logs;
+        wchar_t* logs_env = nullptr;
+        size_t logs_len = 0;
+        if (_wdupenv_s(&logs_env, &logs_len, L"D2_LOGS_DIR") == 0 && logs_env && *logs_env) {
+            logs = std::filesystem::path(logs_env);
+        }
+        free(logs_env);
+        if (logs.empty()) {
+            wchar_t* local = nullptr;
+            size_t length = 0;
+            if (_wdupenv_s(&local, &length, L"LOCALAPPDATA") == 0 && local && *local) {
+                logs = std::filesystem::path(local) / L"DisgaeaD2Recomp" / L"logs";
+            }
             free(local);
+        }
+        if (!logs.empty()) {
             std::filesystem::create_directories(logs, ec);
             SYSTEMTIME t;
             GetLocalTime(&t);
@@ -718,9 +750,13 @@ static bool d2_standalone_start(std::string& eboot_ansi)
                      t.wDay, t.wHour, t.wMinute, t.wSecond);
             d2_prune_logs(logs);
             FILE* out = nullptr;
-            if (_wfreopen_s(&out, (logs / name).c_str(), L"ab", stdout) == 0 && out) _dup2(_fileno(stdout), _fileno(stderr));
+            if (_wfreopen_s(&out, (logs / name).c_str(), L"ab", stdout) == 0 && out) {
+                setvbuf(stdout, nullptr, _IOLBF, 4096);
+                _dup2(_fileno(stdout), _fileno(stderr));
+                setvbuf(stderr, nullptr, _IONBF, 0);
+                fprintf(stderr, "[d2] standalone log opened\n");
+            }
         }
-        FreeConsole();
     }
     eboot_ansi = d2_ansi(eboot);
     return true;
@@ -901,7 +937,7 @@ int main(int argc, char** argv)
      * inflates every shorter wait the title makes and throttles the whole
      * thing. POSIX timers are already fine-grained. */
     timeBeginPeriod(1);
-    setvbuf(stdout, NULL, _IONBF, 0);   /* unbuffered: do not lose prints on a kill */
+    setvbuf(stdout, NULL, _IOLBF, 4096); /* 4 KiB line-buffered stdout; stderr stays unbuffered */
 #endif
 
     printf("=== ps3recomp game runner ===\n");
@@ -975,6 +1011,7 @@ int main(int argc, char** argv)
 
     printf("\n[boot] dispatching entry OPD 0x%08X (stack top 0x%08X)\n\n",
            entry, STACK_TOP);
+    fflush(stdout);
 
 #ifdef __APPLE__
     /* Own the guest entry worker here so a stop can join it without changing
@@ -1045,6 +1082,7 @@ int main(int argc, char** argv)
     WaitForSingleObject(frame_thread, INFINITE); CloseHandle(frame_thread);
 #endif
     printf("\n[boot] ppu_run returned %d (entry function unwound)\n", rc);
+    fflush(stdout);
 
     /* A title that called sys_process_exit never reaches this line: that path
      * ends in the host exit(). Getting here means the entry function returned

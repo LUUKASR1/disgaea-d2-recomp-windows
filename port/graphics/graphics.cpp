@@ -33,7 +33,7 @@ template<class T> struct Ref {
     T** put(){if(p)p->Release();p=nullptr;return &p;}
     T* operator->()const{return p;}
 };
-struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=false,fsr=false,post=false,hdr=false;float sharpness=0.2f;} cfg;
+struct Config {UINT gw=1280,gh=720,rw=1280,rh=720,ow=1280,oh=720;bool active=false,fsr=false,post=false,hdr=false,vertplus=false;float sharpness=0.2f,vp_y_scale=1.0f;} cfg;
 // Image filters of the in-game options panel (FXAA, sharpen, scanlines, CRT mask, vignette, vivid colours), set from the UI thread.
 float post_values[8]={};std::atomic<int> post_enabled{0};
 // HDR (scRGB FP16 swap chain): level 0..3 = how far highlights are expanded; paper/peak come from the display.
@@ -655,10 +655,17 @@ extern "C" UINT d2_graphics_output_width(){return cfg.ow;}
 extern "C" UINT d2_graphics_output_height(){return cfg.oh;}
 extern "C" UINT d2_graphics_guest_width(){return cfg.gw;}
 extern "C" UINT d2_graphics_guest_height(){return cfg.gh;}
+extern "C" int d2_graphics_vertplus_enabled(){return cfg.vertplus?1:0;}
+extern "C" float d2_graphics_vertplus_y_scale(){return cfg.vertplus?cfg.vp_y_scale:1.0f;}
 extern "C" int d2_graphics_configure(UINT w,UINT h){
     try{
         cfg={};cfg.gw=w;cfg.gh=h;cfg.rw=dimension("D2_RENDER_WIDTH",w);cfg.rh=dimension("D2_RENDER_HEIGHT",h);
         cfg.ow=dimension("D2_OUTPUT_WIDTH",w);cfg.oh=dimension("D2_OUTPUT_HEIGHT",h);
+        const char* vp_env=std::getenv("D2_VERTPLUS");
+        cfg.vertplus=(cfg.rw*cfg.gh<cfg.rh*cfg.gw) && !(vp_env && std::strcmp(vp_env,"0")==0);
+        cfg.vp_y_scale=cfg.vertplus
+            ?(static_cast<float>(cfg.rw)/static_cast<float>(cfg.rh))/(static_cast<float>(cfg.gw)/static_cast<float>(cfg.gh))
+            :1.0f;
         const char* mode=std::getenv("D2_UPSCALER");
         if(mode&&std::strcmp(mode,"native")&&std::strcmp(mode,"fsr1"))throw std::runtime_error("Temporal upscaler unavailable: motion vectors/HUD separation missing");
         cfg.fsr=mode&&std::strcmp(mode,"fsr1")==0;
@@ -670,7 +677,9 @@ extern "C" int d2_graphics_configure(UINT w,UINT h){
         cfg.hdr=flag("D2_HDR");
         cfg.active=cfg.hdr||cfg.fsr||cfg.post||cfg.rw!=w||cfg.rh!=h||cfg.ow!=w||cfg.oh!=h||(hud && !std::strcmp(hud,"1"));
         if(cfg.active&&(std::getenv("GCM_GUEST_FB")||std::getenv("SUBVP_RTT")||std::getenv("GCM_COMPOSITE_RT")))throw std::runtime_error("Experimental framebuffer override incompatible with graphics scaling");
-        std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s filters=%s DLSS=unavailable FG=unavailable\n",cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native",cfg.post?"available":"off");
+        std::fprintf(stderr,"[D2GRAPHICS] render=%ux%u output=%ux%u mode=%s filters=%s vertplus=%s(%.4f) DLSS=unavailable FG=unavailable\n",
+            cfg.rw,cfg.rh,cfg.ow,cfg.oh,cfg.fsr?"FSR1-EASU-RCAS":"native",cfg.post?"available":"off",
+            cfg.vertplus?"on":"off",cfg.vp_y_scale);
         return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"[D2GRAPHICS] %s\n",e.what());return -1;}
 }
