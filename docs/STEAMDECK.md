@@ -104,7 +104,32 @@ python3 tools/make_steam_grid.py \
 
 ---
 
-## 5. Useful Runtime Environment Variables
+## 5. Optional Steam Deck Button Prompts
+
+Original transparent Steam Deck `A`, `B`, `X`, `Y`, and `VIEW` pixel-art glyphs live in [`tools/assets/steamdeck-buttons/`](../tools/assets/steamdeck-buttons) (zero game textures are bundled). Use [`tools/make_steamdeck_buttons.py`](../tools/make_steamdeck_buttons.py) to composite them onto your own Disgaea D2 UI atlases inside `settings/texture-pack/`:
+
+- **Menus & HUD (`266b3459747d8fe3_button.png`):** extract directly from your `START.dat` without dumping textures first:
+
+```sh
+python3 tools/make_steamdeck_buttons.py \
+  --start-dat game/PS3_GAME/USRDIR/Data/START.dat \
+  --out-dir settings/texture-pack
+```
+
+- **Menus, HUD + Event/Cutscene `SKIP`/`AUTO` (`5910b2ce06e8b0d1_event_buttons.png`):** toggle **F1 → System → Save Textures** (or `env.D2_TEXTURE_DUMP=1`) through one dialogue scene once to dump the event atlas into `settings/texture-pack/dump/`, then run:
+
+```sh
+python3 tools/make_steamdeck_buttons.py \
+  --start-dat game/PS3_GAME/USRDIR/Data/START.dat \
+  --dump-dir settings/texture-pack/dump \
+  --out-dir settings/texture-pack
+```
+
+Turn off **Save Textures** (`texdump=0`) afterward so the replacement pack loads from `settings/texture-pack/`. You can also supply your own glyph folder (`A.png`, `B.png`, `X.png`, `Y.png`, `VIEW.png`, e.g. Xelu CC0 or Valve Steam Input glyphs) with `--glyph-dir` (plus `--add-view-rim` for dark monochrome `VIEW` capsules).
+
+---
+
+## 6. Useful Runtime Environment Variables
 
 These can be set as `env.<VAR>=<VALUE>` lines in `DisgaeaD2.ini` or in Steam **Launch Options** (`VAR=value %command%`):
 

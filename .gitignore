@@ -129,6 +129,11 @@
 !/tools/costume
 !/tools/data/
 
+# Original Steam Deck button prompt glyphs for tools/make_steamdeck_buttons.py (no game assets).
+!/tools/assets/
+!/tools/assets/steamdeck-buttons/
+!/tools/assets/steamdeck-buttons/*.png
+
 # Local sprite workbench frontend and launcher (no game assets).
 !/tools/sprite-workbench
 !/tools/sprite_workbench/
