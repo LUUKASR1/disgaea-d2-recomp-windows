@@ -70,8 +70,51 @@ static ID3D12PipelineState* d2_outline_pso(const D3D12DrawRecord* dr)
 {
     D2DepthStencilKey zs = dr->d2_zs;
     zs.depth &= ~2u; /* depth test as the sprite has it, but never write: the sprite itself must still pass */
-    return vp_get_fp_pso(dr->vs_idx, dr->fp_addr, D2_OUTLINE_BLEND, dr_num_rts(dr),
-                         dr->rt_off ? rsx_surface_dxgi(dr->rt_fmt) : DXGI_FORMAT_R8G8B8A8_UNORM,
-                         dr->fp_exp32, dr->cmask, dr->cull, dr_cube_mask(dr), zs);
+    if (s_d2_prepass_pso_safe && s_d2_fp_idx.evictions == s_d2_prepass_evict_epoch &&
+        (dr->d2_zs.depth & 2u) == 0u && dr->blend_key == D2_OUTLINE_BLEND && dr->d2_cached_pso)
+        return dr->d2_cached_pso;
+
+    const int nrt = dr_num_rts(dr);
+    const DXGI_FORMAT rtfmt = dr->rt_off ? rsx_surface_dxgi(dr->rt_fmt) : DXGI_FORMAT_R8G8B8A8_UNORM;
+    const u32 cube_mask = dr_cube_mask(dr);
+
+    typedef struct {
+        u32 fp_addr, rtfmt, cmask, cull, cube_mask, vp_gen;
+        int vs_idx, nrt, exp32;
+        D2DepthStencilKey zs;
+        u64 render_epoch, fp_evictions;
+        ID3D12PipelineState* pso;
+    } D2OutlinePsoMemo;
+    static D2OutlinePsoMemo memo[8];
+    static unsigned next_slot = 0;
+
+    for (unsigned i = 0; i < 8u; i++) {
+        const D2OutlinePsoMemo* m = &memo[i];
+        if (m->pso && m->render_epoch == s_d2_render_epoch &&
+            m->fp_evictions == s_d2_fp_idx.evictions &&
+            m->vp_gen == s_d3d.vp_gen &&
+            m->fp_addr == dr->fp_addr && m->vs_idx == dr->vs_idx &&
+            m->nrt == nrt && m->rtfmt == (u32)rtfmt &&
+            m->exp32 == dr->fp_exp32 && m->cmask == dr->cmask &&
+            m->cull == dr->cull && m->cube_mask == cube_mask &&
+            d2_zs_equal(m->zs, zs)) {
+            return m->pso;
+        }
+    }
+
+    ID3D12PipelineState* pso = vp_get_fp_pso(dr->vs_idx, dr->fp_addr, D2_OUTLINE_BLEND, nrt,
+                                             rtfmt, dr->fp_exp32, dr->cmask, dr->cull, cube_mask, zs);
+    if (pso) {
+        D2OutlinePsoMemo* dst = &memo[next_slot++ & 7u];
+        dst->fp_addr = dr->fp_addr; dst->vs_idx = dr->vs_idx;
+        dst->nrt = nrt; dst->rtfmt = (u32)rtfmt;
+        dst->exp32 = dr->fp_exp32; dst->cmask = dr->cmask;
+        dst->cull = dr->cull; dst->cube_mask = cube_mask;
+        dst->zs = zs; dst->vp_gen = s_d3d.vp_gen;
+        dst->render_epoch = s_d2_render_epoch;
+        dst->fp_evictions = s_d2_fp_idx.evictions;
+        dst->pso = pso;
+    }
+    return pso;
 }
 

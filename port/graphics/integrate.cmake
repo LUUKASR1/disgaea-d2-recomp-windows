@@ -1,5 +1,10 @@
 if(WIN32)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/graphics" "${CMAKE_CURRENT_BINARY_DIR}/graphics")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/graphics/adapt_graphics.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/graphics/adapt_pacing.py"
+    )
     set(original "${PS3RECOMP_DIR}/libs/video/rsx_d3d12_backend.c")
     set(adapted "${CMAKE_CURRENT_BINARY_DIR}/graphics/rsx_d3d12_backend.c")
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/graphics/adapt_graphics.py"

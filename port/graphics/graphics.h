@@ -14,6 +14,8 @@ uint32_t d2_graphics_output_width(void);
 uint32_t d2_graphics_output_height(void);
 uint32_t d2_graphics_guest_width(void);
 uint32_t d2_graphics_guest_height(void);
+int d2_graphics_vertplus_enabled(void);
+float d2_graphics_vertplus_y_scale(void);
 int d2_graphics_start(void* device, void* queue, void* swapchain);
 int d2_graphics_scene(uint32_t frame, void** resource);
 int d2_graphics_present(uint32_t frame, void* scene);

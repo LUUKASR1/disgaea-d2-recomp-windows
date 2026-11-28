@@ -47,16 +47,16 @@ constexpr int A_CH_TOG0 = 300, A_CH_EXP = 304, A_CH_OFF = 305, A_CH_PRESET = 306
               A_CH_GEN0 = 320, A_CH_CHR0 = 340, kCells = 16, kCharPerPage = 14;
 
 constexpr int kDefaultKeys[kKeys] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, 'Z', 'X', 'A', 'S', 'Q', 'W', '1', '2', VK_RETURN, VK_TAB, VK_F12};
-constexpr int kResW[] = {960, 1280, 1600, 1920, 2560};
-constexpr int kResH[] = {540, 720, 900, 1080, 1440};
-constexpr int kResCount = 5;
+constexpr int kResW[] = {960, 1280, 1600, 1920, 2560, 1280};
+constexpr int kResH[] = {540, 720, 900, 1080, 1440, 800};
+constexpr int kResCount = 6;
 // Output (swap chain) sizes and internal resolution percentages: they apply when the game starts (the swap chain and the
 // scene textures are created once), so changing them marks a restart as pending.
-constexpr int kOutW[] = {1280, 1600, 1920, 2560, 3840};
-constexpr int kOutH[] = {720, 900, 1080, 1440, 2160};
-constexpr int kOutCount = 5;
-constexpr int kScalePct[] = {50, 75, 100, 150, 200};
-constexpr int kScaleCount = 5;
+constexpr int kOutW[] = {1280, 1600, 1920, 2560, 3840, 1280};
+constexpr int kOutH[] = {720, 900, 1080, 1440, 2160, 800};
+constexpr int kOutCount = 6;
+constexpr int kScalePct[] = {50, 75, 100, 125, 150, 200};
+constexpr int kScaleCount = 6;
 
 struct Config {
     bool fullscreen = false, vsync = true;
@@ -263,6 +263,8 @@ static void apply_post()
 
 // ---- FPS counter: a small click-through window in the top-left corner of the game window -----------------------
 static HWND fps_wnd = nullptr;
+static HBRUSH fps_key_brush = nullptr;
+static HFONT fps_font = nullptr;
 static unsigned fps_value = 0, fps_last_flips = 0;
 static ULONGLONG fps_last_tick = 0;
 
@@ -292,23 +294,24 @@ static LRESULT CALLBACK fps_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         HDC dc = BeginPaint(h, &ps);
         RECT r;
         GetClientRect(h, &r);
-        HBRUSH key = CreateSolidBrush(RGB(255, 0, 255));
-        FillRect(dc, &r, key);
-        DeleteObject(key);
-        HFONT font = CreateFontW(-26, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-                                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        HGDIOBJ old = SelectObject(dc, font);
+        if (!fps_key_brush) fps_key_brush = CreateSolidBrush(RGB(255, 0, 255));
+        if (!fps_font)
+            fps_font = CreateFontW(-26, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                   ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+        if (fps_key_brush) FillRect(dc, &r, fps_key_brush);
+        HGDIOBJ old = fps_font ? SelectObject(dc, fps_font) : nullptr;
         SetBkMode(dc, TRANSPARENT);
         wchar_t text[32];
-        swprintf(text, sizeof text / sizeof text[0], L"%u FPS", fps_value);
-        SetTextColor(dc, RGB(8, 3, 24));
-        for (int dy = -2; dy <= 2; dy++)
-            for (int dx = -2; dx <= 2; dx++)
-                if (dx || dy) TextOutW(dc, 4 + dx, 2 + dy, text, (int)wcslen(text));
-        SetTextColor(dc, RGB(255, 255, 255));
-        TextOutW(dc, 4, 2, text, (int)wcslen(text));
-        SelectObject(dc, old);
-        DeleteObject(font);
+        int len = swprintf(text, sizeof text / sizeof text[0], L"%u FPS", fps_value);
+        if (len > 0) {
+            SetTextColor(dc, RGB(8, 3, 24));
+            for (int dy = -2; dy <= 2; dy++)
+                for (int dx = -2; dx <= 2; dx++)
+                    if (dx || dy) TextOutW(dc, 4 + dx, 2 + dy, text, len);
+            SetTextColor(dc, RGB(255, 255, 255));
+            TextOutW(dc, 4, 2, text, len);
+        }
+        if (old) SelectObject(dc, old);
         EndPaint(h, &ps);
         return 0;
     }
